@@ -18,8 +18,9 @@ counters, chips, kbd) · `text-xs` (12px: the chrome's body, fields, buttons) ·
 `text-sm` (14px: dialog and panel titles) · `text-base` (16px: page headings).
 `text-display` (28px, `font-display` italic, Instrument Serif) is a scene's
 name over its picture and nothing else: the cover's (`SceneName display`), the
-gallery stage's and the scene viewer's. `text-billboard` (38px) is the same
-title on the gallery's billboard, where the cover fills the page; the same face,
+gallery stage's and the scene viewer's. `text-billboard` (52px) is the same
+title on the gallery's spotlight, where the cover fills the top of the page, and
+heads its grid pages; the same face,
 upright at `text-masthead` (18px), sets the REZE DESIGN masthead. Never `text-[Npx]`.
 Weights: `font-normal` and `font-medium`; `font-semibold` for page headings
 and tiny all-caps labels.

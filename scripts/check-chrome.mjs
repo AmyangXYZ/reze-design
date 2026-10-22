@@ -36,7 +36,7 @@ const EXCEPTIONS = {
   "components/editor/scene-name.tsx": { display: "the cover's title: the scene's name, the one display-size text" },
   "components/editor/scene-gallery.tsx": {
     display: "the gallery stage's title on a phone: a published scene's name, set over its cover",
-    billboard: "the gallery billboard's title: a published scene's name, set over its cover filling the page",
+    billboard: "the gallery's spotlight title (a published scene's name over its cover) and its grid pages' headings",
   },
   "app/[user]/[scene]/viewer.tsx": { display: "the viewer's title: the scene's name, set over the scene as the editor's cover sets it" },
   "components/video-link.tsx": { hex: "a scene's video link wears its site's brand colour (Bilibili blue, YouTube red…), so it reads as that site at a glance" },

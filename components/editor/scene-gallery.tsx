@@ -1,14 +1,16 @@
 "use client"
 
-// Published scenes, in the same shell as every other library: rail on the left,
-// grid in the middle, details on the right. Browsing scenes is the same act as
-// browsing grades, so it should not look like a different product.
+// Published scenes, as a streaming service sets its home: a spotlight of what
+// is trending, then rows of covers that scroll sideways; a pause on a cover
+// grows it into a preview in place (open, fork, like, who and what), and a
+// click opens the scene. A section, a row, a tag or a maker seen whole is a
+// grid of the same covers.
 //
-// Opening one IS a navigation, though — a scene is a whole document, and the
-// address bar should say which one you are looking at.
+// Opening one IS a navigation — a scene is a whole document, and the address
+// bar should say which one you are looking at.
 
 import { Stamp } from "@/components/stamp"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react"
@@ -382,10 +384,6 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const [newestCursor, setNewestCursor] = useState<number | null>(() => pages.get("newest")?.nextCursor ?? null)
   /** The tag and maker lists asked for so far, merged into `all` the same way. */
   const [lists, setLists] = useState<Partial<Record<Key, GalleryScene[]>>>({})
-  /** The cover picked, as WHERE it stands — `<shelf>|<scene id>` — since one
-   *  scene can stand on a shelf and again in All, and the ring and the arrow
-   *  keys go by the card, not the scene. */
-  const [place, setPlace] = useState<string | null>(null)
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
   const [makers, setMakers] = useState<[string, number][] | null>(() => makerCounts)
   const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
@@ -579,11 +577,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     onFacetChange,
   })
 
-  // The next page of what the band ends on: All pages on down Latest; a
-  // narrowed view, down its own list.
-  const moreCursor = view === "all" ? newestCursor : cursor
-  const loadMore = () => {
-    if (view === "all") {
+  // The next page of a grid: Latest down the newest list; Trending and your
+  // shelves down the view's own query.
+  const loadMore = (which: "view" | "newest") => {
+    if (which === "newest") {
       if (!newestCursor) return
       setLoading(true)
       const params = new URLSearchParams({ kind: "scene", sort: "new", before: String(newestCursor) })
@@ -626,9 +623,6 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   }
 
   const rows = browse.rows
-  // No fallback to the first row: nothing is selected until something is clicked.
-  const selectedId = place && place.slice(place.lastIndexOf("|") + 1)
-  const selected = rows.find((s) => s.id === selectedId) ?? null
 
   const sceneHref = (s: GalleryScene) => `/${s.author}/${s.id}`
 
@@ -665,51 +659,11 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     })
   }
 
+  /** The page, which scrolls as a whole: the spotlight, then the rows, or a grid. */
   const scrollRef = useRef<HTMLDivElement>(null)
-  // On the billboard: the scene chosen, or the one trending first.
-  const focus = selected ?? rows[0] ?? null
-  // The billboard's picture crossfades: the one going stays under the one
-  // arriving until it has faded up, so the change never passes through black.
-  // Kept in state and moved on during render, when the focus changes.
-  const [backdrop, setBackdrop] = useState<{ cur: GalleryRow | null; prev: GalleryRow | null }>({ cur: null, prev: null })
-  if ((focus?.id ?? null) !== (backdrop.cur?.id ?? null)) setBackdrop({ cur: focus, prev: backdrop.cur })
-  /** Pick a cover: on the billboard, or in a grid's detail strip. Nothing scrolls. */
-  const feature = useCallback(
-    (s: GalleryRow, at: string) => {
-      setPlace(`${at}|${s.id}`)
-      router.prefetch(`/${s.author}/${s.id}`)
-    },
-    [router],
-  )
-  /** Scrolled down into All: the band takes the page and the billboard steps
-   *  aside, a plain grid of covers. */
-  const [inAll, setInAll] = useState(false)
-  // The wheel over the billboard moves the band below it, one shelf a
-  // gesture, as the band snaps. A gesture ends when the wheel rests 150ms; a
-  // trackpad's momentum only ever decays, so a delta rising sharply inside one
-  // is a new swipe or notch, and steps again once the last shelf has arrived.
-  const wheel = useRef({ armed: true, at: 0, stepped: 0, last: 0 })
-  const onBillboardWheel = (e: React.WheelEvent) => {
-    const band = scrollRef.current
-    if (!band || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
-    const w = wheel.current
-    const now = performance.now()
-    const mag = Math.abs(e.deltaY)
-    if (now - w.at > 150 || (now - w.stepped > 250 && mag >= 20 && mag > w.last * 1.5)) w.armed = true
-    w.at = now
-    w.last = mag
-    if (!w.armed || mag < 4) return
-    band.scrollBy({ top: Math.sign(e.deltaY) * band.clientHeight, behavior: "smooth" })
-    w.armed = false
-    w.stepped = now
-  }
-  const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget
-    const all = el.querySelector<HTMLElement>('[data-shelf="all"]')
-    // All has arrived when its title reaches the band's top.
-    setInAll(!!all && el.scrollTop >= all.offsetTop - 2)
-    if (!loading && moreCursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
-  }
+  /** What the preview is laid out against: the page's content, so it travels
+   *  with the page. */
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Forking is where someone's files become yours to export, so it asks for an
   // account and says whose files they are, as the scene page does.
@@ -739,27 +693,23 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
-  // THE ROWS, from what is loaded: the ranked list, the newest, the most liked,
-  // then a row for each of the most-used tags and the most prolific makers.
-  // Narrowed (a shelf of your own, a tag, a search) the page is one wrapping
-  // grid of exactly that instead.
+
+  // WHAT THE PAGE SHOWS. Home: the spotlight and the rows. Otherwise a grid of
+  // one list: a ranking seen whole (Latest, Trending), or a
+  // narrowing (yours, liked, a tag, a maker, a search).
+  const [rank, setRank] = useState<"hot" | "new" | null>(null)
   const narrowed = browse.facet !== "all" || browse.tag !== null || browse.maker !== null || browse.query.trim() !== ""
-  // A different view is a different list: it starts at its top, not at the
-  // shelf the last one was scrolled to.
-  const viewKey = `${browse.facet}|${browse.tag ?? ""}|${browse.maker ?? ""}|${browse.query.trim()}`
-  // A grid of covers (All, or a narrowed view) has the whole page; the shelves
-  // share it with the billboard.
-  const grid = narrowed || inAll
+  const home = !narrowed && rank === null
+  // A different list starts at its top.
+  const viewKey = `${browse.facet}|${browse.tag ?? ""}|${browse.maker ?? ""}|${browse.query.trim()}|${rank ?? ""}`
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [viewKey])
-  // The three rankings of the whole catalogue (Latest, Trending, Most liked)
-  // never repeat a scene: a small catalogue ranked three ways is three copies
-  // of the same row. A tag's or a maker's shelf is its own list, whole, as a
+  // The two rankings of the whole catalogue (Latest, Trending) never repeat a
+  // scene: a small catalogue ranked twice is two copies of the same row. A tag's or a maker's shelf is its own list, whole, as a
   // streaming service repeats a title under each of its categories. Each takes
   // enough to fill a wide screen's row. The shelves are laid out once, so
-  // scrolling down never reshuffles the rows above; All closes the page with
-  // every scene, paging on as the band scrolls.
+  // scrolling down never reshuffles the rows above.
   type Laid = { key: string; title: string; href?: string; ids: string[] }[]
   const layShelves = (): Laid => {
     const used = new Set<string>()
@@ -779,7 +729,6 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     shelf("new", t.rail.sortNew, list("newest"), true)
     shelf("hot", t.rail.sortHot, rows, true)
     out.sort((a, b) => Number(b.key === "hot") - Number(a.key === "hot"))
-    shelf("likes", t.rail.likes, list("top"), true)
     for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), false)
     for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), false)
     return out
@@ -795,7 +744,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           ? [`maker:${browse.maker}`]
           : narrowed
             ? []
-            : ["top", ...browse.tags.slice(0, 6).map(([x]) => `tag:${x}` as const), ...browse.makers.slice(0, 4).map(([x]) => `maker:${x}` as const)]
+            : [...browse.tags.slice(0, 6).map(([x]) => `tag:${x}` as const), ...browse.makers.slice(0, 4).map(([x]) => `maker:${x}` as const)]
   const wantedKey = wanted.join("|")
   useEffect(() => {
     if (!wantedKey) return
@@ -815,144 +764,151 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const latest = [newest.slice(0, 8).map((s) => s.id).join(), ...Object.entries(lists).map(([k, v]) => `${k}:${v?.length}`)].join("|")
   // Laid afresh when there is nothing laid yet, the language changed, or what
   // is loaded no longer holds what was laid (another view, a refresh).
-  if (!narrowed && items.length > 0 && (!laid || laid.lang !== t.rail.all || laid.latest !== latest || laid.shelves.some((sh) => sh.ids.some((id) => !byId.has(id))))) {
+  if (home && items.length > 0 && (!laid || laid.lang !== t.rail.all || laid.latest !== latest || laid.shelves.some((sh) => sh.ids.some((id) => !byId.has(id))))) {
     setLaid({ lang: t.rail.all, latest, shelves: layShelves() })
   }
+
   const shelves = useMemo(() => {
-    if (narrowed || !laid) return []
-    const out: { key: string; title: string; href?: string; rows: GalleryRow[] }[] = laid.shelves.map((sh) => ({
-      ...sh,
-      rows: sh.ids.flatMap((id) => byId.get(id) ?? []),
-    }))
-    // All, newest first: every scene the page holds, by the day it was published.
-    out.push({ key: "all", title: t.rail.all, rows: [...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)) })
-    return out
-  }, [narrowed, laid, rows, byId, t])
-  // Every card's place in reading order, and the one ringed: the pick, or on
-  // the shelves before any pick, the billboard's scene where it first stands.
-  const places = narrowed ? rows.map((r) => `grid|${r.id}`) : shelves.flatMap((sh) => sh.rows.map((r) => `${sh.key}|${r.id}`))
-  // A grid always has a pick, its first cover until another is chosen, so its
-  // panel is never empty and never arrives to reflow the grid.
-  const current =
-    place && places.includes(place)
-      ? place
-      : grid
-        ? (places.find((p) => narrowed || p.startsWith("all|")) ?? null)
-        : (places.find((p) => p.endsWith(`|${focus?.id}`)) ?? null)
-  /** A grid's pick, which its panel describes (the grid has no billboard). */
-  const picked = grid && current ? (rows.find((r) => current.endsWith(`|${r.id}`)) ?? null) : null
-  // ← → step through the covers in reading order — along a shelf, on to the
-  // next — and ↑ ↓ move a row, as a TV does, onto the cover nearest the same
-  // spot across. Each puts its cover on the billboard and brings it into view.
-  // Enter opens what is on the billboard. Not while typing in the search.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !focus) return
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, [role=listbox], [role=menu]")) return
-      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        e.preventDefault()
-        const at = places.indexOf(current ?? "")
-        const next = places[Math.min(places.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))]
-        if (!next) return
-        setPlace(next)
-        scrollRef.current
-          ?.querySelector(`[data-place="${CSS.escape(next)}"]`)
-          ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
-      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault()
-        const cards = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-place]") ?? [])].map((el) => ({ el, box: el.getBoundingClientRect() }))
-        const here = cards.find((c) => c.el.dataset.place === current) ?? (current ? undefined : cards[0])
-        if (!here) return
-        const down = e.key === "ArrowDown"
-        // The row next in that direction: the nearest top past this one's.
-        const beyond = cards.filter((c) => (down ? c.box.top > here.box.bottom - 4 : c.box.bottom < here.box.top + 4))
-        if (!beyond.length) return
-        const edge = down ? Math.min(...beyond.map((c) => c.box.top)) : Math.max(...beyond.map((c) => c.box.top))
-        const row = beyond.filter((c) => Math.abs(c.box.top - edge) < 8)
-        const x = here.box.left + here.box.width / 2
-        const next = row.reduce((a, b) => (Math.abs(b.box.left + b.box.width / 2 - x) < Math.abs(a.box.left + a.box.width / 2 - x) ? b : a))
-        setPlace(next.el.dataset.place!)
-        next.el.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
-      } else if (e.key === "Enter") {
-        if ((e.target as HTMLElement | null)?.closest?.("button, a")) return
-        e.preventDefault()
-        openScene(focus)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  })
-  const narrowedTitle = browse.query.trim()
+    if (!home || !laid) return []
+    return laid.shelves.map((sh) => ({ ...sh, rows: sh.ids.flatMap((id) => byId.get(id) ?? []) }))
+  }, [home, laid, byId])
+  const byDate = (a: GalleryRow, b: GalleryRow) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)
+  const gridRows = narrowed
+    ? rows
+    : rank === "new"
+      ? newest.flatMap((s) => byId.get(s.id) ?? []).sort(byDate)
+      : rows
+  const gridTitle = browse.query.trim()
     ? `“${browse.query.trim()}”`
     : browse.tag
       ? `#${browse.tag}`
       : browse.maker
-        ? browse.maker
+        ? `@${browse.maker}`
         : browse.facet === "yours"
           ? t.rail.yours
-          : t.rail.liked
+          : browse.facet === "liked"
+            ? t.rail.liked
+            : rank === "new"
+              ? t.rail.sortNew
+              : t.rail.sortHot
+  // What the grid pages on as it scrolls: Trending and your shelves down their
+  // own query, Latest down the newest list.
+  const moreFrom: "view" | "newest" | null =
+    !home && (isFacet(view) || (!narrowed && rank === "hot")) && cursor ? "view" : !home && !narrowed && rank === "new" && newestCursor ? "newest" : null
+  // The spotlight: the five trending first, held while they stay the five.
+  const featKey = rows.slice(0, 5).map((r) => r.id).join()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const feat = useMemo(() => rows.slice(0, 5), [featKey])
 
-  const facetWord = (v: View, label: string) => (
-    <Button
-      key={v}
-      variant="bare"
-      onClick={() => {
-        browse.clear()
-        browse.setFacet(v)
-      }}
-      className={cn(
-        "relative py-1 text-xs after:absolute after:inset-x-2 after:bottom-0 after:h-[1.5px]",
-        browse.facet === v && !browse.tag && !browse.maker ? "text-foreground after:bg-blue-400" : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {label}
-    </Button>
-  )
+  /** Where to go: a section of the bar, a row seen whole, a tag, a maker. */
+  const go = (to: "home" | "hot" | "new" | "yours" | "liked" | `tag:${string}` | `maker:${string}`) => {
+    browse.setQuery("")
+    browse.clear()
+    setRank(null)
+    if (to === "hot" || to === "new") setRank(to)
+    else if (to === "yours" || to === "liked") browse.setFacet(to)
+    else if (to.startsWith("tag:")) browse.setTag(to.slice(4))
+    else if (to.startsWith("maker:")) browse.setMaker(to.slice(6))
+    else scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  }
+  const section = narrowed ? (isFacet(view) && !browse.tag && !browse.maker && !browse.query.trim() ? view : null) : (rank ?? "home")
 
-  /** One cover, as every row and the grid show it. Your own scenes keep their
-   *  menu: open, edit, delete. */
-  const card = (s: GalleryRow, at: string, wide?: boolean) => {
-    const here = `${at}|${s.id}`
+  // ── The preview: a card grows into it, in place (PreviewLayer) ─────────────
+  // Held in its own component: opening one re-renders the preview, never the
+  // page's hundred covers.
+  const previewApi = useRef<PreviewApi | null>(null)
+  const showPreview = (s: GalleryRow, card: HTMLElement) => {
+    if (!phone) previewApi.current?.show(s, card)
+  }
+  const hidePreview = useCallback((now = false) => previewApi.current?.hide(now), [])
+
+  const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    setSolid(el.scrollTop > 40)
+    if (!loading && moreFrom && el.scrollTop + el.clientHeight > el.scrollHeight - 800) loadMore(moreFrom)
+  }
+  const [solid, setSolid] = useState(false)
+
+  // Keys, as a TV's: arrows move across the covers (along a row, between rows),
+  // the focused one previews, Enter opens it; / goes to search; Esc lets go.
+  const searchRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
+      const typing = (e.target as HTMLElement | null)?.closest?.("input, textarea, [role=listbox], [role=menu]")
+      if (e.key === "Escape") {
+        hidePreview(true)
+        if (typing) (e.target as HTMLElement).blur()
+        return
+      }
+      if (typing) return
+      if (e.key === "/") {
+        e.preventDefault()
+        searchRef.current?.focus()
+        return
+      }
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return
+      e.preventDefault()
+      const cards = [...(contentRef.current?.querySelectorAll<HTMLElement>("[data-card]") ?? [])]
+      const cur = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-card]")
+      if (!cur) return cards[0]?.focus()
+      const r = cur.getBoundingClientRect()
+      const cx = r.left + r.width / 2
+      const cy = r.top + r.height / 2
+      const pick = cards
+        .filter((c) => c !== cur)
+        .map((c) => {
+          const b = c.getBoundingClientRect()
+          return { c, dx: b.left + b.width / 2 - cx, dy: b.top + b.height / 2 - cy }
+        })
+        .filter(({ dx, dy }) =>
+          e.key === "ArrowLeft" ? dx < -4 && Math.abs(dy) < 10 : e.key === "ArrowRight" ? dx > 4 && Math.abs(dy) < 10 : e.key === "ArrowUp" ? dy < -10 : dy > 10,
+        )
+        .sort((a, b) => Math.hypot(a.dx, a.dy * 2) - Math.hypot(b.dx, b.dy * 2))[0]
+      if (!pick) return
+      pick.c.focus({ preventScroll: true })
+      pick.c.scrollIntoView({ block: "nearest", inline: "nearest" })
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [hidePreview])
+
+  /** One cover: the picture, its name and maker under it. A click opens the
+   *  scene; a pause over it (or focus on it) grows the preview. Your own keep
+   *  their menu: open, edit, delete. */
+  const card = (s: GalleryRow, wide?: boolean) => {
     const node = (
-      // The frame stands forward on hover or on the billboard; inside it the
-      // picture and name are the button, and the maker under them a link to
-      // their page, so the two never nest.
-      <div
-        key={s.id}
-        data-place={here}
-        className={cn(
-          "group/card flex shrink-0 flex-col gap-1.5 transition-[scale] hover:z-10 hover:scale-[1.04]",
-          wide ? "w-full" : "w-44",
-          // The one on the billboard stands forward as a hovered one does, so
-          // stepping with the arrows reads the same as pointing.
-          current === here && "z-10 scale-[1.04]",
-        )}
-      >
-        <Button
-          variant="bare"
-          // A phone has no panel beside a grid, so a tap there opens.
-          onClick={() => (grid && phone ? openScene(s) : feature(s, at))}
-          onDoubleClick={() => openScene(s)}
-          className="flex flex-col gap-1.5 text-left"
+      <div key={s.id} className={cn("flex shrink-0 flex-col gap-2", wide ? "w-full" : "w-[calc((100vw-10.75rem)/6.3)] compact:w-[44vw]")}>
+        <Link
+          href={sceneHref(s)}
+          data-card={s.id}
+          onMouseEnter={(e) => showPreview(s, e.currentTarget)}
+          onMouseLeave={() => hidePreview()}
+          onFocus={(e) => showPreview(s, e.currentTarget)}
+          onBlur={() => hidePreview()}
+          onPointerDown={() => router.prefetch(sceneHref(s))}
+          // A phone has no hover: a tap grows the preview, and its Open opens.
+          onClick={(e) => {
+            if (!phone) return
+            e.preventDefault()
+            previewApi.current?.show(s, e.currentTarget, true)
+          }}
+          className="block aspect-video w-full overflow-hidden rounded-interior bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-foreground"
         >
-          <span
-            className={cn(
-              "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
-              // Held off the picture by a gap of the page's black, so it reads on
-              // a white cover as on a dark one.
-              current === here && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
-            )}
-          >
-            {s.poster && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={s.poster} alt="" loading="lazy" className="size-full object-cover" />
-            )}
-          </span>
+          {s.poster && (
+            // Framed as the preview frames it, so the hand-off between them
+            // is the same picture.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={s.poster} alt="" loading="lazy" decoding="async" className="size-full object-cover object-[50%_20%]" />
+          )}
+        </Link>
+        {/* Its name, and who made it under that. */}
+        <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-xs text-foreground">{s.name}</span>
-        </Button>
-        <span className="-mt-1 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
-          <AuthorLink name={s.author} at className="truncate" />
-        </span>
+          <span className="flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
+            <AuthorLink name={s.author} at className="truncate" />
+          </span>
+        </div>
       </div>
     )
     if (!s.mine) return node
@@ -972,279 +928,139 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     )
   }
 
-  // THE GALLERY, as a streaming service's home: the scene in focus on a
-  // billboard filling the top of the screen and fading into the page, and
-  // shelves of covers under it, each scrolling sideways. White type on black
-  // (dark paper), the cover's controls.
+  const sectionWord = (key: NonNullable<typeof section>, label: string) => (
+    <Button
+      key={key}
+      variant="bare"
+      onClick={() => go(key)}
+      className={cn(
+        "relative py-1 text-xs after:absolute after:inset-x-2 after:bottom-0 after:h-[1.5px]",
+        section === key ? "text-foreground after:bg-blue-400" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </Button>
+  )
+
+  // THE GALLERY, as a streaming service's home: a spotlight of what is trending,
+  // then rows of covers; any row, tag, maker or section seen whole as a grid.
   return (
-    <main data-paper="dark" className="fixed inset-0 flex h-dvh w-screen flex-col overflow-hidden bg-black text-foreground select-none">
+    <main data-paper="dark" className="fixed inset-0 h-dvh w-screen bg-black text-foreground select-none">
       <Cover>
-        {/* The nav, fixed over the page: clear over the billboard, solid once
-            the page scrolls under it. */}
+        {/* The bar: clear over the spotlight, a dark sheet once the page scrolls. */}
         <div
           className={cn(
-            // The editor's top row to the pixel (top-5, h-8, left-7), so the
-            // wordmark stands exactly where it stood in the editor.
-            "absolute inset-x-0 top-0 z-20 flex h-[4.25rem] items-start gap-7 px-7 pt-5 transition-colors compact:gap-4 compact:px-4 [&>*]:h-8 [&>*]:items-center",
-            "bg-linear-to-b from-black/70 to-transparent",
+            "absolute inset-x-0 top-0 z-30 flex h-16 items-center gap-7 px-12 transition-[background-color] compact:h-auto compact:flex-wrap compact:gap-x-4 compact:gap-y-2.5 compact:px-4 compact:py-3",
+            solid || !home ? "bg-black/80 backdrop-blur-md" : "bg-linear-to-b from-black/60 to-transparent",
           )}
         >
-          {/* The house's name where a service sets its own — and, as a service's
-              logo does, the way home: back to the editor. The gallery's name
-              beside it. */}
-          <div className="flex shrink-0 items-center gap-7">
-            <Link
-              href="/"
-              className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:tracking-[0.3em]"
-            >
-              Reze Design
-            </Link>
-            {/* The gallery's own name is its home: every shelf, no narrowing,
-                back at the top — what All was, so All is not said twice. */}
-            {/* On a phone the wordmark alone heads the row; the shelves are
-                home enough. */}
-            <h1 className="compact:hidden">
-              <Button
-                variant="bare"
-                onClick={() => {
-                  browse.clear()
-                  browse.setQuery("")
-                  scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
-                }}
-                className={cn(
-                  "relative py-1 font-mono text-2xs font-medium tracking-wide uppercase after:absolute after:inset-x-2 after:bottom-0 after:h-[1.5px]",
-                  narrowed ? "text-muted-foreground hover:text-foreground" : "text-foreground after:bg-blue-400",
-                )}
-              >
-                {t.gallery.title}
-              </Button>
-            </h1>
-          </div>
-          {session && facetWord("yours", t.rail.yours)}
-          {session && facetWord("liked", t.rail.liked)}
+          <Link
+            href="/"
+            className="shrink-0 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:tracking-[0.3em]"
+          >
+            Reze Design
+          </Link>
+          {/* On a phone, a line of its own under the wordmark and search. */}
+          <nav className="flex items-center gap-5 compact:no-scrollbar compact:order-last compact:w-full compact:gap-4 compact:overflow-x-auto">
+            {sectionWord("home", t.gallery.title)}
+            {sectionWord("new", t.rail.sortNew)}
+            {session && sectionWord("yours", t.rail.yours)}
+            {session && sectionWord("liked", t.rail.liked)}
+          </nav>
           <SiteChip site="bilibili" href="/bilibili" className="h-6 px-2 text-xs compact:hidden">
             {t.bilibili.title}
           </SiteChip>
           <span className="flex-1" />
-          <label className="relative flex h-8 w-52 compact:w-32 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:after:border-foreground compact:hidden">
+          <label className="relative flex h-8 w-64 items-center gap-2 px-3 text-muted-foreground transition-[width] duration-233 after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:w-80 focus-within:after:border-foreground compact:w-36 compact:focus-within:w-44">
             <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
             <Input
+              ref={searchRef}
               variant="bare"
               value={browse.query}
-              onChange={(e) => browse.setQuery(e.target.value)}
+              onChange={(e) => {
+                setRank(null)
+                browse.setQuery(e.target.value)
+              }}
               placeholder={t.rail.search}
               className="h-8 min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground"
             />
+            <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs compact:hidden">/</kbd>
           </label>
         </div>
 
-        <div className="relative min-h-0 flex-1">
-          {/* The billboard, pinned behind the shelves: picking a cover swaps it
-              and the shelf stays where it was. */}
-          <section
-            onWheel={onBillboardWheel}
-            className={cn("absolute inset-0 overflow-hidden transition-opacity", grid && "pointer-events-none opacity-0")}
-          >
-            {backdrop.prev?.poster && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={`backdrop:${backdrop.prev.id}`}
-                src={backdrop.prev.poster}
-                alt=""
-                className="stage-backdrop-held absolute inset-0 size-full object-cover"
-              />
-            )}
-            {backdrop.cur?.poster && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={`backdrop:${backdrop.cur.id}`} src={backdrop.cur.poster} alt="" className="stage-backdrop absolute inset-0 size-full object-cover" />
-            )}
-            {/* A lens's falloff at the side the type stands on and at the foot
-                under the shelf. */}
-            <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/75 via-black/30 to-transparent" />
-            <div aria-hidden className="absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-black via-black/45 to-transparent" />
-            {focus ? (
-              <div
-                key={`spread:${focus.id}`}
-                // White type with the cover's soft dark edge on every
-                // character, so a bright picture cannot take it.
-                className="cover-enter absolute top-[22%] left-16 flex [text-shadow:var(--white-ink-shadow)] [&_button]:[text-shadow:inherit] [&_svg]:[filter:var(--white-ink-line-shadow)] w-[min(48rem,55vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
-              >
-                <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{focus.name}</h2>
-                <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground uppercase compact:mt-3 compact:text-2xs">
-                  <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-5 compact:size-4" />
-                  <AuthorLink name={focus.author} at className="truncate text-foreground normal-case select-text" />
-                  <span>·</span>
-                  <Stamp iso={focus.createdAt} show="words" />
-                </div>
-                {focus.description && (
-                  <p className="mt-3 line-clamp-3 max-w-[32rem] text-xs leading-relaxed text-foreground select-text">{focus.description}</p>
-                )}
-                {(focus.tags.length > 0 || focus.displayOnly) && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {focus.displayOnly && <DisplayOnlyTag />}
-                    {/* Once each: a scene's tags can repeat one. */}
-                    {[...new Set(focus.tags)].map((tag) => (
-                      <Button
-                        key={tag}
-                        variant="bare"
-                        onClick={() => {
-                          browse.clear()
-                          browse.setTag(tag)
-                        }}
-                        className="rounded-chip border border-line-strong px-1.5 py-0.5 text-2xs text-foreground"
-                      >
-                        {tag}
-                      </Button>
-                    ))}
+        <div ref={scrollRef} onScroll={onPageScroll} className="no-scrollbar h-full overflow-x-hidden overflow-y-auto">
+          <div ref={contentRef} className="relative pb-20">
+            {home ? (
+              <>
+                {feat.length > 0 ? (
+                  <Spotlight
+                    feat={feat}
+                    phone={phone}
+                    likesOf={likesOf}
+                    liked={(id) => statFor(id).liked}
+                    canLike={signedIn}
+                    onLike={(id) => void toggleLike(id)}
+                    onFork={requestFork}
+                    onEdit={editScene}
+                    onRemove={remove}
+                    onTag={(tag) => go(`tag:${tag}`)}
+                    href={sceneHref}
+                  />
+                ) : (
+                  <div className="flex h-[60vh] items-center justify-center text-xs text-muted-foreground">
+                    {failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
                   </div>
                 )}
-                <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                  <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background [text-shadow:none] hover:bg-foreground/85">
-                    {/* A real link: cmd-click still gets a new tab. */}
-                    <Link href={sceneHref(focus)}>{t.gallery.open}</Link>
-                  </Button>
-                  {!focus.displayOnly && !phone && (
-                    <Button
-                      variant="bare"
-                      onClick={() => requestFork(focus)}
-                      className="h-7 rounded-chip bg-white/20 px-3.5 text-xs font-medium text-foreground hover:bg-white/30"
+                <div className="relative z-10 -mt-10">
+                  {shelves.map((shelf) => (
+                    <Row
+                      key={shelf.key}
+                      title={shelf.title}
+                      onMore={() =>
+                        go(shelf.key === "hot" ? "hot" : shelf.key === "new" ? "new" : (shelf.key as `tag:${string}` | `maker:${string}`))
+                      }
+                      onScroll={() => hidePreview(true)}
                     >
-                      {t.share.fork}
-                    </Button>
-                  )}
-                  <LibraryLike
-                    large
-                    likeCount={likesOf(focus)}
-                    liked={statFor(focus.id).liked}
-                    canLike={signedIn}
-                    onToggle={() => void toggleLike(focus.id)}
-                  />
-                  {focus.mine && (
-                    <>
-                      <Button variant="bare" onClick={() => editScene(focus)} className="h-7 text-xs text-muted-foreground hover:text-foreground">
-                        {t.gallery.editPublished}
-                      </Button>
-                      <Button variant="bare" onClick={() => remove(focus)} className="h-7 text-xs text-muted-foreground hover:text-red-400">
-                        {t.library.deletePublished}
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <VideoLink url={focus.video} className="mt-3 h-7 w-fit px-2.5 text-xs [&_svg]:size-3.5" />
-              </div>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-                {failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
-              </div>
-            )}
-          </section>
-
-          {/* The shelves, one at a time in a band along the bottom over the
-              billboard's foot (two on a phone held upright, which has the
-              height). Each shelf is exactly one slot of the band and it snaps
-              shelf by shelf, so a stop never shows a piece of its neighbour. */}
-          <div
-            ref={scrollRef}
-            onScroll={onPageScroll}
-            className={cn(
-              "no-scrollbar absolute inset-x-0 bottom-0 z-10 flex snap-y snap-mandatory flex-col overflow-y-auto transition-[height] *:snap-start",
-              grid ? "right-[22rem] h-[calc(100%-4.25rem)] compact:right-0" : "h-[12.5rem] compact:portrait:h-[25rem]",
-            )}
-          >
-            {narrowed ? (
-              <section className="px-7 pt-3 compact:px-4">
-                <h3 className="mb-1 text-sm font-medium text-foreground">{narrowedTitle}</h3>
-                {rows.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{loading ? t.gallery.loading : t.rail.noMatches}</p>
-                ) : (
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">{rows.map((s) => card(s, "grid", true))}</div>
-                )}
-              </section>
-            ) : (
-              shelves.map((shelf) =>
-                // All is the whole gallery, a grid growing down the band row
-                // by row, each row snapping like a shelf.
-                shelf.key === "all" ? (
-                  <section key="all" data-shelf="all" className="px-7 pt-3 compact:px-4">
-                    <h3 className="mb-1 text-sm font-medium text-foreground">{shelf.title}</h3>
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">
-                      {shelf.rows.map((s) => card(s, "all", true))}
-                    </div>
-                  </section>
-                ) : (
-                  <Shelf key={shelf.key} title={shelf.title} href={shelf.href}>
-                    {shelf.rows.map((s) => card(s, shelf.key))}
-                  </Shelf>
-                ),
-              )
-            )}
-            {loading && rows.length > 0 && (
-              <div className="flex justify-center text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-              </div>
-            )}
-          </div>
-          {/* A grid's pick, in a slim panel beside it: the library's own
-              arrangement, grid and inspector. What the billboard says on the
-              shelves, with the cover whole. */}
-          {picked && (
-            <aside className="absolute top-[4.25rem] right-0 bottom-0 z-10 flex w-[22rem] flex-col overflow-y-auto border-l border-line px-6 pt-3 pb-6 compact:hidden">
-              <span className="block aspect-video w-full shrink-0 overflow-hidden rounded-interior bg-white/5">
-                {picked.poster && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={picked.poster} alt="" className="size-full object-cover" />
-                )}
-              </span>
-              <h2 className="mt-4 text-base font-medium text-foreground select-text">{picked.name}</h2>
-              <div className="mt-2 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
-                <AuthorAvatar name={picked.author} image={picked.authorImage} className="size-4" />
-                <AuthorLink name={picked.author} at className="truncate text-foreground normal-case select-text" />
-                <span>·</span>
-                <Stamp iso={picked.createdAt} show="words" />
-              </div>
-              {picked.description && <p className="mt-3 text-xs leading-relaxed text-foreground select-text">{picked.description}</p>}
-              {(picked.tags.length > 0 || picked.displayOnly) && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {picked.displayOnly && <DisplayOnlyTag />}
-                  {[...new Set(picked.tags)].map((tag) => (
-                    <Button
-                      key={tag}
-                      variant="bare"
-                      onClick={() => {
-                        browse.clear()
-                        browse.setTag(tag)
-                      }}
-                      className="rounded-chip border border-line-strong px-1.5 py-0.5 text-2xs text-foreground"
-                    >
-                      {tag}
-                    </Button>
+                      {shelf.rows.map((s) => card(s))}
+                    </Row>
                   ))}
                 </div>
-              )}
-              <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background [text-shadow:none] hover:bg-foreground/85">
-                  <Link href={sceneHref(picked)}>{t.gallery.open}</Link>
-                </Button>
-                {!picked.displayOnly && (
-                  <Button
-                    variant="bare"
-                    onClick={() => requestFork(picked)}
-                    className="h-7 rounded-chip bg-white/20 px-3.5 text-xs font-medium text-foreground hover:bg-white/30"
-                  >
-                    {t.share.fork}
-                  </Button>
+              </>
+            ) : (
+              <section className="px-12 pt-28 compact:px-4 compact:pt-32">
+                <header className="flex items-baseline gap-4">
+                  <h1 className="font-display text-billboard text-foreground italic">{gridTitle}</h1>
+                  {!loading && <span className="font-mono text-xs text-muted-foreground">{t.gallery.count(gridRows.length)}</span>}
+                </header>
+                {gridRows.length === 0 ? (
+                  <p className="mt-8 text-xs text-muted-foreground">{loading ? t.gallery.loading : t.rail.noMatches}</p>
+                ) : (
+                  <div className="mt-7 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-3.5 gap-y-6 compact:grid-cols-2 compact:gap-x-2.5 compact:gap-y-4">
+                    {gridRows.map((s) => card(s, true))}
+                  </div>
                 )}
-                <LibraryLike
-                  large
-                  likeCount={likesOf(picked)}
-                  liked={statFor(picked.id).liked}
-                  canLike={signedIn}
-                  onToggle={() => void toggleLike(picked.id)}
-                />
-              </div>
-              <VideoLink url={picked.video} className="mt-3 h-7 w-fit px-2.5 text-xs [&_svg]:size-3.5" />
-            </aside>
-          )}
+                {loading && gridRows.length > 0 && (
+                  <div className="mt-8 flex justify-center text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                  </div>
+                )}
+              </section>
+            )}
+
+            <PreviewLayer
+              ref={previewApi}
+              touch={phone}
+              contentRef={contentRef}
+              scrollRef={scrollRef}
+              href={sceneHref}
+              likesOf={likesOf}
+              liked={(id) => statFor(id).liked}
+              canLike={signedIn}
+              onLike={(id) => void toggleLike(id)}
+              onFork={requestFork}
+              onTag={(tag) => go(`tag:${tag}`)}
+            />
+          </div>
         </div>
       </Cover>
       <ConfirmDialog
@@ -1280,9 +1096,355 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   )
 }
 
-/** A shelf of covers that scrolls sideways, paged by two small chevrons at the
- *  end of its title line — shown only when the shelf runs past the screen. */
-function Shelf({ title, href, children }: { title: string; href?: string; children: React.ReactNode }) {
+/** How long the preview takes to shrink back onto its card: the one motion
+ *  duration (globals.css, "The gallery"). */
+const CLOSE_MS = 233
+/** A pause on a cover before it grows; longer while another is closing. */
+const DWELL_MS = 200
+
+type PreviewApi = { show: (s: GalleryRow, card: HTMLElement, now?: boolean) => void; hide: (now?: boolean) => void }
+
+/**
+ * The preview a cover grows into. It starts ON the card (same place, size and
+ * picture, so the hand-off is invisible), then opens to its size; it shrinks
+ * back onto its card before it goes, and before another one opens. Its state
+ * is its own, so none of this re-renders the page.
+ */
+function PreviewLayer({
+  ref,
+  touch,
+  contentRef,
+  scrollRef,
+  href,
+  likesOf,
+  liked,
+  canLike,
+  onLike,
+  onFork,
+  onTag,
+}: {
+  ref: React.Ref<PreviewApi>
+  /** A phone or tablet: a tap opens it, a tap anywhere else lets it go. */
+  touch: boolean
+  contentRef: React.RefObject<HTMLDivElement | null>
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  href: (s: GalleryScene) => string
+  likesOf: (s: GalleryScene) => number
+  liked: (id: string) => boolean
+  canLike: boolean
+  onLike: (id: string) => void
+  onFork: (s: GalleryScene) => void
+  onTag: (tag: string) => void
+}) {
+  const t = useT()
+  const [cur, setCur] = useState<{ s: GalleryRow; card: HTMLElement } | null>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const dwell = useRef(0)
+  const leaving = useRef(0)
+  /** The transform that lays the preview on its card. */
+  const onCard = useRef("")
+  const open = useRef<HTMLElement | null>(null)
+
+  useEffect(
+    () => () => {
+      clearTimeout(dwell.current)
+      clearTimeout(leaving.current)
+    },
+    [],
+  )
+  useImperativeHandle(ref, () => {
+    // Back down onto its card, then gone.
+    const shut = () => {
+      const pop = popRef.current
+      open.current = null
+      if (!pop || !onCard.current) return setCur(null)
+      pop.setAttribute("data-closing", "")
+      pop.removeAttribute("data-open")
+      pop.style.transform = onCard.current
+      leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
+    }
+    return {
+      show: (s: GalleryRow, card: HTMLElement, now = false) => {
+        clearTimeout(dwell.current)
+        if (open.current === card) return clearTimeout(leaving.current)
+        // Another is open: it closes first, then this one grows.
+        const busy = open.current !== null
+        if (busy) {
+          clearTimeout(leaving.current)
+          shut()
+        }
+        dwell.current = window.setTimeout(() => {
+          clearTimeout(leaving.current)
+          open.current = card
+          setCur({ s, card })
+        }, busy ? CLOSE_MS : now ? 0 : DWELL_MS)
+      },
+      hide: (now = false) => {
+        clearTimeout(dwell.current)
+        clearTimeout(leaving.current)
+        if (!open.current) return
+        if (now) shut()
+        else leaving.current = window.setTimeout(shut, 120)
+      },
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const pop = popRef.current
+    const content = contentRef.current
+    if (!cur || !pop || !content) return
+    const r = cur.card.getBoundingClientRect()
+    const box = content.getBoundingClientRect()
+    const w = Math.min(window.innerWidth - 32, Math.max(360, r.width * 1.5))
+    const imgH = (w * 9) / 16
+    // Its cover centred on the card's, kept on screen.
+    const left = Math.max(16, Math.min(window.innerWidth - w - 16, r.left + r.width / 2 - w / 2))
+    const top = Math.max(72, r.top + r.height / 2 - imgH / 2)
+    onCard.current = `translate(${r.left - left}px, ${r.top - top}px) scale(${r.width / w})`
+    pop.style.width = `${w}px`
+    pop.style.left = `${left - box.left}px`
+    pop.style.top = `${top - box.top}px`
+    // Laid on the card first, with no motion, then let go to its own size.
+    pop.removeAttribute("data-closing")
+    pop.removeAttribute("data-open")
+    pop.style.transition = "none"
+    pop.style.transform = onCard.current
+    void pop.offsetWidth
+    pop.style.transition = ""
+    pop.style.transform = "none"
+    pop.setAttribute("data-open", "")
+    // Whole on screen: if its foot falls below the window, the page comes up.
+    const below = top + pop.offsetHeight + 16 - window.innerHeight
+    if (below > 0) scrollRef.current?.scrollBy({ top: below, behavior: "smooth" })
+  }, [cur, contentRef, scrollRef])
+
+  // On a phone a tap elsewhere lets it go: there is no pointer to leave it.
+  useEffect(() => {
+    if (!touch || !cur) return
+    const away = (e: PointerEvent) => {
+      const at = e.target as Element | null
+      if (popRef.current?.contains(at) || at?.closest?.("[data-card]")) return
+      open.current = null
+      setCur(null)
+    }
+    document.addEventListener("pointerdown", away)
+    return () => document.removeEventListener("pointerdown", away)
+  }, [touch, cur])
+
+  if (!cur) return null
+  const s = cur.s
+  const keep = () => clearTimeout(leaving.current)
+  const leave = () => {
+    clearTimeout(dwell.current)
+    leaving.current = window.setTimeout(() => {
+      const pop = popRef.current
+      open.current = null
+      if (!pop) return setCur(null)
+      pop.setAttribute("data-closing", "")
+      pop.removeAttribute("data-open")
+      pop.style.transform = onCard.current
+      leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
+    }, 120)
+  }
+  return (
+    <div
+      ref={popRef}
+      onMouseEnter={keep}
+      onMouseLeave={leave}
+      className="gallery-pop absolute z-20 overflow-hidden rounded-interior"
+    >
+      <Link href={href(s)} className="block aspect-video overflow-hidden">
+        {s.poster && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={s.poster} alt="" className="size-full object-cover object-[50%_20%]" />
+        )}
+      </Link>
+      <div data-pop-body className="px-3.5 pt-3 pb-3.5">
+        <div className="flex items-center gap-2">
+          <Button asChild size="sm" className="h-8 rounded-interior bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
+            <Link href={href(s)}>{t.gallery.open}</Link>
+          </Button>
+          {!s.displayOnly && (
+            <Button
+              variant="bare"
+              onClick={() => onFork(s)}
+              className="h-8 rounded-interior border border-foreground/50 px-4 text-xs font-medium text-foreground hover:bg-white/10"
+            >
+              {t.share.fork}
+            </Button>
+          )}
+          <LibraryLike likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
+          <VideoLink url={s.video} className="ml-auto h-7 px-2 text-2xs [&_svg]:size-3.5" />
+        </div>
+        <h3 className="mt-3 truncate text-sm font-medium text-foreground">{s.name}</h3>
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+          <AuthorLink name={s.author} at className="truncate text-foreground" />
+          <span>·</span>
+          <Stamp iso={s.createdAt} show="words" />
+        </div>
+        {s.description && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{s.description}</p>}
+        {(s.tags.length > 0 || s.displayOnly) && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {s.displayOnly && <DisplayOnlyTag />}
+            {[...new Set(s.tags)].map((tag) => (
+              <Button
+                key={tag}
+                variant="bare"
+                onClick={() => {
+                  open.current = null
+                  setCur(null)
+                  onTag(tag)
+                }}
+                className="rounded-full border border-line-strong px-2 py-0.5 text-2xs text-foreground hover:bg-white/10"
+              >
+                #{tag}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+/** How long each scene holds the spotlight. */
+const SPOT_MS = 8000
+
+/**
+ * The top of the page: the five trending scenes in turn, each crossfading in
+ * over the last, its name set over it in the cover's serif. Small covers at its foot say which and jump to one; a pointer
+ * resting on it holds the turn.
+ */
+function Spotlight({
+  feat,
+  phone,
+  likesOf,
+  liked,
+  canLike,
+  onLike,
+  onFork,
+  onEdit,
+  onRemove,
+  onTag,
+  href,
+}: {
+  feat: GalleryRow[]
+  phone: boolean
+  likesOf: (s: GalleryScene) => number
+  liked: (id: string) => boolean
+  canLike: boolean
+  onLike: (id: string) => void
+  onFork: (s: GalleryScene) => void
+  onEdit: (s: GalleryScene) => void
+  onRemove: (s: GalleryScene) => void
+  onTag: (tag: string) => void
+  href: (s: GalleryScene) => string
+}) {
+  const t = useT()
+  const [at, setAt] = useState(0)
+  const [held, setHeld] = useState(false)
+  const s = feat[Math.min(at, feat.length - 1)]
+  useEffect(() => {
+    if (held || feat.length < 2) return
+    const timer = window.setTimeout(() => setAt((i) => (i + 1) % feat.length), SPOT_MS)
+    return () => clearTimeout(timer)
+  }, [at, held, feat.length])
+  return (
+    <section
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
+      className="relative h-[min(56.25vw,80vh)] min-h-[28rem] overflow-hidden compact:h-[70vh]"
+    >
+      {feat.map((f, i) => (
+        <div key={f.id} data-on={i === at || undefined} className="gallery-slide absolute inset-0">
+          {f.poster && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={f.poster} alt="" decoding="async" className="size-full object-cover object-[50%_20%]" />
+          )}
+        </div>
+      ))}
+      {/* The side the type stands on, and the foot the rows rise over. */}
+      <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/80 via-black/35 via-40% to-transparent to-65%" />
+      <div aria-hidden className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black via-black/50 via-20% to-transparent" />
+      <div
+        key={s.id}
+        className="cover-enter absolute top-[42%] left-12 flex w-[min(68rem,72vw)] -translate-y-1/2 flex-col [text-shadow:var(--white-ink-shadow)] compact:top-auto compact:bottom-24 compact:left-4 compact:w-[calc(100%-2rem)] compact:translate-y-0"
+      >
+        <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{s.name}</h2>
+        <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground compact:text-2xs">
+          <AuthorAvatar name={s.author} image={s.authorImage} className="size-5 compact:size-4" />
+          <AuthorLink name={s.author} at className="truncate text-foreground select-text" />
+          <span>·</span>
+          <Stamp iso={s.createdAt} show="words" />
+        </div>
+        {s.description && <p className="mt-3 line-clamp-2 max-w-[34rem] text-xs leading-relaxed text-foreground select-text">{s.description}</p>}
+        {s.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {[...new Set(s.tags)].map((tag) => (
+              <Button
+                key={tag}
+                variant="bare"
+                onClick={() => onTag(tag)}
+                className="rounded-full border border-line-strong px-2 py-0.5 text-2xs text-foreground hover:bg-white/10"
+              >
+                #{tag}
+              </Button>
+            ))}
+          </div>
+        )}
+        <div className="mt-6 flex flex-wrap items-center gap-2.5 [text-shadow:none]">
+          <Button asChild size="sm" className="h-9 gap-2 rounded-interior bg-foreground px-5 text-xs font-medium text-background hover:bg-foreground/85">
+            {/* A real link: cmd-click still gets a new tab. */}
+            <Link href={href(s)}>{t.gallery.open}</Link>
+          </Button>
+          {!s.displayOnly && !phone && (
+            <Button variant="bare" onClick={() => onFork(s)} className="h-9 rounded-interior border border-foreground/50 px-5 text-xs font-medium text-foreground hover:bg-white/10">
+              {t.share.fork}
+            </Button>
+          )}
+          <LibraryLike large likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
+          <VideoLink url={s.video} className="h-9 px-3 text-xs [&_svg]:size-3.5" />
+          {s.mine && (
+            <>
+              <Button variant="bare" onClick={() => onEdit(s)} className="h-9 text-xs text-muted-foreground hover:text-foreground">
+                {t.gallery.editPublished}
+              </Button>
+              <Button variant="bare" onClick={() => onRemove(s)} className="h-9 text-xs text-muted-foreground hover:text-red-400">
+                {t.library.deletePublished}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+      {feat.length > 1 && (
+        <div className="absolute right-12 bottom-14 z-10 flex gap-2 compact:hidden">
+          {feat.map((f, i) => (
+            <Button
+              key={f.id}
+              variant="bare"
+              aria-label={f.name}
+              onClick={() => setAt(i)}
+              className={cn(
+                "block aspect-video w-24 overflow-hidden rounded-chip outline-offset-2 transition-[opacity,translate] duration-233",
+                i === at ? "-translate-y-0.5 opacity-100 outline-[1.5px] outline-foreground" : "opacity-45 outline-transparent hover:opacity-80",
+              )}
+            >
+              {f.poster && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={f.poster} alt="" loading="lazy" decoding="async" className="size-full object-cover object-[50%_20%]" />
+              )}
+            </Button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** A row of covers that scrolls sideways under its title. The title opens the
+ *  row whole; two small chevrons at the end of its line page it, shown only
+ *  when it runs past the screen. Built only once it nears the screen
+ *  (content-visibility), so a long page stays light. */
+function Row({ title, onMore, onScroll, children }: { title: string; onMore: () => void; onScroll: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState({ back: false, on: false })
   useEffect(() => {
@@ -1303,23 +1465,20 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
   }, [])
   const page = (dir: 1 | -1) => {
     const el = ref.current
-    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" })
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.9, behavior: "smooth" })
   }
   return (
-    // One slot of the shelf band, whatever the shelf holds.
-    <section className="relative h-[12.5rem] shrink-0 pt-3">
-      <div className="mb-1 flex items-center justify-between px-7 compact:px-4">
-        <h3 className="text-sm font-medium text-foreground">
-          {href ? (
-            <Link href={href} className="underline-offset-4 hover:underline">
-              {title}
-            </Link>
-          ) : (
-            title
-          )}
-        </h3>
+    <section className="mt-8 [contain-intrinsic-size:auto_16rem] [content-visibility:auto]">
+      <div className="flex items-center justify-between px-12 compact:px-4">
+        <h2>
+          <Button variant="bare" onClick={onMore} className="text-base font-semibold text-foreground underline-offset-4 hover:underline">
+            {title}
+          </Button>
+        </h2>
         {(more.back || more.on) && (
-          <span className="flex items-center gap-2 compact:hidden">
+          // Pulled out by the button's and the glyph's own margin, so the arrow
+          // ends where the title's padding begins at the other side.
+          <span className="-mr-1.5 flex items-center gap-2 compact:hidden">
             {([-1, 1] as const).map((dir) => (
               <Button
                 key={dir}
@@ -1328,7 +1487,7 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
                 tabIndex={-1}
                 disabled={dir < 0 ? !more.back : !more.on}
                 onClick={() => page(dir)}
-                className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground"
+                className="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground"
               >
                 {dir < 0 ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />}
               </Button>
@@ -1336,7 +1495,7 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
           </span>
         )}
       </div>
-      <div ref={ref} className="no-scrollbar flex gap-2.5 overflow-x-auto scroll-px-7 px-7 py-2.5 compact:px-4">
+      <div ref={ref} onScroll={onScroll} className="no-scrollbar flex gap-3 overflow-x-auto scroll-px-12 px-12 pt-3.5 pb-5 compact:gap-2.5 compact:px-4">
         {children}
       </div>
     </section>

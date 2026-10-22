@@ -848,21 +848,40 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   box-shadow: none !important;
 }
 
-/* The gallery's billboard: the scene in focus fills the page behind the type,
-   a touch dimmed, under a falloff at its left and foot, and arrives by fading up from a touch larger whenever the focus moves
-   (components/editor/scene-gallery). */
-@keyframes stage-arrive {
-  from {
-    opacity: 0;
-    scale: 1.03;
-  }
+/* The gallery (components/editor/scene-gallery), on the chrome's one motion
+   duration like everything else: the spotlight's scenes crossfade, and the
+   preview grows out of its card and back. Only transform and opacity move. */
+.gallery-slide {
+  opacity: 0;
+  transition: opacity var(--default-transition-duration) ease;
 }
-.stage-backdrop,
-.stage-backdrop-held {
-  filter: brightness(0.85);
+.gallery-slide[data-on] {
+  opacity: 1;
 }
-.stage-backdrop {
-  animation: stage-arrive var(--default-transition-duration) cubic-bezier(0.2, 0.8, 0.2, 1);
+/* Laid on its card (the transform the page sets), then let go to its size.
+   Solid: a card over the page, not paper over the scene. */
+.gallery-pop {
+  background: oklch(0.19 0.006 286);
+  transform-origin: 0 0;
+  box-shadow: 0 0 0 transparent;
+  transition:
+    transform var(--default-transition-duration) cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow var(--default-transition-duration) ease;
+}
+.gallery-pop[data-closing] {
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+.gallery-pop[data-open] {
+  box-shadow:
+    0 24px 60px oklch(0 0 0 / 0.6),
+    0 0 0 1px var(--chrome-line-strong);
+}
+.gallery-pop [data-pop-body] {
+  opacity: 0;
+  transition: opacity var(--default-transition-duration) ease;
+}
+.gallery-pop[data-open] [data-pop-body] {
+  opacity: 1;
 }
 
 /* Type on the canvas: crisp, in the cover's ink. */
@@ -972,8 +991,8 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   --text-display--line-height: 1;
   /* The same title on the gallery's billboard, where the scene fills the
      page: the display serif at its largest, and nowhere else. */
-  --text-billboard: 38px;
-  --text-billboard--line-height: 1.05;
+  --text-billboard: 52px;
+  --text-billboard--line-height: 1.04;
   /* The REZE DESIGN masthead, in the display serif, upright. */
   --text-masthead: 18px;
   --text-masthead--line-height: 1;

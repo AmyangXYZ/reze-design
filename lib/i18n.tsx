@@ -82,6 +82,7 @@ const en = {
     // plainly are, the word "scene" is the thing every tile already is.
     door: "Scene gallery",
     more: "Load more",
+    count: (n: number) => `${n} scenes`,
     loading: "Fetching scenes…",
     open: "Open",
     empty: "No scenes published yet.",
@@ -1235,6 +1236,7 @@ const zh: Dictionary = {
     back: "返回编辑器",
     door: "场景画廊",
     more: "加载更多",
+    count: (n: number) => `${n} 个场景`,
     loading: "正在获取场景…",
     open: "打开",
     empty: "还没有已发布的场景。",
