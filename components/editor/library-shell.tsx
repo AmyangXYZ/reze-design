@@ -542,7 +542,11 @@ function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boole
 /** The detail's actions: small words on their own line under what it is, so
  *  the name never shares its line with them. */
 export const DETAIL_ACTION =
-  "flex h-5 shrink-0 items-center gap-1 bg-transparent p-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
+  "flex h-5 shrink-0 items-center gap-1 bg-transparent p-0 has-[>svg]:px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
+/** A draft's Publish, alone in the middle of its detail: a hairline frame in
+ *  the ink, no fill. */
+export const DETAIL_OUTLINED =
+  "flex h-7 shrink-0 items-center gap-1.5 rounded-chip border border-line-strong bg-transparent px-3 has-[>svg]:px-3 text-xs font-normal text-foreground shadow-none hover:bg-white/10 [&_svg]:size-3.5"
 
 export function LibraryDock<T extends BrowseItem>({
   title,
@@ -654,6 +658,7 @@ export function LibraryDetail({
   description,
   actions,
   like,
+  aside,
 }: {
   name: string
   author: string
@@ -662,6 +667,9 @@ export function LibraryDetail({
   actions: React.ReactNode
   /** Its likes, and yours: a word among the actions. A draft has none. */
   like?: { count: number; liked: boolean; canLike: boolean; onToggle: () => void }
+  /** A draft's Publish, in the middle of the room its byline and description
+   *  would take. */
+  aside?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [clipped, setClipped] = useState(false)
@@ -700,22 +708,31 @@ export function LibraryDetail({
           </Button>
         )}
       </div>
-      {/* A draft is your own and unpublished: no maker to name, no likes. */}
-      <div className="flex h-5 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-        {!draft && <AuthorLink name={author} at className="truncate select-text" />}
-      </div>
-      {/* Two lines, and the rest on a click: the one place the dock may move. */}
-      <p
-        ref={para}
-        onClick={() => (open || clipped) && setOpen(!open)}
-        className={cn(
-          "mt-1 text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]",
-          open ? "" : "line-clamp-2 h-8",
-          (open || clipped) && "cursor-pointer hover:text-foreground",
-        )}
-      >
-        {description}
-      </p>
+      {draft && aside ? (
+        // A draft is your own and unpublished: no maker, no likes, nothing
+        // written about it yet. Its Publish stands in the middle of that
+        // room, which keeps the byline's and the description's height: as far
+        // from the name's type above as from the actions' below.
+        <div className="flex h-[3.25rem] min-w-0 items-center justify-center pt-1">{aside}</div>
+      ) : (
+        <>
+          <div className="flex h-5 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+            {!draft && <AuthorLink name={author} at className="truncate select-text" />}
+          </div>
+          {/* Two lines, and the rest on a click: the one place the dock may move. */}
+          <p
+            ref={para}
+            onClick={() => (open || clipped) && setOpen(!open)}
+            className={cn(
+              "mt-1 text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]",
+              open ? "" : "line-clamp-2 h-8",
+              (open || clipped) && "cursor-pointer hover:text-foreground",
+            )}
+          >
+            {description}
+          </p>
+        </>
+      )}
       <div className="mt-1.5 flex h-5 min-w-0 items-center justify-end gap-4">{actions}</div>
     </div>
   )

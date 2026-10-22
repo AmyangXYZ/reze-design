@@ -21,6 +21,7 @@ import {
 import { EffectPreview } from "@/components/editor/effect-preview"
 import {
   DETAIL_ACTION,
+  DETAIL_OUTLINED,
   LibraryDock,
   LibraryCards,
   LibraryDetail,
@@ -304,6 +305,29 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   }
             }
             description={builtinDescription("effect", selected, locale)}
+            aside={
+              selected.owner === "local" && (
+                <PublishButton
+                  kind="effect"
+                  defaultName={selected.name}
+                  defaultDescription={selected.description}
+                  defaultTags={selected.tags}
+                  payload={() => selected.payload}
+                  currentVisibility={selected.visibility}
+                  itemId={draftOrigin("effect", selected.id).sourceId ?? selected.id}
+                  forkedFromId={draftOrigin("effect", selected.id).forkedFromId}
+                  className={DETAIL_OUTLINED}
+                  onPublished={(item) => {
+                    // Promotion: the draft's content now lives on the server —
+                    // keeping the local copy would show the same thing twice.
+                    addCommunityItem(item)
+                    noteItemPublished(item.id)
+                    removeDraft(selected.id)
+                    onRenamed?.(selected.name, item.name)
+                  }}
+                />
+              )
+            }
             actions={
               <>
                 <Button variant="bare" onClick={() => toggle(selected)} className={DETAIL_ACTION}>
@@ -315,27 +339,6 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     <PenLine />
                     {t.lab.ctl.edit}
                   </Button>
-                )}
-                {selected.owner === "local" && (
-                  <PublishButton
-                    kind="effect"
-                    defaultName={selected.name}
-                    defaultDescription={selected.description}
-                    defaultTags={selected.tags}
-                    payload={() => selected.payload}
-                    currentVisibility={selected.visibility}
-                    itemId={draftOrigin("effect", selected.id).sourceId ?? selected.id}
-                    forkedFromId={draftOrigin("effect", selected.id).forkedFromId}
-                    className={DETAIL_ACTION}
-                    onPublished={(item) => {
-                      // Promotion: the draft's content now lives on the server —
-                      // keeping the local copy would show the same thing twice.
-                      addCommunityItem(item)
-                      noteItemPublished(item.id)
-                      removeDraft(selected.id)
-                      onRenamed?.(selected.name, item.name)
-                    }}
-                  />
                 )}
               </>
             }

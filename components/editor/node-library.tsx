@@ -9,6 +9,7 @@ import { PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DETAIL_ACTION,
+  DETAIL_OUTLINED,
   LibraryDock,
   LibraryCards,
   LibraryDetail,
@@ -326,6 +327,28 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
                   }
             }
             description={selected.description ? builtinDescription("graph", selected, locale) : undefined}
+            aside={
+              selected.owner === "local" && (
+                <PublishButton
+                  kind="graph"
+                  defaultName={selected.name}
+                  defaultDescription={selected.description}
+                  defaultTags={selected.tags}
+                  payload={() => selected.payload}
+                  currentVisibility={selected.visibility}
+                  itemId={draftOrigin("graph", selected.id).sourceId ?? selected.id}
+                  forkedFromId={draftOrigin("graph", selected.id).forkedFromId}
+                  className={DETAIL_OUTLINED}
+                  onPublished={(item) => {
+                    // Promotion: the draft's content now lives on the server —
+                    // keeping the local copy would show the same thing twice.
+                    addCommunityItem(item)
+                    noteItemPublished(item.id)
+                    removeDraft(selected.id)
+                  }}
+                />
+              )
+            }
             actions={
               <>
                 {onEdit && (
@@ -333,26 +356,6 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
                     <PenLine />
                     {t.lab.ctl.edit}
                   </Button>
-                )}
-                {selected.owner === "local" && (
-                  <PublishButton
-                    kind="graph"
-                    defaultName={selected.name}
-                    defaultDescription={selected.description}
-                    defaultTags={selected.tags}
-                    payload={() => selected.payload}
-                    currentVisibility={selected.visibility}
-                    itemId={draftOrigin("graph", selected.id).sourceId ?? selected.id}
-                    forkedFromId={draftOrigin("graph", selected.id).forkedFromId}
-                    className={DETAIL_ACTION}
-                    onPublished={(item) => {
-                      // Promotion: the draft's content now lives on the server —
-                      // keeping the local copy would show the same thing twice.
-                      addCommunityItem(item)
-                      noteItemPublished(item.id)
-                      removeDraft(selected.id)
-                    }}
-                  />
                 )}
               </>
             }
