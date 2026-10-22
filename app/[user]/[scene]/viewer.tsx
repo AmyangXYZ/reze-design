@@ -194,6 +194,8 @@ export function SceneViewer(props: ViewerProps) {
       className="cover fixed inset-0 overflow-hidden bg-background select-none"
       data-ink="dark"
       data-ui-hidden={uiHidden || undefined}
+      // The ground the cover's ink mixes into (globals.css, "The cover").
+      style={{ ["--scene-bg" as string]: scene?.state.settings.background.color ?? "#000" }}
     >
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
@@ -574,7 +576,7 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
             against a bright scene, and the scene stays the page. */}
         <Heart
           className={cn(
-            "text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] transition-colors",
+            "text-white [filter:var(--white-ink-line-shadow)] transition-colors",
             // In the card footer it sits beside a button; on the mobile rail it is
             // the only thing there and needs the presence.
             compact ? "size-[18px]" : "size-7",
@@ -582,7 +584,7 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
           )}
         />
       </Button>
-      <span className={cn("leading-none font-semibold text-foreground tabular-nums drop-shadow", compact ? "text-xs" : "text-sm")}>
+      <span className={cn("leading-none font-semibold text-foreground tabular-nums [text-shadow:var(--ink-shadow)]", compact ? "text-xs" : "text-sm")}>
         {like.count}
       </span>
     </div>

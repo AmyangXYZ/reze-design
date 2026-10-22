@@ -6951,7 +6951,7 @@ function Lab() {
       // in set it to itself, resolved to no model, and the panel could never be
       // opened again. Going through the RESOLVED model means a stale id falls
       // through to the first cast member instead of wedging.
-      else if (item.id === "materials") openMaterials(inspected?.id ?? primaryId)
+      else if (item.id === "materials") openMaterials(inspected?.id ?? primaryId ?? models[0]?.id ?? null)
       // Each opens exactly what it says. A new draft starts from the same
       // template the library's own New button uses, so the two doors lead to
       // one place.
@@ -8204,7 +8204,9 @@ function Lab() {
                             setOpenRow(null)
                             setDockGroup(null)
                           } else if (entry.id === "materials") {
-                            openMaterials(inspected?.id ?? cast[0]?.id ?? null)
+                            // The cast first, and a stage when there is no cast:
+                            // a stage's materials are dressed here too.
+                            openMaterials(inspected?.id ?? cast[0]?.id ?? models[0]?.id ?? null)
                             setOpenRow(null)
                             setDockGroup("materials")
                           } else if (entry.id === "cast" || entry.id === "clips" || entry.id === "music") {

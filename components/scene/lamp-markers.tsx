@@ -124,7 +124,7 @@ export function LampMarkers({
                 invisible without one — which is why every DCC outlines its
                 gizmos rather than trusting the colour alone. */}
             <Sun
-              className={cn("size-6 drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]", off && "text-muted-foreground")}
+              className={cn("size-6 [filter:var(--white-ink-line-shadow)]", off && "text-muted-foreground")}
               style={off ? undefined : { color: l.color }}
               fill="currentColor"
               strokeWidth={2.25}

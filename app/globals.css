@@ -311,17 +311,25 @@
   --foreground: oklch(1 0 0);
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.78 0 0);
-  --ink-shadow: 0 0 2px oklch(0 0 0 / 0.75), 0 1px 3px oklch(0 0 0 / 0.75);
-  --ink-line-shadow: drop-shadow(0 0 1px oklch(0 0 0 / 0.75)) drop-shadow(0 1px 1.5px oklch(0 0 0 / 0.75));
+  --ink-shadow: var(--white-ink-shadow);
+  --ink-line-shadow: var(--white-ink-line-shadow);
   --background: color-mix(in oklch, var(--scene-bg) 30%, oklch(0.12 0 0));
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
 }
-/* White type carries a dark shadow, so a stroke of the picture running
-   through a letter cannot take its edge: an edge and a drop at 0.75, and a
-   drawn line (a frame, a key's outline) the same as a filter,
-   --ink-line-shadow. Black type carries none: a shadow under black glyphs
-   only blurs them. Overlays reset it. */
+/* THE shadow white type and white marks carry over a picture, anywhere in
+   the app: the cover's white ink, the gallery's billboard, the viewer's
+   heart, a lamp's marker. One pair, text and drawn line, so nothing over a
+   picture is shadowed two ways. */
+:root {
+  --white-ink-shadow: 0 0 2px oklch(0 0 0 / 0.45), 0 1px 2px oklch(0 0 0 / 0.35);
+  --white-ink-line-shadow: drop-shadow(0 0 1px oklch(0 0 0 / 0.45)) drop-shadow(0 1px 1px oklch(0 0 0 / 0.35));
+}
+/* White type carries a soft dark shadow, so a stroke of the picture running
+   through a letter cannot take its edge: an edge at 0.45 and a short drop at
+   0.35, light enough not to read as a halo over a pale scene. A drawn line or
+   icon takes the same as a filter, --ink-line-shadow. Black type carries
+   none: a shadow under black glyphs only blurs them. Overlays reset it. */
 .cover .cover-type,
 .cover [data-ink-zone] {
   text-shadow: var(--ink-shadow);
@@ -334,17 +342,33 @@
   color: var(--ink-disabled);
   opacity: 1;
 }
+/* Greyed, it drops the shadow: a dark edge round grey type over a pale
+   picture is a smudge, and a control that cannot be used need not hold out
+   against the scene. */
+.cover :is(.cover-type, [data-ink-zone]) :is(:disabled, [aria-disabled="true"], [data-disabled]),
+.cover :is(.cover-type, [data-ink-zone]) :is(:disabled, [aria-disabled="true"], [data-disabled]) :is(*, svg) {
+  text-shadow: none;
+  filter: none;
+}
 /* The browser sets buttons and fields to no shadow; on the cover they are type. */
 .cover :is(.cover-type, [data-ink-zone]) :is(button, input, textarea, select) {
   text-shadow: inherit;
+}
+/* An icon is drawn, not set: it takes the line's shadow, so a row's buttons
+   hold against the picture as its words do. */
+.cover :is(.cover-type, [data-ink-zone]) svg {
+  filter: var(--ink-line-shadow);
 }
 /* A filled control is its own ground: the type on it carries no shadow. */
 .cover :is(.cover-type, [data-ink-zone]) :is(.bg-foreground, .bg-white, .bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400, .bg-red-400),
 .cover :is(.cover-type, [data-ink-zone]) :is(.bg-foreground, .bg-white, .bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400, .bg-red-400) * {
   text-shadow: none;
+  filter: none;
 }
-.cover [data-paper] {
+.cover [data-paper],
+.cover [data-paper] svg {
   text-shadow: none;
+  filter: none;
 }
 .cover [data-ink-zone] {
   color: var(--foreground);

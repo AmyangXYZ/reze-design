@@ -2,13 +2,17 @@
 
 // The cover's ink, read off the frame behind it (app/globals.css, "The cover"):
 // which side — black type or white — the picture behind all the ink zones
-// ([data-ink-zone]) under `main` calls for, ONE side for every zone, and each
-// zone's colour there; plus the toasts' corner. Read when what stands behind
-// the type changes (the backdrop, the frame's shape), never on a clock: a
-// reading waits for the GPU on iOS, and the camera moving is not a reason.
-// The editor and the scene viewer both set type over a live canvas.
+// ([data-ink-zone]) under `main` calls for, ONE side for every zone; plus the
+// toasts' corner. On a computer, once a second:
+// the pixels are read in a worker and nothing waits, and a scene's picture
+// moves on its own (an animated backdrop, the camera, the music). On a phone
+// or tablet, a reading waits for the GPU (iOS), so there is no clock: it reads
+// when what stands behind the type changes (the backdrop, the frame's shape),
+// a few times after, as slow effects and textures arrive, and once a touch
+// lets go. The editor and the scene viewer both set type over a live canvas.
 
 import { useEffect, useRef, type RefObject } from "react"
+import { isPhone } from "@/lib/device"
 
 export function useCoverInk(
   mainRef: RefObject<HTMLElement | null>,
@@ -92,7 +96,7 @@ export function useCoverInk(
           read()
         }, 0)
       }
-      timers = [250, 1500].map((ms) => window.setTimeout(read, ms))
+      timers = [250, 1500, 4000, 10000].map((ms) => window.setTimeout(read, ms))
     }
     lookRef.current = look
     // The frame changing shape (an export's aspect, the window) moves what
@@ -104,6 +108,16 @@ export function useCoverInk(
       if (!document.hidden) look()
     }
     document.addEventListener("visibilitychange", shown)
+    const phone = isPhone()
+    // A computer keeps the ink with the picture; a phone reads once a gesture
+    // has let go of the camera.
+    const clock = phone ? 0 : window.setInterval(read, 1000)
+    let rest = 0
+    const letGo = () => {
+      clearTimeout(rest)
+      rest = window.setTimeout(look, 400)
+    }
+    if (phone) canvas.addEventListener("pointerup", letGo)
     // The frame, shrunk on the GPU; the stack composed over it; the pixels
     // from the worker. Nothing here waits for the GPU.
     const sample = async (): Promise<Uint8ClampedArray | null> => {
@@ -163,14 +177,14 @@ export function useCoverInk(
         if (over < (r.width * r.height) / 2) {
           const cells = Math.max(1, Math.round(((r.width * r.height) / (cr.width * cr.height)) * W * H))
           for (let k = 0; k < cells; k++) all.push(0)
-          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
           continue
         }
         const qx0 = Math.floor(((x0 - cr.left) / cr.width) * W)
         const qx1 = Math.ceil(((x1 - cr.left) / cr.width) * W)
         const qy0 = Math.floor(((y0 - cr.top) / cr.height) * H)
         const qy1 = Math.ceil(((y1 - cr.top) / cr.height) * H)
-        const px: { l: number; i: number }[] = []
+        // Nothing is written to the zone but its side, and only when that
+        // changes: a reading over a moving picture must not restyle the cover.
         for (let qy = qy0; qy < qy1; qy++) {
           for (let qx = qx0; qx < qx1; qx++) {
             const i = (qy * W + qx) * 4
@@ -178,27 +192,10 @@ export function useCoverInk(
             // scene's own background already speaks for.
             if (d[i + 3] < 128) continue
             const y = (0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])) * dim
-            px.push({ l: y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y, i })
+            all.push(y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y)
+            read = true
           }
         }
-        if (px.length === 0) continue
-        read = true
-        px.sort((a, b) => a.l - b.l)
-        for (const p of px) all.push(p.l)
-        // The tint from the middle half too, so the highlights do not colour it.
-        let rr = 0
-        let gg = 0
-        let bb = 0
-        const lo = px.length >> 2
-        const hi = Math.max(lo + 1, (px.length * 3) >> 2)
-        for (let k = lo; k < hi; k++) {
-          const i = px[k].i
-          rr += d[i]
-          gg += d[i + 1]
-          bb += d[i + 2]
-        }
-        const n = hi - lo
-        el.style.setProperty("--scene-bg", `rgb(${Math.round(rr / n)} ${Math.round(gg / n)} ${Math.round(bb / n)})`)
       }
       // The type stands on what MOST of the area is, so it is judged by the
       // median lightness (L*, as the eye sees it), not the mean: a few big stars
@@ -256,6 +253,9 @@ export function useCoverInk(
       clearTimeout(giveUp)
       resized.disconnect()
       document.removeEventListener("visibilitychange", shown)
+      clearInterval(clock)
+      clearTimeout(rest)
+      canvas.removeEventListener("pointerup", letGo)
       for (const t of timers) clearTimeout(t)
       clearTimeout(leadTimer)
     }

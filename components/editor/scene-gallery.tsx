@@ -1035,7 +1035,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                 key={`spread:${focus.id}`}
                 // White type with the cover's soft dark edge on every
                 // character, so a bright picture cannot take it.
-                className="cover-enter absolute top-[22%] left-16 flex [text-shadow:0_0_2px_oklch(0_0_0/0.75),0_1px_3px_oklch(0_0_0/0.75)] [&_button]:[text-shadow:inherit] w-[min(48rem,55vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
+                className="cover-enter absolute top-[22%] left-16 flex [text-shadow:var(--white-ink-shadow)] [&_button]:[text-shadow:inherit] [&_svg]:[filter:var(--white-ink-line-shadow)] w-[min(48rem,55vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
               >
                 <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{focus.name}</h2>
                 <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground uppercase compact:mt-3 compact:text-2xs">
