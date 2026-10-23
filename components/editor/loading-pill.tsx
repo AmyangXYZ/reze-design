@@ -22,7 +22,8 @@ export function LoadingPill({ label }: { label?: string }) {
           movement instead of the words. `tabular-nums` makes every digit the
           same width; useLoadingLabel pads the volatile numbers so their digit
           COUNT cannot change the width either. */}
-      <div className="flex max-w-[90vw] items-center justify-center gap-2.5 rounded-full border border-line-strong bg-surface-raised px-4 py-2 text-xs text-muted-foreground tabular-nums">
+      {/* Paper, in the ink's opposite, like every sheet on the cover. */}
+      <div data-paper="auto" className="flex max-w-[90vw] items-center justify-center gap-2.5 rounded-full border border-line-strong bg-surface px-4 py-2 text-xs text-muted-foreground tabular-nums">
         <span className="size-2 shrink-0 animate-pulse rounded-full bg-blue-400" />
         <span className="truncate">{label ?? t.editor.loadingScene}</span>
       </div>
@@ -57,7 +58,7 @@ export function LoadError({ error, failure, onRetry }: { error: string; failure:
         : [d.serverTitle, d.server(status)]
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center px-4">
-      <div className="flex max-w-md flex-col items-center gap-3 rounded-surface border border-line-strong bg-surface-raised p-4 text-center">
+      <div data-paper="auto" className="flex max-w-md flex-col items-center gap-3 rounded-surface border border-line-strong bg-surface p-4 text-center">
         <div className="text-sm font-medium text-foreground">{title}</div>
         <p className="text-xs text-muted-foreground">{body}</p>
         {onRetry && (

@@ -27,5 +27,7 @@ export function layPop(el: HTMLElement) {
   const side = paperSide(opener())
   if (!side) return
   el.dataset.paper = side
+  // Re-laid when the cover's ink turns (hooks/use-cover-ink).
+  el.dataset.paperLaid = ""
   el.dataset.paperAt = "pop"
 }

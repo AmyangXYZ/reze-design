@@ -598,6 +598,7 @@ export function LibraryDock<T extends BrowseItem>({
     <section
       data-edge="right"
       data-ink-zone
+      data-backing-top="flush"
       style={{ zIndex: z }}
       onPointerDownCapture={onPointerDownCapture}
       onFocusCapture={onFocusCapture}

@@ -379,22 +379,40 @@
 .cover :is(.cover-type, [data-ink-zone]):is(.transition, .transition-colors, [class*="transition-[color"]) {
   transition-property: background-color, border-color, opacity, box-shadow, transform, translate, scale;
 }
-/* The BACKING (hooks/use-panel-backing): a black overlay behind each of the
-   cover's columns, as deep as the person set it in the palette; none by
-   default. Behind the column's own content, so the type above is untouched,
-   and counted by the ink sampler as darkening what the type stands on. */
+/* The BACKING (hooks/use-panel-backing): an overlay behind each of the
+   cover's columns and its top row, as deep as the person set it in the
+   palette; none by default. Laid like paper, in the ink's opposite: black
+   under white type, white under black. Behind the column's own content, so
+   the type above is untouched. */
 .cover .dock-backing {
   isolation: isolate;
 }
 .cover .dock-backing::before {
   content: "";
   position: absolute;
-  inset: var(--backing-inset, -0.5rem -1rem calc(var(--shelf-spare, 0px) - 0.5rem) 0.5rem);
+  inset: var(--backing-inset, var(--backing-top, -0.5rem) -0.75rem calc(var(--shelf-spare, 0px) - 0.5rem) 0.5rem);
   z-index: -1;
   border-radius: var(--radius-surface);
-  background: rgb(0 0 0 / var(--cover-backing, 0));
+  background: rgb(var(--backing-rgb, 0 0 0) / var(--cover-backing, 0));
   pointer-events: none;
   transition: background-color var(--default-transition-duration) ease;
+}
+.cover[data-ink="dark"],
+.cover [data-ink-zone][data-ink="dark"] {
+  --backing-rgb: 255 255 255;
+}
+.cover[data-ink="light"],
+.cover [data-ink-zone][data-ink="light"] {
+  --backing-rgb: 0 0 0;
+}
+/* A column that starts right under the top row (the library, render): its
+   backing starts there too, level with the left column's, and its content
+   steps down the left column's 12px while there is a backing to stand in. */
+.cover .dock-backing[data-backing-top="flush"] {
+  --backing-top: 0px;
+}
+.cover[data-backed] .dock-backing[data-backing-top="flush"] {
+  padding-top: 0.75rem;
 }
 /* On a backing, a column's hairline would stand outside it: the backing's
    edge is the division. */
@@ -402,9 +420,18 @@
   display: none;
 }
 /* The left column is as tall as what it holds; its backing starts above the
-   title (under the top row, which stays bare) and ends below the pane. */
-.cover aside.dock-backing {
-  --backing-inset: 4rem 0 3.25rem 0.75rem;
+   title (under the top row's bar) and ends below the pane. The
+   right edge's columns (AI, render) are asides too, and keep the default. */
+.cover aside.dock-backing:not([data-edge="right"]) {
+  --backing-inset: 4rem 0 3.25rem 1rem;
+}
+/* The AI door: a pill of its own, its right edge level with the bar's. */
+.cover .dock-backing[data-backing="pill"] {
+  --backing-inset: 0 -0.75rem 0 -0.75rem;
+}
+/* The top row: one bar across the cover, 16px in from each side. */
+.cover [data-edge="top"].dock-backing {
+  --backing-inset: -0.25rem -0.5rem -0.25rem -0.75rem;
 }
 /* PAPER: an overlay laid on the cover — a sheet in the colour opposite its
    type, dense enough that the scene and the panes under it never read through:

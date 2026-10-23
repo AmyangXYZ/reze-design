@@ -22,8 +22,15 @@ export function useCoverInk(
   backdrop: string,
   /** True while the reading should rest (an export renders). */
   pausedRef?: RefObject<boolean>,
+  /** The ink the person holds (hooks/use-ink-choice), over what the scene reads. */
+  held: "dark" | "light" | null = null,
 ): void {
   const lookRef = useRef<(() => void) | null>(null)
+  const heldRef = useRef(held)
+  useEffect(() => {
+    heldRef.current = held
+    lookRef.current?.()
+  }, [held])
   useEffect(() => {
     const main = mainRef.current
     const canvas = canvasRef.current
@@ -161,8 +168,6 @@ export function useCoverInk(
       // and every zone takes its answer. Zones that each read their own patch
       // set the top row black and the title white over a checkered floor.
       const zones = [...main.querySelectorAll<HTMLElement>("[data-ink-zone]")]
-      // The docks' backing darkens what the type stands on (hooks/use-panel-backing).
-      const dim = 1 - (parseFloat(getComputedStyle(main).getPropertyValue("--cover-backing")) || 0)
       const all: number[] = []
       for (const el of zones) {
         const r = el.getBoundingClientRect()
@@ -191,7 +196,7 @@ export function useCoverInk(
             // A transparent pixel shows what is under the canvas, which the
             // scene's own background already speaks for.
             if (d[i + 3] < 128) continue
-            const y = (0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])) * dim
+            const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
             all.push(y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y)
             read = true
           }
@@ -200,15 +205,22 @@ export function useCoverInk(
       // The type stands on what MOST of the area is, so it is judged by the
       // median lightness (L*, as the eye sees it), not the mean: a few big stars
       // or a lamp on a black sky must not turn the ink dark over black.
-      if (all.length) {
+      // The docks' backing is laid in the ink's opposite (globals.css, "The
+      // backing"), so it only adds to what the scene already decided.
+      if (all.length || heldRef.current) {
         all.sort((a, b) => a - b)
         const mid = all[all.length >> 1]
         const was = zones[0]?.dataset.ink ?? main.dataset.ink
-        const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
+        const ink = heldRef.current ?? (was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light")
         for (const el of zones) if (el.dataset.ink !== ink) el.dataset.ink = ink
         // And on <main>, which a zone not yet read inherits: a dock that opens
         // between readings comes up in this ink rather than the page's guess.
-        if (main.dataset.ink !== ink) main.dataset.ink = ink
+        if (main.dataset.ink !== ink) {
+          main.dataset.ink = ink
+          // Paper laid from the cover (a dialog, the palette, a menu) turns
+          // with it: the sheet is always the type's opposite.
+          for (const el of document.querySelectorAll<HTMLElement>("[data-paper-laid]")) el.dataset.paper = ink === "light" ? "dark" : "light"
+        }
       }
       // The chrome comes up once its ink has been read off a real frame, so
       // it never shows in a guessed ink first (globals.css, "The cover").
@@ -235,7 +247,20 @@ export function useCoverInk(
           if (ls.length) mid = ls[ls.length >> 1]
         }
         const was = root.dataset.toastPaper
-        const side = mid === null ? "dark" : was === "light" ? (mid < 44 ? "dark" : "light") : mid > 54 ? "light" : "dark"
+        const held = heldRef.current
+        const side = held
+          ? held === "dark"
+            ? "light"
+            : "dark"
+          : mid === null
+            ? "dark"
+            : was === "light"
+              ? mid < 44
+                ? "dark"
+                : "light"
+              : mid > 54
+                ? "light"
+                : "dark"
         if (was !== side) root.dataset.toastPaper = side
       }
 

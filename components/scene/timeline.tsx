@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
 import { useClipActions, useClipDocRef, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
@@ -406,13 +407,17 @@ function TransportFrameSlider({
         }}
         className={cn(
           "relative h-5 w-16 shrink-0 touch-none",
-          disabled ? "pointer-events-none opacity-15" : "cursor-grab",
+          disabled ? "pointer-events-none opacity-50" : "cursor-pointer",
         )}
       >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
+        {/* The hairline slider's look (components/ui/slider): a 1px rule, the
+            played part in the ink, a 2×12 tick. The tick and the fill are
+            moved by playback without a render (the draw wrapper in Timeline). */}
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line-strong" />
+        <div className="pointer-events-none absolute top-1/2 left-0 h-px -translate-y-1/2 bg-foreground" style={{ width: `${pct}%` }} />
         <div
           ref={thumbRef}
-          className="pointer-events-none absolute top-1/2 size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-secondary box-border"
+          className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
           style={{ left: `${pct}%` }}
         />
       </div>
@@ -445,81 +450,19 @@ function ZoomRuler({
   onChange: (v: number) => void
 }) {
   const dict = useT()
-  const trackRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-  const span = max - min
-
-  const setFromClientX = useCallback(
-    (clientX: number) => {
-      const el = trackRef.current
-      if (!el) return
-      const rect = el.getBoundingClientRect()
-      const s = max - min
-      const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-      if (s <= 0) {
-        onChange(min)
-        return
-      }
-      const raw = min + t * s
-      const snap = (v: number) => (s < 2 ? Math.round(v * 100) / 100 : Math.round(v * 2) / 2)
-      onChange(Math.max(min, Math.min(max, snap(raw))))
-    },
-    [min, max, onChange],
-  )
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      if (!dragging.current) return
-      setFromClientX(e.clientX)
-    }
-    const onUp = () => {
-      dragging.current = false
-    }
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
-    window.addEventListener("pointercancel", onUp)
-    return () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-      window.removeEventListener("pointercancel", onUp)
-    }
-  }, [setFromClientX])
-
-  const pct = span > 0 ? ((value - min) / span) * 100 : 50
-  const snapVal = (v: number) => (span < 2 ? Math.round(v * 100) / 100 : Math.round(v * 2) / 2)
-  const nudgeDelta = span < 2 ? 0.05 : 0.5
-  const nudge = (dir: -1 | 1) =>
-    onChange(Math.max(min, Math.min(max, snapVal(value + dir * nudgeDelta))))
-
+  // Fine steps on a short range (value zoom), half-frames on a long one.
+  const step = max - min < 2 ? 0.01 : 0.5
   return (
-    <div className="flex shrink-0 select-none items-center gap-1 text-muted-foreground">
-      <div
-        ref={trackRef}
-        role="slider"
-        aria-label={dict.lab.timeline.zoom}
-        aria-valuemin={min}
-        aria-valuemax={max}
-        aria-valuenow={value}
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft" || e.key === "ArrowDown") nudge(-1)
-          if (e.key === "ArrowRight" || e.key === "ArrowUp") nudge(1)
-        }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return
-          dragging.current = true
-          setFromClientX(e.clientX)
-          e.preventDefault()
-        }}
-        className="relative h-4 w-12 shrink-0 cursor-grab touch-none"
-      >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
-        <div
-          className="pointer-events-none absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-transparent box-border"
-          style={{ left: `${pct}%` }}
-        />
-      </div>
-    </div>
+    <Slider
+      variant="hairline"
+      min={min}
+      max={max}
+      step={step}
+      value={[Math.max(min, Math.min(max, value))]}
+      onValueChange={([v]) => onChange(v)}
+      aria-label={dict.lab.timeline.zoom}
+      className="w-14 shrink-0"
+    />
   )
 }
 
@@ -2892,7 +2835,11 @@ export function Timeline({
       const thumb = thumbElRef.current
       if (thumb) {
         const total = fcRef.current
-        thumb.style.left = `${total > 0 ? Math.max(0, Math.min(100, (frame / total) * 100)) : 0}%`
+        const at = `${total > 0 ? Math.max(0, Math.min(100, (frame / total) * 100)) : 0}%`
+        thumb.style.left = at
+        // The played fill, the thumb's sibling just before it.
+        const fill = thumb.previousElementSibling as HTMLElement | null
+        if (fill) fill.style.width = at
       }
       innerDrawRef.current?.(frame)
     }
@@ -3281,13 +3228,9 @@ export function Timeline({
         ))}
         <Button
           type="button"
-          variant="secondary"
-          size="sm"
-          className={cn(
-            "flex size-4 shrink-0 items-center justify-center overflow-hidden p-0",
-            "focus-visible:outline-none focus-visible:ring-0",
-            "bg-transparent"
-          )}
+          variant="bare"
+          // In the ink, like the steps beside it.
+          className="flex size-4 shrink-0 items-center justify-center overflow-hidden p-0 text-foreground"
           onClick={() => setPlaying((p) => !p)}
         >
           {playing ? (

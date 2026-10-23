@@ -160,6 +160,8 @@ export function CommandPalette({
         // window — centring reads as an alert.
         overlay={!anchor}
         data-paper={paper?.side}
+        // Re-laid when the cover's ink turns (hooks/use-cover-ink).
+        data-paper-laid={paper ? "" : undefined}
         style={
           anchor
             ? ({

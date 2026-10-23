@@ -83,6 +83,8 @@ function layPaper(el: HTMLElement, at: "bar" | "center" | "page" | "column") {
   }
   const zone = bar.closest<HTMLElement>("[data-ink]")
   el.dataset.paper = zone?.dataset.ink === "light" ? "dark" : "light"
+  // Re-laid when the cover's ink turns (hooks/use-cover-ink).
+  el.dataset.paperLaid = ""
   el.dataset.paperAt = at
   // A question that follows something else (an upload) is asked in the middle,
   // on the same paper; only what the search box opens grows out of it.

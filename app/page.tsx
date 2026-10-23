@@ -160,6 +160,7 @@ import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useZOrder } from "@/hooks/use-z-order"
 import { BACKING_MAX, usePanelBacking } from "@/hooks/use-panel-backing"
+import { useInkChoice } from "@/hooks/use-ink-choice"
 import { DEFAULT_SCENE_DOC, defaultScene, demoScene, EMPTY_SCENE } from "@/lib/default-scene"
 import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
 import { useBuiltinsWhole } from "@/hooks/use-builtins"
@@ -1301,7 +1302,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Blend,
       label: l.cmd.backing,
       altLabels: [alt.cmd.backing],
-      keywords: ["ui", "transparency", "transparent", "opacity", "background", "panel", "dock", "backing", "legibility", "界面", "透明", "透明度", "不透明度", "底色", "背景", "面板"],
+      keywords: ["ui", "transparency", "transparent", "opacity", "background", "panel", "dock", "backing", "legibility", "ink", "black", "white", "界面", "透明", "透明度", "不透明度", "底色", "背景", "面板", "字色", "黑", "白"],
     },
     // Deliberately palette-only: outlines are a preference most scenes never
     // touch, and a dock row for them would cost every user attention to serve a
@@ -5664,6 +5665,11 @@ function Lab() {
   const { locale, setLocale } = useI18n()
   const [langOpen, setLangOpen] = useState(false)
   const [backing, setBacking] = usePanelBacking()
+  const [inkChoice, setInkChoice] = useInkChoice()
+  // The left column folded to its title. Only while there is a backing to
+  // show it on: with none, the column is always whole.
+  const [columnFold, setColumnFold] = useState(false)
+  const columnFolded = backing > 0 && columnFold
   const [backingOpen, setBackingOpen] = useState(false)
   const [styleOpen, setStyleOpen] = useState(false)
   const pendingLocale = useRef<Locale | null>(null)
@@ -7301,11 +7307,11 @@ function Lab() {
       JSON.stringify(settings.grade),
       stages.map((s) => s.id).join(","),
       models.length,
-      backing,
       frameX,
       frameY,
     ].join("|"),
     exportingRef,
+    inkChoice === "auto" ? null : inkChoice,
   )
 
   return (
@@ -7434,7 +7440,7 @@ function Lab() {
       {mounted && (
         // Type on the canvas, so its buttons wear the cover's look.
         <Cover>
-        <div data-edge="top" data-ink-zone className="pointer-events-none absolute top-5 right-6 left-7 flex items-start gap-2">
+        <div data-edge="top" data-ink-zone className="dock-backing pointer-events-none absolute top-5 right-6 left-7 flex items-start gap-2">
           {/* The cover's top row: the wordmark (it is the file menu) and the
               ways out on the left, Export and Share on the right. */}
           <div className="cover-type pointer-events-auto flex h-8 items-center gap-7 text-xs">
@@ -7681,8 +7687,9 @@ function Lab() {
           <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3.5">
             <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">{t.lab.cmd.backing}</DialogTitle>
           </DialogHeader>
-          {/* Live: the docks behind the dialog deepen as it moves. */}
+          {/* Live: the cover behind the dialog changes as these move. */}
           <div className="relative flex items-center gap-3 border-t border-line px-3.5 py-3">
+            <span className="w-14 shrink-0 text-xs text-muted-foreground">{t.lab.cmd.opacity}</span>
             <Slider
               value={[backing]}
               min={0}
@@ -7693,6 +7700,25 @@ function Lab() {
               className="flex-1"
             />
             <span className="w-9 shrink-0 text-right font-mono text-2xs tabular-nums">{backing ? `${backing}%` : t.lab.cmd.backingOff}</span>
+          </div>
+          <div className="flex items-center gap-3 border-t border-line px-3.5 py-3">
+            <span className="w-14 shrink-0 text-xs text-muted-foreground">{t.lab.cmd.ink}</span>
+            <div className="flex gap-4">
+              {(["auto", "dark", "light"] as const).map((c) => (
+                <Button
+                  key={c}
+                  variant="bare"
+                  aria-pressed={inkChoice === c}
+                  onClick={() => setInkChoice(c)}
+                  className={cn(
+                    "h-6 border-b text-xs",
+                    inkChoice === c ? "border-blue-400 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.lab.cmd.inkChoice[c]}
+                </Button>
+              ))}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -8227,17 +8253,30 @@ function Lab() {
             onFocusCapture={dockZ.onFocusCapture}
           >
             <div data-ink-zone className="pointer-events-auto mt-14 pr-7">
-              <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1" />
+              <div className="flex items-start gap-2">
+                <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1 min-w-0" />
+                {backing > 0 && (
+                  <Button
+                    variant="bare"
+                    aria-label={columnFolded ? t.lab.cmd.unfold : t.lab.cmd.fold}
+                    aria-expanded={!columnFolded}
+                    onClick={() => setColumnFold((f) => !f)}
+                    className="mt-2 -mr-4 ml-auto flex size-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                  >
+                    {columnFolded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+                  </Button>
+                )}
+              </div>
               {/* The byline: who made it (the account, which is also its menu) and
                   the day — a cover's credit and issue date. */}
-              <p className="mt-2 flex items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+              <p className={cn("mt-2 flex items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase", columnFolded && "hidden")}>
                 <AccountButton byline onOpenLibrary={openForAccount} />
                 <span>·</span>
                 <span>{new Intl.DateTimeFormat(uiLocale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date())}</span>
               </p>
             </div>
 
-              <div data-ink-zone className="mt-10 flex min-h-0 flex-1 items-start">
+              <div data-ink-zone className={cn("mt-10 flex min-h-0 flex-1 items-start", columnFolded && "hidden")}>
                 <nav
                   aria-label={t.lab.index}
                   className="pointer-events-auto cover-enter flex shrink-0 flex-col gap-0.5"
@@ -10377,12 +10416,13 @@ function Lab() {
           variant="bare"
           onClick={openAgent}
           aria-label={t.lab.agent.title}
+          data-backing="pill"
           tabIndex={agentOpen || exportOpen || shareOpen ? -1 : undefined}
           aria-hidden={agentOpen || exportOpen || shareOpen || libraryUp || undefined}
           data-edge="right"
           className={cn(
             // The mark and "AI" set as type on the canvas, like the console.
-            "pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
+            "dock-backing pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
             "cover-type top-[calc(5.75rem+min(16rem,50%-5rem))] right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
             "transition-[opacity,scale,visibility,background-color,color] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
             (agentOpen || exportOpen || shareOpen || libraryUp) && "invisible scale-110 opacity-0",
@@ -10448,6 +10488,7 @@ function Lab() {
         // where the art director stands when it is open (one at a time).
         <aside
           data-edge="right"
+          data-backing-top="flush"
           className={cn(
             "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-6 text-xs",
             "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
