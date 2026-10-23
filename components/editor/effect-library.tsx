@@ -68,6 +68,9 @@ type LibraryProps = {
   onRemove: (id: string) => void
   /** The effect chosen in the Effect pane beside the library: shown when it changes. */
   focusId?: string | null
+  /** The effect last picked from the dock's tabs: the shelf scrolls to it
+   *  when it changes while the library is open. */
+  revealId?: string | null
   /** An effect was picked here (a click, or a right-click for its menu): the
    *  pane beside it chooses the same one when the scene wears it. */
   onFocus?: (id: string) => void
@@ -90,7 +93,7 @@ const appliedById = (applied: AppliedEffect[], id: string | undefined) => applie
 const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): AppliedEffect | null =>
   selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
 
-function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null, onFocus }: LibraryProps) {
+function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null, revealId = null, onFocus }: LibraryProps) {
   const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
@@ -110,6 +113,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     if (added) setSelectedId(added.id)
   }
 
+  // Opening never scrolls the shelf; a tab picked in the dock afterwards does.
+  const [openedOn] = useState(revealId)
   const [seenFocus, setSeenFocus] = useState(focusId)
   if (focusId !== seenFocus) {
     setSeenFocus(focusId)
@@ -360,7 +365,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           browse={browse}
           selectedId={selectedId}
           // The pane's effect is brought into view, as the pane changes it.
-          reveal={focusId}
+          reveal={revealId === openedOn ? null : revealId}
           onSelect={pick}
           onActivate={toggle}
           meta={meta}

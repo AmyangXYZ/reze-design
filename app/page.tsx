@@ -3269,6 +3269,8 @@ function Lab() {
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
+  // The effect last picked from the dock's tabs, for the library to scroll to.
+  const [effectReveal, setEffectReveal] = useState<string | null>(null)
   /** Patch one applied effect's timing, dials or targets, by uid. */
   const patchEffect = useCallback(
     (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params" | "models">>) => {
@@ -7979,6 +7981,7 @@ function Lab() {
         applied={bgEffects}
         // The effect chosen in the pane beside it is the one it shows.
         focusId={effectFx?.id ?? null}
+        revealId={effectReveal}
         // ...and the one picked here is the one the pane chooses, when worn.
         onFocus={(id) => {
           const fx = bgEffects.find((e) => e.id === id)
@@ -9097,7 +9100,13 @@ function Lab() {
                     // FIRST (effectsTopFirst); the chosen one's controls sit
                     // under the line, as Camera's do.
                     effectFx ? (
-                      <Tabs value={effectFxUid} onValueChange={setSelectedEffect}>
+                      <Tabs
+                        value={effectFxUid}
+                        onValueChange={(uid) => {
+                          setSelectedEffect(uid)
+                          setEffectReveal(bgEffects.find((e) => e.uid === uid)?.id ?? null)
+                        }}
+                      >
                         <TabsList className="-mt-1 mb-2 w-full">
                           {effectsTopFirst.map((e) => (
                             <TabsTrigger key={e.uid ?? e.id} value={e.uid ?? ""} className="min-w-0">
