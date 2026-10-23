@@ -310,7 +310,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 "max-w-full truncate rounded-chip border px-2 py-0.5 text-2xs transition-colors",
                 m.active
                   ? "border-blue-400/40 bg-blue-400/10 text-foreground"
-                  : "border-line-strong text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                  : "border-line-strong text-muted-foreground hover:bg-white/10 hover:text-foreground",
               )}
             >
               {m.file.replace(/\.pmx$/i, "")}
@@ -340,7 +340,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           variant={cover ? "ghost" : "outline"}
           size="xs"
           onClick={() => setRenaming(onCreateGroup())}
-          className={cover ? COVER_ACTION : "min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"}
+          className={cover ? COVER_ACTION : "min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/10 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"}
         >
           {/* First to give up room. Truncating a label whose glyph still says
               "folder, plus" costs less than pushing the Library door off-panel. */}
@@ -360,7 +360,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               "shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
               cover
                 ? "border-0 bg-transparent shadow-none hover:bg-transparent"
-                : "border-line-strong bg-surface-raised hover:bg-white/5",
+                : "border-line-strong bg-surface-raised hover:bg-white/10",
               looksSaved ? (cover ? "text-foreground" : "text-blue-400") : "text-muted-foreground hover:text-foreground",
             )}
           >

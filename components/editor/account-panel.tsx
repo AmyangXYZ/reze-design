@@ -466,7 +466,7 @@ export function AccountButton({
     <Button
       variant="ghost"
       size="icon"
-      className={cn("rounded-chip hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
+      className={cn("rounded-chip hover:bg-white/10 hover:text-foreground", asHeader ? "size-8" : "size-7")}
       aria-label={t.account.label}
     >
       {/* A shade larger than the outline icon — a photo needs more area than a

@@ -612,7 +612,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground disabled:opacity-40"
+          className="size-7 shrink-0 rounded-full hover:bg-white/10 hover:text-foreground disabled:opacity-40"
           disabled={!hasClip}
           onClick={toggle}
         >

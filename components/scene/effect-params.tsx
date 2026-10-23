@@ -126,7 +126,7 @@ export function EffectParams({
                 // text, muted when it is off. One way to say "these are the ones"
                 // in this chrome.
                 className={cn(
-                  "h-6 w-full justify-start gap-2 rounded-interior px-1.5 text-xs font-normal hover:bg-white/5",
+                  "h-6 w-full justify-start gap-2 rounded-interior px-1.5 text-xs font-normal hover:bg-white/10",
                   on(m.id) ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground",
                 )}
               >

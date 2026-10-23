@@ -87,7 +87,8 @@ function useCrashLocale(): "en" | "zh" {
 /** localStorage the reset keeps: drafts are unpublished work that exists nowhere
  *  else, and the locale is what this page is reading. Every other `reze-design.*`
  *  key goes, so the reset reaches whatever a reload reads back. */
-const KEPT_KEYS = new Set([storageKey("drafts"), storageKey("locale")])
+// The AI keys are the person's, kept only here, and no scene can break them.
+const KEPT_KEYS = new Set([storageKey("drafts"), storageKey("locale"), storageKey("ai.connections")])
 /** The asset store's database. Its contents are a cache of the scene and rebuild. */
 const IDB_NAME = "reze-design"
 

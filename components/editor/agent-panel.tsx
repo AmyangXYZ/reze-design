@@ -21,6 +21,7 @@ import { prepareReference, type ReferenceImage } from "@/lib/ai/reference-image"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
+import { DETAIL_OUTLINED } from "@/components/editor/library-shell"
 import { useCover } from "@/components/ui/cover"
 
 /** On the cover, an action is a line of type: muted, ink on hover, no box. */
@@ -632,7 +633,7 @@ export function AgentPanel({
                 size="xs"
                 variant="ghost"
                 onClick={notice.action === "newChat" ? onNewChat : onRetry}
-                className={cn("mt-1.5", cover ? COVER_ACTION : "h-6 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5")}
+                className={cn("mt-1.5", cover ? COVER_ACTION : "h-6 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/10")}
               >
                 {notice.action === "retry" ? text.retry : notice.action === "continue" ? text.continue : text.newChat}
               </Button>
@@ -647,7 +648,7 @@ export function AgentPanel({
               size="xs"
               variant="ghost"
               onClick={checkpoint.undone ? onRedo : onUndo}
-              className={cover ? COVER_ACTION : "h-6 gap-1 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"}
+              className={cover ? COVER_ACTION : "h-6 gap-1 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/10"}
             >
               {checkpoint.undone ? <Redo2 className="size-3" /> : <Undo2 className="size-3" />}
               {checkpoint.undone ? text.redo : text.undo}
@@ -692,9 +693,9 @@ export function AgentPanel({
           )}
         >
           <Button
-            size="xs"
+            variant="bare"
             onClick={onSetup}
-            className={cover ? cn(COVER_ACTION, "text-foreground") : "h-7 w-fit rounded-chip px-3 text-xs font-medium"}
+            className={cover ? cn(COVER_ACTION, "text-foreground") : cn(DETAIL_OUTLINED, "w-fit")}
           >
             {cover && <ArrowDown className="size-3" />}
             {text.setup}

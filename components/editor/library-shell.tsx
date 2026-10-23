@@ -864,7 +864,7 @@ export function LibraryCards<T extends BrowseItem>({
               className={cn(
                 "flex min-w-0 cursor-default flex-col text-left",
                 asRows
-                  ? cn("rounded-chip px-2 py-1.5 outline-1 -outline-offset-1 transition-[outline-color,background-color]", picked ? "outline-foreground" : "outline-transparent hover:bg-white/5")
+                  ? cn("rounded-chip px-2 py-1.5 outline-1 -outline-offset-1 transition-[outline-color,background-color]", picked ? "outline-foreground" : "outline-transparent hover:bg-white/10")
                   : "gap-1.5",
               )}
             >

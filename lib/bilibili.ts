@@ -35,8 +35,9 @@ const EXCLUDED_MIDS = new Set([2011395850])
 /** "Reze Design" or the site's address, or the owner credited by name for the
  *  software, the render or the effects ("软件：…", "渲染：黯灭小羊", "MME：黯灭小羊",
  *  "原作者：@黯灭小羊"). The owner named for a model or a motion is not a credit
- *  for the tool. */
-const CREDIT = /reze[\s._-]*design|reze\.one|(?:渲染|MME|软件|工具|原作者|software|tool|render(?:ing|er)?)\s*[:：]\s*@?[^\n]*黯灭小羊/i
+ *  for the tool. "desgin" counts too: 饭天堂地狱 credited it that way
+ *  (BV1QDn769ETg). */
+const CREDIT = /reze[\s._-]*des(?:ign|gin)|reze\.one|(?:渲染|MME|软件|工具|原作者|software|tool|render(?:ing|er)?)\s*[:：]\s*@?[^\n]*黯灭小羊/i
 
 /** Reze Design's first release; nothing before it can credit it. */
 export const LAUNCH = Date.UTC(2026, 6, 1)
@@ -47,6 +48,9 @@ const BATCH = 20
 const CUT = 250
 /** Waits after a 412, in turn, before the pass gives up. */
 const BACKOFF_MS = [15_000, 60_000, 180_000, 300_000]
+/** Bilibili's code for a request its risk control turned away. */
+const RISK_CONTROL = -352
+const FEED_FEATURES = "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote"
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -95,7 +99,19 @@ function credited(v: { bvid: string; aid: number; mid: number; author: string; t
  *  login when there is one. Past
  *  `deadline` (epoch ms) every request stops the pass, as a 412 would. */
 async function session(deadline = Infinity) {
-  const home = await fetch("https://www.bilibili.com/", { headers: { "User-Agent": UA }, cache: "no-store" })
+  // A home connection drops now and then (ECONNRESET); a dropped one is tried
+  // again, so the first request of the day cannot end the run.
+  const reach = async (url: string, init: RequestInit) => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(url, init).catch((e) => {
+        if (attempt === BACKOFF_MS.length) throw e
+        return null
+      })
+      if (res) return res
+      await pause(BACKOFF_MS[attempt])
+    }
+  }
+  const home = await reach("https://www.bilibili.com/", { headers: { "User-Agent": UA }, cache: "no-store" })
   const visitor = home.headers.getSetCookie().map((c) => c.split(";")[0])
   const sessdata = process.env.BILIBILI_SESSDATA
   const cookie = [...visitor, ...(sessdata ? [`SESSDATA=${sessdata}`] : [])].join("; ")
@@ -103,22 +119,23 @@ async function session(deadline = Infinity) {
   async function get<T>(url: string, referer: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       if (Date.now() > deadline) throw new Blocked()
-      // A dropped connection is waited out like a 412.
+      // A dropped connection, and Bilibili's risk control (-352, answered with
+      // HTTP 200), are waited out like a 412.
       const res = await fetch(url, { headers: { "User-Agent": UA, Cookie: cookie, Referer: referer }, cache: "no-store" }).catch(() => null)
-      if (!res || res.status === 412) {
+      const body = res?.ok ? ((await res.json()) as { code: number; message: string; data: T }) : null
+      if (!res || res.status === 412 || body?.code === RISK_CONTROL) {
         if (attempt === BACKOFF_MS.length || Date.now() + BACKOFF_MS[attempt] > deadline) throw new Blocked()
         await pause(BACKOFF_MS[attempt])
         continue
       }
-      if (!res.ok) throw new Error(`Bilibili answered HTTP ${res.status}`)
-      const body = (await res.json()) as { code: number; message: string; data: T }
+      if (!body) throw new Error(`Bilibili answered HTTP ${res.status}`)
       if (body.code !== 0) throw new Error(`Bilibili: ${body.message} (${body.code})`)
       return body.data
     }
   }
 
   // Signed out, nav answers -101; read raw for isLogin.
-  const navRes = await fetch("https://api.bilibili.com/x/web-interface/nav", {
+  const navRes = await reach("https://api.bilibili.com/x/web-interface/nav", {
     headers: { "User-Agent": UA, Cookie: cookie, Referer: "https://www.bilibili.com/" },
     cache: "no-store",
   })
@@ -155,7 +172,8 @@ async function walkMaker(s: Session, mid: number, since: number, keep: OnFound) 
   let offset = ""
   for (let page = 0; page < 40; page++) {
     const data = await s.get<{ items: FeedItem[]; has_more: boolean; offset: string }>(
-      `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid=${mid}&offset=${offset}`,
+      // `features` is required since 2026-10-20: without it the feed answers -352.
+      `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid=${mid}&offset=${offset}&features=${FEED_FEATURES}`,
       `https://space.bilibili.com/${mid}/dynamic`,
     )
     let older = false

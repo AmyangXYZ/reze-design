@@ -503,7 +503,7 @@ function ShareSceneForm({
               asChild
               size="sm"
               variant="ghost"
-              className="h-8 w-full border border-line-strong text-xs font-medium hover:bg-white/5"
+              className="h-8 w-full border border-line-strong text-xs font-medium hover:bg-white/10"
             >
               {/* This tab, client-side. The scene is published — the editor has
                   nothing left to lose — and a second tab would mean a second live
@@ -517,7 +517,7 @@ function ShareSceneForm({
                 seeing your own scene is the first thing you want and the shelf
                 it landed on is the second — and it is the same door as the top
                 bar's, so it carries that door's name rather than a new one. */}
-            <Button size="sm" className="h-8 w-full text-xs font-medium" onClick={onGallery}>
+            <Button size="sm" variant="ghost" className="h-8 w-full border border-line-strong text-xs font-medium hover:bg-white/10" onClick={onGallery}>
               <GalleryThumbnails className="size-3.5" />
               {t.gallery.door}
             </Button>
@@ -654,7 +654,7 @@ function ShareSceneForm({
                   variant="ghost"
                   onClick={() => posterInputRef.current?.click()}
                   data-publish-thumb
-                  className="mt-0.5 block h-auto aspect-video w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/5 dark:hover:bg-white/5"
+                  className="mt-0.5 block h-auto aspect-video w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/10 dark:hover:bg-white/10"
                 >
                   {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't

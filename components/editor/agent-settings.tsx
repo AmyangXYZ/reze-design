@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
+import { DETAIL_OUTLINED } from "@/components/editor/library-shell"
 import { PRESETS, presetOf, type ProviderId } from "@/lib/ai/providers/presets"
 import { connectionLabel, listModels, updateAi, verifyModel, type Active, type AiSettings, type Connection, type ModelEntry } from "@/lib/ai/connections"
 
@@ -63,7 +64,7 @@ function Line({
   className?: string
 }) {
   return (
-    <div className={cn("group flex items-center gap-1 rounded-chip pr-1 hover:bg-white/5", className)}>
+    <div className={cn("group flex items-center gap-1 rounded-chip pr-1 hover:bg-white/10", className)}>
       <Button
         variant="ghost"
         onClick={onClick}
@@ -311,12 +312,12 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
             target="_blank"
             rel="noreferrer"
             aria-disabled={!preset?.keyUrl}
-            className="inline-flex h-7 items-center gap-1 rounded-chip px-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1 rounded-chip px-2 text-xs text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
             {text.getKey}
             <ExternalLink className="size-3" />
           </a>
-          <Button size="xs" onClick={() => void submit()} disabled={!ready || busy} className="ml-auto h-7 min-w-16 rounded-chip px-3 text-xs">
+          <Button variant="bare" onClick={() => void submit()} disabled={!ready || busy} className={cn(DETAIL_OUTLINED, "ml-auto min-w-16 justify-center")}>
             {busy ? <AstroidSpinner className="size-3" /> : text.continue}
           </Button>
         </div>

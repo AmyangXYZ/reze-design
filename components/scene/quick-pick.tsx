@@ -90,7 +90,7 @@ export function QuickPick({
       ref={isOn(i.id) ? activeRow : undefined}
       onClick={() => onPick(i.id)}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
+        "flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/10",
         isOn(i.id) ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
       )}
     >
@@ -184,7 +184,7 @@ export function QuickPick({
                 setOpen(false)
                 onEdit()
               }}
-              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
             >
               {editLabel ?? t.materials.editGraph}
             </Button>
@@ -195,7 +195,7 @@ export function QuickPick({
                 setOpen(false)
                 onBrowse()
               }}
-              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
             >
               {t.scene.browseAll}
             </Button>

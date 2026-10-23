@@ -6,10 +6,8 @@ import { Input } from "@/components/ui/input"
 import { memo, useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
-import { Camera, Clapperboard, Film, Square } from "lucide-react"
+import { Camera, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useCover } from "@/components/ui/cover"
-import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -136,11 +134,10 @@ const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  // On the cover each row is an ink zone: a letterboxed frame can stand some
-  // rows on the black matte and the rest on the picture.
-  const cover = useCover()
+  // Each row is an ink zone: a letterboxed frame can stand some rows on the
+  // black matte and the rest on the picture.
   return (
-    <div data-ink-zone={cover || undefined} className={cn("flex min-h-6 items-center justify-between first:mt-0", cover ? "mt-1.5" : "mt-2.5")}>
+    <div data-ink-zone className="mt-1.5 flex min-h-6 items-center justify-between first:mt-0">
       <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </div>
@@ -167,12 +164,10 @@ const parseClock = (text: string): number | null => {
   return /^\d+(\.\d+)?$/.test(s) ? Number(s) : null
 }
 
-const rangeInputCls =
-  "h-6 w-14 rounded-chip border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-foreground placeholder:text-muted-foreground disabled:opacity-50"
-/** On the cover a field is its value over a hairline. */
+/** A field is its value over a hairline. */
 const rangeInputCover =
   "h-6 w-12 rounded-none border-0 border-b border-line bg-transparent px-0 text-center text-xs tabular-nums outline-none focus:border-foreground placeholder:text-muted-foreground disabled:opacity-50"
-/** On the cover an action is a word, like the console's. */
+/** An action is a word, like the console's. */
 const COVER_WORD =
   "mt-1.5 flex min-h-6 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground first:mt-0 hover:text-foreground disabled:opacity-40"
 
@@ -283,7 +278,6 @@ export const RenderPanel = memo(function RenderPanel({
   planes?: ExportPlane[]
 }) {
   const t = useT()
-  const cover = useCover()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
   // — then whatever was chosen last, which is what actually gets exported twice.
   const [prefs] = useState(readExportPrefs)
@@ -675,10 +669,10 @@ export const RenderPanel = memo(function RenderPanel({
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className={cover ? "px-4 pt-1 pb-3" : "px-4 py-3.5"}>
+      <div className="px-4 pt-1 pb-3">
         {/* No section title — the panel IS the output settings; a heading over
             the only content is furniture. */}
-        <div className={cover ? "cover-enter mt-1" : "mt-1"}>
+        <div className="cover-enter mt-1">
           <Row label={t.render.aspect}>
             <Select value={aspect} onValueChange={(v) => setAspect(v as Aspect)} disabled={exporting}>
               <SelectTrigger>
@@ -759,7 +753,7 @@ export const RenderPanel = memo(function RenderPanel({
                 }}
                 placeholder="0:00"
                 disabled={exporting}
-                className={cover ? rangeInputCover : rangeInputCls}
+                className={rangeInputCover}
               />
               <span className="text-xs text-muted-foreground">–</span>
               <Input variant="bare"
@@ -772,7 +766,7 @@ export const RenderPanel = memo(function RenderPanel({
                 }}
                 placeholder={animDuration > 0 ? fmtClock(animDuration) : "-:--"}
                 disabled={exporting}
-                className={cover ? rangeInputCover : rangeInputCls}
+                className={rangeInputCover}
               />
             </div>
           </Row>
@@ -834,10 +828,9 @@ export const RenderPanel = memo(function RenderPanel({
             two below make the picture and keep the bottom of the panel. Same
             disabled rule as Render — it walks the same frames and needs the same
             clip to walk. */}
-        {cover ? (
-          // On the cover the still and the script are words; Render is the
-          // one solid thing on this edge.
-          <div data-ink-zone className="mt-1.5 flex flex-col">
+        {/* The still and the script are words; Render is the one solid thing
+            on this edge. */}
+        <div data-ink-zone className="mt-1.5 flex flex-col">
             <Button variant="bare" disabled={!canRender} onClick={() => void aeScript()} className={COVER_WORD}>
               <Film className="size-3.5" />
               {t.render.aeScript}
@@ -846,64 +839,31 @@ export const RenderPanel = memo(function RenderPanel({
               <Camera className="size-3.5" />
               {t.render.capturePng}
             </Button>
-          </div>
-        ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!canRender}
-          onClick={() => void aeScript()}
-          className="mt-5 h-8 w-full gap-1.5 border-line-strong bg-surface-raised text-xs font-medium text-foreground hover:bg-white/5 disabled:opacity-40"
-        >
-          <Film className="size-3.5" />
-          {t.render.aeScript}
-        </Button>
-        )}
-        {/* Two actions, one row: still and video are peers. */}
+        </div>
         <div className="mt-2 flex">
-          {/* Same framing, one frame. Needs no animation, so it stays available on
-              a still scene where Render has nothing to render. */}
-          {!cover && (
-          <Button
-            size="sm"
-            disabled={exporting}
-            onClick={() => void capture()}
-            className="h-8 flex-1 gap-1.5 rounded-r-none bg-white text-xs font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-40"
-          >
-            <Camera className="size-3.5" />
-            {t.render.capturePng}
-          </Button>
-          )}
           {!exporting ? (
             <Button
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className={cn(
-                "h-8 flex-1 gap-1.5 text-xs font-medium disabled:opacity-40",
-                // On the cover the one solid thing is ink, as publish's is.
-                cover
-                  ? "rounded-chip bg-foreground text-background hover:bg-foreground/85"
-                  : "rounded-l-none bg-blue-400 text-on-accent hover:bg-blue-400/90",
-              )}
+              // The one solid thing is ink, as publish's is.
+              className="h-8 flex-1 gap-1.5 rounded-chip bg-foreground text-xs font-medium text-background hover:bg-foreground/85 disabled:opacity-40"
             >
-              {/* On the cover the column is titled Render video: the button is
-                  the verb alone. */}
-              {!cover && <Clapperboard className="size-3.5" />}
-              {cover ? t.lab.exportPanel : t.render.renderVideo}
+              {/* The column is titled Render video: the button is the verb alone. */}
+              {t.lab.exportPanel}
             </Button>
           ) : (
             <Button
               size="sm"
               onClick={() => abortRef.current?.abort()}
-              // SOLID red, white text — the same weight as the blue Publish
+              // SOLID red — the same weight as the blue Publish
               // button, because it is the same kind of control: the one thing
               // this panel is for while it is exporting. A translucent tint
               // reads as a disabled surface, which is the opposite of what a
               // button you may urgently want should look like. Red because
               // stopping throws the render away: the encoded frames are gone,
               // not paused.
-              className={cn("h-8 flex-1 gap-1.5 bg-red-400 text-xs font-medium text-white hover:bg-red-400", cover ? "rounded-chip" : "rounded-l-none")}
+              className="h-8 flex-1 gap-1.5 rounded-chip bg-red-400 text-xs font-medium text-on-accent hover:bg-red-400/90"
             >
               <Square className="size-3.5" />
               {t.render.cancel}
@@ -912,8 +872,8 @@ export const RenderPanel = memo(function RenderPanel({
         </div>
         {exporting ? (
           <div className="mt-4">
-            <div className={cn("w-full overflow-hidden", cover ? "h-px bg-line-strong" : "h-1 rounded-full bg-white/10")}>
-              <div className={cn("h-full transition-[width]", cover ? "bg-foreground" : "rounded-full bg-blue-400")} style={{ width: `${pct}%` }} />
+            <div className="h-px w-full overflow-hidden bg-line-strong">
+              <div className="h-full bg-foreground transition-[width]" style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-1.5 text-center text-xs text-muted-foreground tabular-nums">
               {!progress

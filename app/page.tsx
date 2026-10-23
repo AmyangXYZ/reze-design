@@ -60,6 +60,7 @@ import {
   Plus,
   Languages,
   Blend,
+  Brush,
   Palette,
   PenLine,
   RotateCcw,
@@ -1431,7 +1432,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       nextLikely: ["materials", "export"],
       repeatable: true,
       section: "command",
-      icon: Sparkles,
+      icon: Brush,
       label: l.cmd.look,
       altLabels: [alt.cmd.look],
       // Every pack's name in both languages: someone reaching for this is

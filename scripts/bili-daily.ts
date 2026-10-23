@@ -13,10 +13,23 @@
 import { allVideos, findNew, recount } from "@/lib/db/bili"
 
 const at = () => new Date().toISOString().slice(0, 19).replace("T", " ")
+// Finding and counting each run whatever the other did: a failed find still
+// leaves the day's counts, and what a find keeps is written as it goes.
+let failed = false
 console.log(at(), "finding new videos")
-const report = await findNew(26, 60 * 60_000)
-console.log(at(), `added ${report.added}${report.blocked ? ", stopped early (Bilibili blocked or out of time)" : ""}${report.loggedIn ? "" : ", signed out: set BILIBILI_SESSDATA"}`)
-const videos = await allVideos()
-await recount(videos.map((v) => v.aid))
-console.log(at(), `recounted ${videos.length} videos`)
-process.exit(0)
+try {
+  const report = await findNew(26, 60 * 60_000)
+  console.log(at(), `added ${report.added}${report.blocked ? ", stopped early (Bilibili blocked or out of time)" : ""}${report.loggedIn ? "" : ", signed out: set BILIBILI_SESSDATA"}`)
+} catch (e) {
+  failed = true
+  console.error(at(), "finding failed:", e)
+}
+try {
+  const videos = await allVideos()
+  await recount(videos.map((v) => v.aid))
+  console.log(at(), `recounted ${videos.length} videos`)
+} catch (e) {
+  failed = true
+  console.error(at(), "recount failed:", e)
+}
+process.exit(failed ? 1 : 0)

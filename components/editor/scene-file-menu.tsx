@@ -29,7 +29,7 @@ export function Row({
     <Button variant="bare"
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+      className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
     >
       <Icon className="size-3 shrink-0" />
       {label}
@@ -80,7 +80,7 @@ export function LogoMenu({
           type="button"
           aria-label={t.sceneFile.label}
           // On the cover the wordmark's own ink is the hover.
-          className={cn("cursor-pointer rounded-chip outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50", !cover && "hover:bg-white/5")}
+          className={cn("cursor-pointer rounded-chip outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50", !cover && "hover:bg-white/10")}
         >
           {trigger}
         </Button>
