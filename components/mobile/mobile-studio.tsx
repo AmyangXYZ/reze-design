@@ -441,7 +441,7 @@ export function MobileStudio({
                   version, and the whole editor is on a computer. A sentence
                   a line, so a break never falls mid-sentence. */}
               {!section && (
-              <p className="shrink-0 border-t border-line px-5 py-4 text-center text-sm leading-relaxed font-medium text-balance text-foreground">
+              <p className="shrink-0 border-t border-line px-5 py-4 text-center text-sm leading-relaxed font-normal text-balance text-foreground">
                 <span className="block">
                   <Info className="mr-1.5 inline size-4 -translate-y-px align-middle" />
                   {t.mobile.lite.what}
