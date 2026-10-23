@@ -56,10 +56,10 @@ const FIGURE_ROLES = new Set<Role>(["eye", "face", "hair", "body"])
 //
 // SOCKS ARE CLOTH, STOCKINGS ARE SHEER — the sock words go to rough cloth ahead
 // of the stocking words, 袜子 before the bare 袜 that 丝袜 still reaches.
-// Bare 口 is not a face word (it is in 袖口, a cuff), and simplified 发 appears
-// only in compounds (it also writes 发光, glow — an emissive panel in the hair
-// pass).
-const ROLE_HINTS: [Role, string[]][] = [
+// Bare 口 is not a face word (it is in 袖口, a cuff), and simplified 发 is hair
+// on its own but not in 发光 / 发亮 / 发射 (glow, shine, emit — an emissive
+// panel in the hair pass).
+const ROLE_HINTS: [Role, (string | RegExp)[]][] = [
   ["cloth_rough", ["靴下", "ソックス", "ニーソ", "袜子", "短袜", "棉袜", "socks", "sock"]],
   ["stockings", ["タイツ", "ストッキング", "袜", "stocking", "tights", "pantyhose"]],
   ["eye", ["白目", "目影", "二重", "睫", "まつげ", "まゆ", "眉", "目", "瞳", "眼", "eye", "iris", "pupil", "lash", "brow"]],
@@ -69,7 +69,7 @@ const ROLE_HINTS: [Role, string[]][] = [
   ],
   [
     "hair",
-    ["前髪", "後髪", "髪", "髮", "頭髪", "もみあげ", "アホ毛", "ヘア", "头发", "前发", "后发", "长发", "短发", "发丝", "刘海", "辫", "马尾", "hair", "ahoge", "bang"],
+    ["前髪", "後髪", "髪", "髮", "頭髪", "もみあげ", "アホ毛", "ヘア", /发(?![光亮射])/, "刘海", "辫", "马尾", "hair", "ahoge", "bang"],
   ],
   ["body", ["肌", "皮肤", "skin", "指甲", "nail"]],
   ["metal", ["金属", "メタル", "metal", "earring", "耳环", "耳環"]],
@@ -104,7 +104,7 @@ export function roleFor(material: string, figure: boolean): Role | null {
   if (figure && BODY_PART_NAMES.has(lower.replace(/[\s_.\-0-9]+$/, ""))) return "body"
   for (const [role, hints] of ROLE_HINTS) {
     if (!figure && FIGURE_ROLES.has(role)) continue
-    if (hints.some((h) => lower.includes(h))) return role
+    if (hints.some((h) => (typeof h === "string" ? lower.includes(h) : h.test(lower)))) return role
   }
   return null
 }
