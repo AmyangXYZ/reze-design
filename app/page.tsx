@@ -7928,6 +7928,11 @@ function Lab() {
         applied={bgEffects}
         // The effect chosen in the pane beside it is the one it shows.
         focusId={effectFx?.id ?? null}
+        // ...and the one picked here is the one the pane chooses, when worn.
+        onFocus={(id) => {
+          const fx = bgEffects.find((e) => e.id === id)
+          if (fx?.uid) setSelectedEffect(fx.uid)
+        }}
         // Applying from the library APPENDS, and applying what is already on
         // takes it off — the same membership rule as the dock's picker, since
         // they are two doors onto one list.

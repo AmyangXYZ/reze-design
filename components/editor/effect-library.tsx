@@ -68,6 +68,9 @@ type LibraryProps = {
   onRemove: (id: string) => void
   /** The effect chosen in the Effect pane beside the library: shown when it changes. */
   focusId?: string | null
+  /** An effect was picked here (a click, or a right-click for its menu): the
+   *  pane beside it chooses the same one when the scene wears it. */
+  onFocus?: (id: string) => void
   /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom
    *  as the graph editor). Optional: a host without the editor omits it, and
    *  every edit/new affordance hides rather than sitting there doing nothing. */
@@ -87,7 +90,7 @@ const appliedById = (applied: AppliedEffect[], id: string | undefined) => applie
 const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): AppliedEffect | null =>
   selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
 
-function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null }: LibraryProps) {
+function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null, onFocus }: LibraryProps) {
   const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
@@ -217,7 +220,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
       setRenamingId(e.id)
     }
     return (
-      <ContextMenu>
+      // Opening a card's menu picks it, so the ring and the pane beside agree
+      // on which effect the menu acts on.
+      <ContextMenu onOpenChange={(o) => o && pick(e)}>
         <ContextMenuTrigger asChild>
           <div>{node}</div>
         </ContextMenuTrigger>
@@ -270,9 +275,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // A click only picks: an effect can be heavy, and looking at one must not
   // build and run it. Add in the header (or a double-click) puts it on the
   // scene beside what is there; on the scene, the same word takes it off.
-  const pick = (e: EffectItem) => setSelectedId(e.id)
-  const toggle = (e: EffectItem) => {
+  const pick = (e: EffectItem) => {
     setSelectedId(e.id)
+    onFocus?.(e.id)
+  }
+  const toggle = (e: EffectItem) => {
+    pick(e)
     if (applied.some((a) => a.id === e.id)) onRemove(e.id)
     else onApply(seedDraft(e, applied)!)
   }
