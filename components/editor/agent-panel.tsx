@@ -600,7 +600,7 @@ export function AgentPanel({
           // and, while it thinks, the thought forming beneath.
           <Row mark={<AstroidSpinner className="size-3.5 text-foreground" />}>
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="animate-[text-shimmer_2.2s_linear_infinite] truncate bg-[linear-gradient(90deg,var(--color-muted-foreground)_35%,var(--color-foreground)_50%,var(--color-muted-foreground)_65%)] bg-[length:200%_100%] bg-clip-text text-transparent">
+              <span className="animate-[text-shimmer_2.2s_linear_infinite] truncate bg-[linear-gradient(90deg,var(--muted-foreground)_35%,var(--foreground)_50%,var(--muted-foreground)_65%)] bg-[length:200%_100%] bg-clip-text text-transparent">
                 {verb}…
               </span>
               <span className="shrink-0 text-muted-foreground tabular-nums">
