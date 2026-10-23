@@ -190,10 +190,10 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // and every surface reads fully lit, ramp untouched. Its world is not a backdrop
 // preference; it is the other half of the ramp.
 
-export type LookPack = "ag" | "wuwa" | "zzz" | "hsr"
+export type LookPack = "ag" | "wuwa" | "zzz" | "hsr" | "endfield"
 
 /** Menu order — declared, not derived, because it is a curated shelf. */
-export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr"]
+export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr", "endfield"]
 
 export const LOOK_PACKS: Record<
   LookPack,
@@ -259,6 +259,19 @@ export const LOOK_PACKS: Record<
   // ramps barely darken, so ambient decides less about the terminator here than
   // it does there and can afford to carry more of the fill.
   hsr: { tag: "honkai-star-rail", transform: "aces", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
+  // As aileen_71 set it in the 祀 scene the graphs come from (2026-10-23): no
+  // tone curve over a pale blue-grey world, a warm sun low on the horizon, and
+  // a soft bloom.
+  endfield: {
+    tag: "arknights-endfield",
+    transform: "neutral",
+    exposure: 0,
+    world: { color: "#cfd6e2", strength: 0.73 },
+    light: {
+      sun: { color: "#fffbeb", strength: 1.26, azimuth: 160, elevation: 5 },
+      bloom: { enabled: true, threshold: 0.83, scatter: 0.75, intensity: 0.45, color: "#fcf9ff" },
+    },
+  },
 }
 
 // Roles a pack may not cover. WuWa and ZZZ have one cloth look where AG has

@@ -1457,6 +1457,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
         "星穹铁道",
         "星铁",
         "崩铁",
+        "endfield",
+        "arknights",
+        "明日方舟：终末地",
+        "终末地",
         "style",
         "look",
         "preset",
@@ -6809,6 +6813,25 @@ function Lab() {
    * is already read. (The shipped editor also still reads the legacy config-only
    * `.reze.json`; this route never wrote one.)
    */
+  // The looks a scene file arrives wearing that match nothing in the library
+  // become your drafts, as a look made here would: the library then lists them
+  // beside their panes, and the scene can publish them.
+  const draftArrivedLooks = (scene: Scene) => {
+    const { settings: s, backgroundEffects, groups } = scene.state
+    const uses = unpublishedUses(
+      {
+        gradeSpec: s.grade.spec ?? gradeSpec(s.grade.preset, [...gradeDrafts, ...communityGrades]),
+        gradeName: s.grade.preset,
+        effects: backgroundEffects,
+        groups: groups ?? {},
+        stageModels: new Set(scene.assets.models.filter((m) => m.stage).map((m) => m.model.id)),
+      },
+      "private",
+    )
+    for (const use of uses)
+      if (use.reason === "missing" && !use.draft)
+        createDraft(use.kind, { name: freeName(use.kind, use.name), payload: use.payload, author: authorName })
+  }
   const importScene = async (file: File) => {
     // One toast per import, as for any upload: it names the arrival and its
     // outcome. The scene load between is the pill's, as it is for every swap.
@@ -6829,6 +6852,7 @@ function Lab() {
         const doc = parsed as SceneDoc
         const resolve = await resolveSceneRefs(doc)
         const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
+        draftArrivedLooks(imported)
         // A blob URL holding the zip already open, so loadSceneInto reads it as is.
         const url = holdBundle(files, file)
         try {

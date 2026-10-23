@@ -13,8 +13,8 @@ import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
 // The built-ins' tags. Abbreviations (AG, NPR, PBR, MIDI…) stay as they are;
 // a tag already in Chinese is its own label.
 const TAGS: Record<string, string> = {
-  "aether-gazer": "深空之眼", "wuthering-waves": "鸣潮", "zenless-zone-zero": "绝区零", "honkai-star-rail": "星穹铁道",
-  ag: "AG", wuwa: "WuWa", zzz: "ZZZ", hsr: "HSR", npr: "NPR", pbr: "PBR", midi: "MIDI",
+  "aether-gazer": "深空之眼", "wuthering-waves": "鸣潮", "zenless-zone-zero": "绝区零", "honkai-star-rail": "星穹铁道", "arknights-endfield": "终末地",
+  ag: "AG", wuwa: "WuWa", zzz: "ZZZ", hsr: "HSR", endfield: "终末地", npr: "NPR", pbr: "PBR", midi: "MIDI",
   anime: "二次元", soft: "柔和",
   body: "身体", face: "脸部", hair: "头发", eye: "眼睛", eyes: "眼睛", metal: "金属",
   cloth_smooth: "光滑布料", cloth_rough: "粗糙布料", stockings: "丝袜",
