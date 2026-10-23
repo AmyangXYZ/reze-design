@@ -7936,9 +7936,13 @@ function Lab() {
         // Applying from the library APPENDS, and applying what is already on
         // takes it off — the same membership rule as the dock's picker, since
         // they are two doors onto one list.
-        onApply={(e) =>
-          setBgEffects((list) => (list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]))
-        }
+        // An effect put on here is the one the pane beside it chooses, at once.
+        onApply={(e) => {
+          if (bgEffects.some((x) => x.id === e.id)) return setBgEffects((list) => list.filter((x) => x.id !== e.id))
+          const uid = newSceneId()
+          setBgEffects((list) => [...list, { ...e, uid }])
+          setSelectedEffect(uid)
+        }}
         onRemove={(id) => setBgEffects((list) => list.filter((e) => e.id !== id))}
         onRenamed={(oldName, newName) =>
           setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))

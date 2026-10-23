@@ -359,6 +359,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           watch={["community", "library-stats"]}
           browse={browse}
           selectedId={selectedId}
+          // The pane's effect is brought into view, as the pane changes it.
+          reveal={focusId}
           onSelect={pick}
           onActivate={toggle}
           meta={meta}
