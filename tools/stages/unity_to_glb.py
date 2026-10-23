@@ -388,7 +388,33 @@ def sea_spec(mat, sea_y, beds, png_for_guid, out_tex, key):
 PARTICLE_SHADERS = ("ZTong/Tong_jichu_Add",)
 
 
-def drawn_as_particles(scene, materials_by_guid, shader_of):
+def flat_mesh_cards(proj):
+    """mesh_card for unity_particles.systems: a mesh whose vertices all lie in its
+    own X-Y plane, as its bounds there (centre, half-extent) and the mesh itself
+    for the UV picture (unity_particles.mesh_uv_card); None for any other mesh."""
+    cache = {}
+
+    def card(guid):
+        if guid not in cache:
+            cache[guid] = None
+            path = proj.path(guid)
+            try:
+                m = Mesh(path) if path and os.path.exists(path) else None
+            except ValueError:
+                m = None
+            if m is not None and m.positions:
+                p = np.asarray(m.positions, float)
+                lo, hi = p.min(0), p.max(0)
+                span = hi - lo
+                if span[2] <= 1e-4 * max(span[0], span[1], 1e-9):
+                    cache[guid] = {"guid": guid, "center": [float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2)],
+                                   "extent": [float(span[0] / 2), float(span[1] / 2)]}
+        return cache[guid]
+
+    return card
+
+
+def drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card=None):
     """The GameObjects whose particle systems the app draws live, as the game's
     particles (particle_classes): every active billboard or stretched system
     through the effect shader or Tong_jichu_Add. A Local-aligned billboard is one
@@ -396,18 +422,19 @@ def drawn_as_particles(scene, materials_by_guid, shader_of):
     fading and dying by the game's own curves — and no longer a still quad
     (unity_scene.mesh_particles): X316's raindrop glows on the car windows stood
     frozen at their mean alpha, a fixed pattern of discs where the game shows a
-    shimmer of drops coming and going."""
+    shimmer of drops coming and going. A flat mesh system is one too
+    (mesh_card, see unity_particles.systems)."""
     from unity_particles import systems
 
     out = set()
-    for _spec, mats, go, tf, _name in systems(scene):
+    for _spec, mats, go, tf, _name in systems(scene, mesh_card):
         mat = materials_by_guid.get(mats[0]) if mats else None
         if mat and tf is not None and (is_effect_decal(shader_of(mat)) or shader_of(mat) in PARTICLE_SHADERS):
             out.add(go)
     return out
 
 
-def particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live=None):
+def particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live=None, mesh_card=None):
     """Every particle system the game draws through its effect shader, as the
     app's generated effects draw it (lib/unity-particles.ts): one class per
     kind of system — the same modules, the same material — with its material's
@@ -421,12 +448,12 @@ def particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live=N
 
     Standing billboards turned to their emitter are left to mesh_particles,
     which draws them as the cards they are."""
-    from unity_particles import systems
+    from unity_particles import mesh_uv_card, systems
 
-    live = live if live is not None else drawn_as_particles(scene, materials_by_guid, shader_of)
+    live = live if live is not None else drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card)
     standing = {p["object"] for p in scene.mesh_particles()} - live
     classes, order = {}, []
-    for spec, mats, go, tf, name in systems(scene):
+    for spec, mats, go, tf, name in systems(scene, mesh_card):
         if go in standing or not mats or tf is None:
             continue
         mat = materials_by_guid.get(mats[0])
@@ -469,16 +496,27 @@ def particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live=N
         effect = c["effect"]
         layers = effect["layers"]
         noise = effect.get("noise")
-        # the pictures, in the slots the effect samples: main, plus, mask, noise
+        dissolve = effect.get("dissolve")
+        # a flat mesh's card: its UVs as a picture over its bounds (data, not colour)
+        card = c["spec"]["renderer"].get("mesh")
+        uv_card = None
+        if card:
+            m = Mesh(proj.path(card["guid"]))
+            uv_card = {"png": mesh_uv_card(m.positions, m.uvs, m.indices, card["center"], card["extent"]), "srgb": False}
+        # the pictures, in the slots the effect samples: main, plus, mask, noise,
+        # the mesh card's UVs, the dissolve
         textures = [
             {"png": l["png"], "srgb": bool(l.get("srgb", True))} if l else None
-            for l in (layers.get("main"), layers.get("plus"), layers.get("mask"), noise)
+            for l in (layers.get("main"), layers.get("plus"), layers.get("mask"), noise, uv_card, dissolve)
         ]
+        while textures and textures[-1] is None:
+            textures.pop()
         strip = lambda d: {k2: v for k2, v in d.items() if k2 != "png"}   # noqa: E731
         material = {
             **{k2: v for k2, v in effect.items() if k2 not in ("layers", "noise")},
             "layers": {k2: strip(v) for k2, v in layers.items()},
             **({"noise": strip(noise)} if noise else {}),
+            **({"dissolve": strip(dissolve)} if dissolve else {}),
         }
         # metresPerUnit: one of the game's units in the stage's metres, so the
         # effect knows the WORLD's scale apart from each emitter's — gravity
@@ -759,9 +797,6 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
             casts[guid] = found
         return casts[guid]
 
-    def wears_sky(r):
-        return any(materials_by_guid.get(g) and (is_sky(materials_by_guid[g]) or is_sky_layer(materials_by_guid[g], shader_of(materials_by_guid[g]))) for g in r["materials"])
-
     BACKDROP_EFFECTS.clear()
     for r in scene.renderers():
         m = mesh(r["mesh"]) if r["mesh"] and r["enabled"] else None
@@ -781,12 +816,17 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     order = []
 
     # what the app draws as the game's particles is not also a still mesh
-    live_particles = drawn_as_particles(scene, materials_by_guid, shader_of)
+    mesh_card = flat_mesh_cards(proj)
+    live_particles = drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card)
     particle_meshes = [p for p in scene.mesh_particles() if p["object"] not in live_particles]
     for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
             continue
-        if not scene.active_in_hierarchy(r["object"]) and not wears_sky(r):
+        # A SKY THE GAME SWITCHES OFF is off too: X338's moon disc (Common_sky_moon)
+        # is off, and its moon is the billboard particle at the same spot, the
+        # moon's own picture with its halo. Kept, the disc turned to the stage
+        # centre cut through that camera-facing card and hid half its glow.
+        if not scene.active_in_hierarchy(r["object"]):
             switched_off.append(r["name"])
             if not INCLUDE_OFF:
                 continue
@@ -1274,7 +1314,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     flames = flame_points(scene, materials_by_guid)
     if flames:
         notes.append(f"{len(flames)} candle flames -> empties flame.01..{len(flames):02d} (Candle Flames (wick bones) stands a flame on each)")
-    particles, emitter_points = particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live_particles)
+    particles, emitter_points = particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live_particles, mesh_card)
     for c in particles:
         notes.append(f"particles {c['prefix']}: {c['name']} — {c['emitters']} emitters, drawn by the game's own rules and pictures")
     points = flames + emitter_points

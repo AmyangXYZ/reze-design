@@ -235,9 +235,17 @@ def system_spec(ps, renderer):
     return spec
 
 
-def systems(scene):
+def systems(scene, mesh_card=None):
     """Every active billboard / stretched ParticleSystem: (spec, renderer material guids,
-    GameObject, transform id, name)."""
+    GameObject, transform id, name).
+
+    A MESH system (m_RenderMode 4) joins them when its mesh is flat: `mesh_card`
+    gives such a mesh as the card it is — its bounds in its own X-Y plane — and
+    None for any other. X338's water glints are U-shaped ribbons of ripple
+    (Plane002) laid flat on the canal, each growing, fading and dissolving over
+    its life; a flat mesh in a Local system is a card in its emitter's plane,
+    and drawn as one (its UVs looked up, see mesh_uv_card) it lives as the
+    game's does. Taken as still meshes they stood frozen at one size."""
     bodies = {}
     for fid, (cls, body) in scene.docs.items():
         if cls == 198:
@@ -249,12 +257,83 @@ def systems(scene):
         if cls != 199:
             continue
         r = _doc(body, "ParticleSystemRenderer")
-        if int(r.get("m_Enabled", 1)) != 1 or int(r.get("m_RenderMode", 0)) not in (0, 1):
+        mode = int(r.get("m_RenderMode", 0))
+        if int(r.get("m_Enabled", 1)) != 1 or mode not in (0, 1, 4):
             continue
+        card = None
+        if mode == 4:
+            guid = (r.get("m_Mesh") or {}).get("guid")
+            card = mesh_card(guid) if mesh_card and guid and int(r.get("m_RenderAlignment", 0)) == 2 else None
+            if card is None:
+                continue
         go = int(r["m_GameObject"]["fileID"])
         if go not in bodies or not scene.active_in_hierarchy(go):
             continue
         ps = _doc(bodies[go], "ParticleSystem")
         mats = [m.get("guid") for m in (r.get("m_Materials") or []) if isinstance(m, dict) and m.get("guid")]
-        out.append((system_spec(ps, r), mats, go, scene.transform_of(go), scene.name_of(go)))
+        spec = system_spec(ps, r)
+        if card:
+            spec["renderer"]["mesh"] = card
+        out.append((spec, mats, go, scene.transform_of(go), scene.name_of(go)))
     return out
+
+
+def mesh_uv_card(positions, uvs, indices, center, extent, size=512):
+    """A flat mesh's UVs over its bounds, as a picture the card samples: red and
+    green the mesh's (u, v) at that point of the card, alpha its coverage. Rows
+    run down from the card's top (+Y), columns along +X; the texels just outside
+    the mesh carry the nearest UV inside it, so the filter blends no zeros into
+    the edge. Eight bits a channel: a UV is off by at most 1/510."""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    ex, ey = max(extent[0], 1e-9), max(extent[1], 1e-9)
+    w = size if ex >= ey else max(2, round(size * ex / ey))
+    h = size if ey >= ex else max(2, round(size * ey / ex))
+    p = np.asarray(positions, float)[:, :2]
+    t = np.asarray(uvs, float)
+    # texel centres, in the mesh's own X-Y
+    xs = center[0] - ex + (np.arange(w) + 0.5) / w * 2 * ex
+    ys = center[1] + ey - (np.arange(h) + 0.5) / h * 2 * ey
+    uv_map = np.zeros((h, w, 2))
+    hit = np.zeros((h, w), bool)
+    for a, b, c in np.asarray(indices, int).reshape(-1, 3):
+        (x0, y0), (x1, y1), (x2, y2) = p[a], p[b], p[c]
+        det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(det) < 1e-12:
+            continue
+        cols = np.nonzero((xs >= min(x0, x1, x2)) & (xs <= max(x0, x1, x2)))[0]
+        rows = np.nonzero((ys >= min(y0, y1, y2)) & (ys <= max(y0, y1, y2)))[0]
+        if not len(cols) or not len(rows):
+            continue
+        sx, sy = np.meshgrid(xs[cols], ys[rows])
+        l0 = ((y1 - y2) * (sx - x2) + (x2 - x1) * (sy - y2)) / det
+        l1 = ((y2 - y0) * (sx - x2) + (x0 - x2) * (sy - y2)) / det
+        l2 = 1 - l0 - l1
+        inside = (l0 >= -1e-6) & (l1 >= -1e-6) & (l2 >= -1e-6)
+        if not inside.any():
+            continue
+        uv = l0[..., None] * t[a] + l1[..., None] * t[b] + l2[..., None] * t[c]
+        rr, cc = np.meshgrid(rows, cols, indexing="ij")
+        uv_map[rr[inside], cc[inside]] = uv[inside]
+        hit[rr[inside], cc[inside]] = True
+    filled = hit.copy()
+    for _ in range(6):                        # carry the edge UVs a few texels out
+        acc = np.zeros_like(uv_map)
+        n = np.zeros(hit.shape)
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            sh = np.roll(np.roll(filled, dy, 0), dx, 1)
+            acc += np.roll(np.roll(uv_map, dy, 0), dx, 1) * sh[..., None]
+            n += sh
+        grow = ~filled & (n > 0)
+        uv_map[grow] = acc[grow] / n[grow, None]
+        filled |= grow
+    img = np.zeros((h, w, 4), np.uint8)
+    img[..., :2] = np.round(np.clip(uv_map, 0, 1) * 255)
+    img[..., 3] = hit * 255
+    buf = io.BytesIO()
+    Image.fromarray(img, "RGBA").save(buf, "PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("ascii")

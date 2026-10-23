@@ -16,8 +16,13 @@
 // emitter's size scale; the odd one along its local +X, as long as one unit at
 // its shape scale. From them the effect has the emitter's whole frame.
 //
-// Not drawn: dissolve (the systems on X348 drive it from custom data that is 0)
-// and the depth fade against the scene (a particle has no depth to read). Not
+// A FLAT MESH SYSTEM (m_RenderMode 4) is a card too: its mesh lies in its own
+// X-Y plane, so the card spans the mesh's bounds and reads the mesh's UV at each
+// point from a picture of them (slot 4, tools/stages/unity_particles.mesh_uv_card)
+// — X338's water glints, U-shaped ribbons of ripple. THE DISSOLVE (slot 5) is the
+// decompiled DISSOLVE_SIMPLE gate, its edge the particle's Custom2.z.
+//
+// Not drawn: the depth fade against the scene (a particle has no depth to read). Not
 // simulated: the noise module's rotation and size amounts, and velocity over
 // life's speed modifier.
 
@@ -95,6 +100,9 @@ export type ParticleSpec = {
     linear: boolean
     /** 0 View (faces the camera), 1 World, 2 Local (flat in the emitter's plane), 3 Facing, 4 Velocity */
     alignment?: number
+    /** A flat mesh drawn as the card it is: its bounds in its own X-Y plane, in
+     *  mesh units (a particle's size scales them). Its UVs are picture 4. */
+    mesh?: { center: [number, number]; extent: [number, number] }
   }
   /** The CustomData module's vectors, "<stream>_<component>": stream 0 is
    *  Custom1, which the renderer hands the shader as TEXCOORD1. */
@@ -115,6 +123,24 @@ export type ParticleLayer = {
 export type ParticleMaterial = {
   layers: { main?: ParticleLayer; plus?: ParticleLayer; mask?: ParticleLayer }
   noise?: { scale: [number, number]; offset: [number, number]; speed: [number, number]; strength: [number, number]; main: boolean; plus: boolean; mask: boolean; srgb?: boolean }
+  /** DISSOLVE_SIMPLE (tools/stages/unity_effect_bake.live_effect), picture 5. */
+  dissolve?: {
+    scale: [number, number]
+    offset: [number, number]
+    rotation: number
+    tiling: boolean
+    speed: [number, number]
+    /** slid by the particle's Custom2.xy instead of by time */
+    custom?: "c2"
+    noise: boolean
+    redAlpha: boolean
+    opposite: boolean
+    soft: number
+    softW2: number
+    strength: number
+    strengthZ2: number
+    bound?: { width: [number, number]; color1: number[]; color2: number[] }
+  }
   mainPow: number[]
   color: number[]
   redAlphaMain: boolean
@@ -288,6 +314,11 @@ export function particleEffectWgsl(cls: ParticleClass, world: number, baked?: Ba
   const startCol = colourExpr(s.color, "cStart", "0.0", "rc.x", decls)
   const solX = s.sizeOverLife ? curveExpr(s.sizeOverLife.x, "cSolX", "t", "rc.y", decls) : "1.0"
   const solY = s.sizeOverLife ? (s.sizeOverLife.separate ? curveExpr(s.sizeOverLife.y, "cSolY", "t", "rc.y", decls) : solX) : "1.0"
+  // A FLAT MESH'S CARD spans the mesh's bounds, the particle's size times them;
+  // a card is its size alone
+  const mesh = s.renderer.mesh ?? null
+  const cardX = mesh ? ` * ${f(2 * mesh.extent[0])}` : ""
+  const cardY = mesh ? ` * ${f(2 * mesh.extent[1])}` : ""
   const rol = s.rotationOverLife ? curveExpr(s.rotationOverLife.z, "cRol", "t", "rc.z", decls) : "0.0"
   // rzHash13 has three components, all taken: a fourth random, folded from them
   const col = colourExpr(s.colorOverLife, "cCol", "t", "fract(rc.x * 7.31 + rc.y * 3.17)", decls)
@@ -295,6 +326,9 @@ export function particleEffectWgsl(cls: ParticleClass, world: number, baked?: Ba
   const frame = s.uv ? curveExpr(s.uv.frame, "cFrame", "t", "rc.z", decls) : "0.0"
   // Custom1, per particle over its life
   const custom1 = [0, 1, 2, 3].map((i) => (s.custom?.[`0_${i}`] ? curveExpr(s.custom[`0_${i}`], `cCustom${i}`, "t", "rq.x", decls) : "0.0"))
+  // Custom2, the dissolve's: TEXCOORD2, the shader's texcoord4
+  const dis = tong ? null : ((cls.material as ParticleMaterial).dissolve ?? null)
+  const custom2 = [0, 1, 2, 3].map((i) => (dis && s.custom?.[`1_${i}`] ? curveExpr(s.custom[`1_${i}`], `cCustomB${i}`, "t", "rq.y", decls) : "0.0"))
   const readsCustom =
     Object.values(m.layers).some((l) => l?.custom) ||
     (!!tong && (tong.alphaFromCustom || [tong.layers.main, tong.layers.mask].some((l) => l?.customAxes.some(Boolean))))
@@ -516,6 +550,35 @@ fn ${name}(q: vec2f, c1: vec4f) -> vec4f {
   rgb = rgb * vc.rgb * vc.a * ${tong.alphaFromCustom ? "c1.x" : "vc.a"};`}
   return vec4f(max(rgb, vec3f(0.0)), inside);`
     : ""
+  // THE DISSOLVE, DISSOLVE_SIMPLE's fragment: the picture's red (or alpha),
+  // turned over by _IsOpposition, against an edge that rides Custom2 —
+  //   soft = _DissovleSoft_W2 · (c2.w − _DissovleStrength) + _DissovleSoft
+  //   edge = (1 + soft) · (_DissovleStrength_Z2 · (c2.z − _DissovleSoft) + _DissovleStrength)
+  // — kept where it clears edge − soft, by a smoothstep soft wide. With
+  // _UseDissolveBound the value is lifted by both bound widths and the colour
+  // runs from _DissolveBoundColor2 and 1 to its own across them.
+  const dissolveCode = dis
+    ? (() => {
+        const sstep = (x: string) => `smoothstep(0.0, 1.0, clamp(${x}, 0.0, 1.0))`
+        const b = dis.bound
+        const head = `
+  let dt = dissolveLayer(uv, n, c2);
+  let dv = ${dis.redAlpha ? "dt.r" : "dt.a"};
+  let dd = ${dis.opposite ? "1.0 - dv" : "dv"};
+  let dsoft = ${f(dis.softW2)} * (c2.w - ${f(dis.strength)}) + ${f(dis.soft)};
+  let dedge = (dsoft + 1.0) * (${f(dis.strengthZ2)} * (c2.z - ${f(dis.soft)}) + ${f(dis.strength)});
+  let dk = 1.0 / max(dsoft, 1e-5);`
+        if (!b) return `${head}
+  a = a * ${sstep("(clamp(dd, 0.0, 1.0) - (dedge - dsoft)) * dk")};`
+        const w = b.width[0] + b.width[1]
+        return `${head}
+  let de = dd + ${f(w)};
+  let ds1 = ${sstep(`(de * (dsoft + 1.0) - (dedge + ${f(w)} - dsoft)) * dk`)};
+  let ds2 = ${sstep(`(de * (dsoft + 1.0) - (dedge + ${f(b.width[1])} - dsoft)) * dk`)};
+  rgb = mix(${v3(b.color2)}, mix(${v3(b.color1)}, rgb, ds1), ds2);
+  a = a * ${sstep("(clamp(de, 0.0, 1.0) - (dedge - dsoft)) * dk")};`
+      })()
+    : ""
   const effectBody = `  let mt = mainLayer(uv, n, c1);
   var rgb = ${powMix("mt.rgb", m.mainPow)};
   var a = ${m.redAlphaMain ? "rgb.r" : "mt.a"};
@@ -528,7 +591,7 @@ fn ${name}(q: vec2f, c1: vec4f) -> vec4f {
   ${s.renderer.linear ? "vc = vec4f(pow(max(vc.rgb, vec3f(0.0)), vec3f(2.2)), vc.a);" : ""}
   rgb = rgb * vc.rgb;
   a = a * vc.a;
-  ${m.layers.mask ? `let mk = maskLayer(uv, n, c1);\n  a = a * (${m.redAlphaMask ? "mk.r" : "mk.a"} - ${f(m.maskStrength)});` : ""}
+  ${m.layers.mask ? `let mk = maskLayer(uv, n, c1);\n  a = a * (${m.redAlphaMask ? "mk.r" : "mk.a"} - ${f(m.maskStrength)});` : ""}${dissolveCode}
   a = clamp(a, 0.0, 1.0) * inside;
   ${additive ? "return vec4f(rgb, a);" : `// laid over as _DstBlend says: a·rgb added, what it covers dimmed by a·${f(cover)}
   return vec4f(rgb / ${f(cover)}, a * ${f(cover)});`}`
@@ -606,15 +669,19 @@ fn rzEmitterStart(e: u32) -> f32 {
   let seed = rzHash11(f32(id) * 0.618 + f32(gen) * 1.37 + 0.11);`
     : ""
   const pivot = s.renderer.pivot
+  // a flat mesh's card sits where its bounds are: off the particle by their
+  // centre, which scales with the particle as the pivot does
+  const centre = mesh ? mesh.center : [0, 0]
   const pivotFn =
-    !stretched && (pivot[0] || pivot[1])
+    !stretched && (pivot[0] || pivot[1] || centre[0] || centre[1])
       ? `
 fn particlePivot(p: Particle, id: u32) -> vec2f {
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let rs = rzHash13(p.seed * 5.3 + 0.21);
-  let wh = vec2f(${sizeX} * (${solX}), ${sizeY} * (${solY}));
-  return 2.0 * vec2f(${f(pivot[0])}, ${f(pivot[1])}) * wh / max(max(wh.x, wh.y), 1e-5);
+  let sz = vec2f(${sizeX} * (${solX}), ${sizeY} * (${solY}));
+  let wh = sz${mesh ? ` * vec2f(${f(2 * mesh.extent[0])}, ${f(2 * mesh.extent[1])})` : ""};
+  return 2.0 * vec2f(${f(pivot[0] + centre[0])}, ${f(pivot[1] + centre[1])}) * sz / max(max(wh.x, wh.y), 1e-5);
 }`
       : ""
 
@@ -634,7 +701,7 @@ fn rzEmitterFrame(i: u32) -> array<vec3f, 3> {
   return array<vec3f, 3>(zp.pos, zp.tip - zp.pos, xp.tip - xp.pos);
 }`
   return `#particles ${pool}
-${baked ? "" : `#points ${cls.prefix}\n`}#textures 4
+${baked ? "" : `#points ${cls.prefix}\n`}#textures ${dis ? 6 : mesh ? 5 : 4}
 #bloom
 ${additive ? "#blend additive\n" : ""}${cls.overlay ? "#depth always\n" : ""}
 // ${cls.name}: generated from the game's particle system and its material
@@ -698,7 +765,7 @@ ${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Parti
     : "// staggered on the first spawn, so a scene does not open on every particle born at once\n  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);"}
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let t = 0.0;
-  p.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
+  p.size = 0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY}) * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
   ${stretched && s.renderer.pivot[1] ? `p.pos = p.pos + vec3f(0.0, ${f(-s.renderer.pivot[1])} * max(${sizeX}, ${sizeY}) * e.unit, 0.0);` : ""}
   // THE EMITTER'S SCALE rides in a field the engine ignores for this particle:
   // a square card's stretch (anything at or below 1 is square), a stretched
@@ -737,7 +804,7 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   q.pos = q.pos + q.vel * dt;${driftCode}
   ${stretched ? "" : `q.rot = q.rot + (${rol}) * dt;`}
   // size over life, against the start size this particle drew
-  q.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
+  q.size = 0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY}) * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
   ${stretched ? `q.stretch = max(${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
   return q;
 }
@@ -746,7 +813,8 @@ ${tong
 ${tong.layers.mask ? tongLayerFn("tongMask", tong.layers.mask, 2, "zw") : ""}`
   : `${layerFn("mainLayer", m.layers.main ?? { scale: [1, 1], offset: [0, 0], rotation: 0, tiling: true, speed: [0, 0] }, 0, !!nz?.main)}
 ${m.layers.plus ? layerFn("plusLayer", m.layers.plus, 1, !!nz?.plus) : ""}
-${m.layers.mask ? layerFn("maskLayer", m.layers.mask, 2, !!nz?.mask) : ""}`}
+${m.layers.mask ? layerFn("maskLayer", m.layers.mask, 2, !!nz?.mask) : ""}
+${dis ? layerFn("dissolveLayer", { ...dis, custom: dis.custom ? "xy" : undefined }, 5, dis.noise) : ""}`}
 
 fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
@@ -758,11 +826,15 @@ fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   // drawn long — flat slabs with hard ends, a fan of rectangles
   let card = vec2f(1.0 - quv.y, quv.x);` : "let card = quv;"}
   // a card wider or taller than square is drawn inside the square quad
-  let wh = vec2f(${sizeX} * (${solX}), ${sizeY} * (${solY}));
+  let wh = vec2f(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY});
   var uv = (card - vec2f(0.5)) * (max(wh.x, wh.y) / max(wh, vec2f(1e-5))) + vec2f(0.5);
   // outside the card, masked rather than returned from: the pictures must be
   // sampled in uniform control flow, which an early return breaks
-  let inside = select(0.0, 1.0, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)));
+  ${mesh ? "var" : "let"} inside = select(0.0, 1.0, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)));${mesh ? `
+  // the flat mesh at this point of its card: its own UV, and whether it is here
+  let mc = rzTexture(4u, vec2f(uv.x, 1.0 - uv.y));
+  inside = inside * mc.a;
+  uv = mc.rg;` : ""}
   ${uvs ? `
   // the flipbook: frame over life, counted from the sheet's top left
   let frames = ${f(tilesX * tilesY)};
@@ -772,8 +844,9 @@ fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   ${nz ? `
   let nuv = (uv + rzTime() * vec2f(${f(nz.speed[0])}, ${f(nz.speed[1])})) * vec2f(${f(nz.scale[0])}, ${f(nz.scale[1])}) + vec2f(${f(nz.offset[0])}, ${f(nz.offset[1])});
   let n = rzTexture(3u, vec2f(nuv.x, 1.0 - nuv.y)).r;` : "let n = 0.0;"}
-  ${readsCustom ? `let rq = rzHash13(p.seed * 13.1 + 0.3);
-  let c1 = vec4f(${custom1.join(", ")});` : "let c1 = vec4f(0.0);"}
+  ${readsCustom || dis ? `let rq = rzHash13(p.seed * 13.1 + 0.3);
+  let c1 = vec4f(${custom1.join(", ")});` : "let c1 = vec4f(0.0);"}${dis ? `
+  let c2 = vec4f(${custom2.join(", ")});` : ""}
 ${tong ? tongBody : effectBody}
 }
 `

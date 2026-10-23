@@ -397,11 +397,52 @@ def live_effect(material, png_for_guid, max_size=1024, always=False, asset_for_g
                 "plus": f.get("_IsDisturbUV_MainPlus", 1.0) > 0.5,
                 "mask": f.get("_IsDisturbUV_Mask", 0.0) > 0.5,
             }
+    # THE DISSOLVE (DISSOLVE_SIMPLE), a particle's alone: its custom data drives
+    # it (TEXCOORD2, Custom2), and a still sheet has none. Its picture slides
+    # as the other slots do — by time · _DissovleUVOffset, or by Custom2.xy under
+    # _DissovleUVOffset_X2Y2 — and gates the alpha by a smoothstep whose edge is
+    # Custom2.z (lib/unity-particles.ts draws the fragment). X338's water
+    # glints dissolve as they spread; X348's systems carry 0 there.
+    dissolve = None
+    dslot = material["textures"].get("_DissovleTex")
+    if always and "DISSOLVE_SIMPLE" in material.get("keywords", ()) and dslot and dslot.get("guid"):
+        png = png_for_guid(dslot["guid"])
+        if png and os.path.exists(png):
+            im = Image.open(png).convert("RGBA")
+            if max(im.size) > max_size:
+                k = max_size / max(im.size)
+                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "PNG", optimize=True)
+            uvo = material["colors"].get("_DissovleUVOffset", (0.0, 0.0, 0.0))
+            bound1, _ = _linear_colour(material, "_DissolveBoundColor1")
+            bound2, _ = _linear_colour(material, "_DissolveBoundColor2")
+            dissolve = {
+                "png": base64.b64encode(buf.getvalue()).decode("ascii"),
+                "scale": [float(dslot["scale"][0]), float(dslot["scale"][1])],
+                "offset": [float(dslot["offset"][0]), float(dslot["offset"][1])],
+                "rotation": float(f.get("_DissovleRotation", 0.0)),
+                "tiling": f.get("_IsTillingUV_Dissovle", 1.0) >= 0.5,
+                "speed": [float(uvo[0]), float(uvo[1])],
+                "srgb": srgb_of(dslot["guid"]),
+                **({"custom": "c2"} if f.get("_DissovleUVOffset_X2Y2", 0.0) > 0.5 else {}),
+                "noise": f.get("_IsDisturbUV_Dissovle", 0.0) > 0.5,
+                "redAlpha": f.get("_IsRedAlpha_Dissovle", 0.0) > 0.5,
+                "opposite": f.get("_IsOpposition_Dissovle", 0.0) > 0.5,
+                "soft": f.get("_DissovleSoft", 0.0),
+                "softW2": f.get("_DissovleSoft_W2", 0.0),
+                "strength": f.get("_DissovleStrength", 0.0),
+                "strengthZ2": f.get("_DissovleStrength_Z2", 0.0),
+                **({"bound": {"width": [f.get("_DissolveBoundWidth1", 0.0), f.get("_DissolveBoundWidth2", 0.0)],
+                              "color1": [float(c) for c in bound1], "color2": [float(c) for c in bound2]}}
+                   if f.get("_UseDissolveBound", 0.0) != 0.0 else {}),
+            }
     colour, colour_a = _linear_colour(material, "_Color")
     plus_colour, plus_a = _linear_colour(material, "_ColorPlus")
     return {
         "layers": layers,
         **({"noise": noise} if noise else {}),
+        **({"dissolve": dissolve} if dissolve else {}),
         "mainPow": list(material["colors"].get("_MainPow", (1.0, 1.0, 1.0))[:3]) + [material["alpha"].get("_MainPow", 0.0)],
         "color": [float(c) for c in colour] + [colour_a],
         "redAlphaMain": f.get("_IsRedAlpha_Main", 0.0) > 0.5,
