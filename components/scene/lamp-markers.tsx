@@ -129,6 +129,12 @@ export function LampMarkers({
               fill="currentColor"
               strokeWidth={2.25}
             />
+            {/* Its name under it, so a scene of several lamps says which is
+                which without opening each. Type on the canvas: the cover's
+                ink, which follows the scene behind it. */}
+            <span className="cover-type absolute top-full left-1/2 -translate-x-1/2 text-2xs font-medium whitespace-nowrap">
+              {l.name}
+            </span>
           </Button>
         )
       })}
