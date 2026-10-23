@@ -879,8 +879,9 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     return () => window.removeEventListener("keydown", onKey)
   }, [hidePreview])
 
-  /** One cover: the picture, its name and maker under it. A click opens the
-   *  scene; a pause over it (or focus on it) grows the preview. Your own keep
+  /** One cover: the picture, its name and maker under it. A pause over it, a
+   *  click or focus grows the preview, whose Open opens the scene; Enter opens
+   *  it from the keyboard. Your own keep
    *  their menu: open, edit, delete. */
   const card = (s: GalleryRow, wide?: boolean) => {
     const node = (
@@ -893,9 +894,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           onFocus={(e) => showPreview(s, e.currentTarget)}
           onBlur={() => hidePreview()}
           onPointerDown={() => router.prefetch(sceneHref(s))}
-          // A phone has no hover: a tap grows the preview, and its Open opens.
+          // The cover is a picture, not a door: a click (or a phone's tap, with
+          // no hover) grows the preview at once, before its pause is up, and
+          // its Open opens. Enter still opens, and a modified click still
+          // opens a new tab.
           onClick={(e) => {
-            if (!phone) return
+            if (e.detail === 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
             e.preventDefault()
             previewApi.current?.show(s, e.currentTarget, true)
           }}
