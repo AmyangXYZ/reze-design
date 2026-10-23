@@ -8943,7 +8943,7 @@ function Lab() {
 
                             ALWAYS HERE: an upload ADDS a stage beside the ones
                             there, and the same file again replaces its own. */}
-                        <div className={cn("flex gap-5", (stage || nativeStage) && "mt-2")}>
+                        <div className={cn("flex flex-col", (stage || nativeStage) && "mt-2")}>
                           <Button
                             variant="bare"
                             onClick={() => pickModel({ mode: "stage" })}
@@ -8957,6 +8957,7 @@ function Lab() {
                             onClick={pickStageGlb}
                             className={LINE_ACTION}
                           >
+                            <Plus className="size-3.5" />
                             {t.lab.uploadStageGlb}
                           </Button>
                         </div>
