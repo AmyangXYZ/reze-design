@@ -771,8 +771,8 @@ export function LibraryCards<T extends BrowseItem>({
   rows?: boolean
   /** A long shelf of pictures (effects): the rows closer, so more fit. */
   dense?: boolean
-  /** A card to bring into view, when its pane chose it (a group's graph, the
-   *  pane's effect). Picking in the shelf itself never scrolls it. */
+  /** A card to bring to the shelf's centre, when its pane chose it (a group's
+   *  graph, the pane's effect). Picking in the shelf itself never scrolls it. */
   reveal?: string | null
 }) {
   useSyncExternalStore(watchFailing, failingVersion, failingVersion)
@@ -810,11 +810,20 @@ export function LibraryCards<T extends BrowseItem>({
     watch.observe(grid)
     return () => watch.disconnect()
   }, [empty0])
+  // A pick in the shelf comes back as the pane's choice; that one stays where
+  // it was clicked.
+  const pickedHere = useRef<string | null>(null)
   useEffect(() => {
-    if (!reveal) return
-    shelf.current
-      ?.querySelector(`[data-card="${CSS.escape(reveal)}"]`)
-      ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    if (reveal === pickedHere.current) return
+    pickedHere.current = null
+    const el = shelf.current
+    const card = reveal && el?.querySelector<HTMLElement>(`[data-card="${CSS.escape(reveal)}"]`)
+    if (!el || !card) return
+    // Centred in the shelf, whole: "nearest" stopped at the shelf's edge,
+    // where a card could sit cut by it. The shelf alone scrolls; the dock
+    // and the page around it stay put.
+    const at = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+    el.scrollTo({ top: at - (el.clientHeight - card.offsetHeight) / 2, behavior: "smooth" })
   }, [reveal])
 
   if (rows.length === 0) {
@@ -840,11 +849,15 @@ export function LibraryCards<T extends BrowseItem>({
               role="button"
               tabIndex={0}
               aria-pressed={picked}
-              onClick={() => onSelect(item)}
+              onClick={() => {
+                pickedHere.current = item.id
+                onSelect(item)
+              }}
               onDoubleClick={onActivate && (() => onActivate(item))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()
+                  pickedHere.current = item.id
                   onSelect(item)
                 }
               }}
