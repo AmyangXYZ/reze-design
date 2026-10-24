@@ -980,7 +980,9 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             {session && sectionWord("yours", t.rail.yours)}
             {session && sectionWord("liked", t.rail.liked)}
           </nav>
-          <SiteChip site="bilibili" href="/bilibili" className="mt-1 h-6 px-2 text-xs compact:hidden">
+          {/* On a phone too, at the end of the sections' line; an open search
+              takes that line, as it takes the sections. */}
+          <SiteChip site="bilibili" href="/bilibili" className={cn("mt-1 h-6 shrink-0 px-2 text-xs", searchOpen && "compact:hidden")}>
             {t.bilibili.title}
           </SiteChip>
           <span className="flex-1 compact:hidden" />

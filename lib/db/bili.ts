@@ -28,6 +28,10 @@ export type PublicVideo = {
   favorites: number
   shares: number
   comments: number
+  /** Bilibili image URLs; empty until first counted. Their host refuses a
+   *  foreign referrer, so they are shown with referrerPolicy="no-referrer". */
+  cover: string
+  face: string
 }
 
 /** Every kept video from the launch on, most liked first; empty before the
@@ -48,6 +52,8 @@ export async function publicVideos(): Promise<PublicVideo[]> {
         favorites: t.favorites,
         shares: t.shares,
         comments: t.comments,
+        cover: t.cover,
+        face: t.face,
       })
       .from(t)
       .where(gte(t.published, new Date(LAUNCH)))
@@ -58,19 +64,21 @@ export async function publicVideos(): Promise<PublicVideo[]> {
   }
 }
 
-/** Write fresh counts for every video Bilibili still returns, in one statement. */
+/** Write fresh counts for every video Bilibili still returns, in one
+ *  statement, with its cover and avatar (an empty one keeps the last). */
 export async function recount(aids: number[]) {
   const counts = await countVideos(aids)
   if (counts.size === 0) return
   const rows = [...counts].map(
     ([aid, c]: [number, BiliCounts]) =>
-      sql`(${aid}::bigint, ${c.plays}::int, ${c.likes}::int, ${c.coins}::int, ${c.favorites}::int, ${c.shares}::int, ${c.danmaku}::int, ${c.comments}::int)`,
+      sql`(${aid}::bigint, ${c.plays}::int, ${c.likes}::int, ${c.coins}::int, ${c.favorites}::int, ${c.shares}::int, ${c.danmaku}::int, ${c.comments}::int, ${c.cover}::text, ${c.face}::text)`,
   )
   await db.execute(sql`
     update ${t} set
       plays = v.plays, likes = v.likes, coins = v.coins, favorites = v.favorites,
-      shares = v.shares, danmaku = v.danmaku, comments = v.comments, counted_at = now()
-    from (values ${sql.join(rows, sql`, `)}) as v(aid, plays, likes, coins, favorites, shares, danmaku, comments)
+      shares = v.shares, danmaku = v.danmaku, comments = v.comments, counted_at = now(),
+      cover = coalesce(nullif(v.cover, ''), ${t.cover}), face = coalesce(nullif(v.face, ''), ${t.face})
+    from (values ${sql.join(rows, sql`, `)}) as v(aid, plays, likes, coins, favorites, shares, danmaku, comments, cover, face)
     where ${t.aid} = v.aid`)
 }
 

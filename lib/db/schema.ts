@@ -243,7 +243,8 @@ export const aiUsage = pgTable(
 /**
  * Videos on Bilibili that credit Reze Design (lib/bilibili.ts). What a video
  * IS never changes — its id, maker, title and date are written once, when it
- * is first found. Only the counts move, and a refresh rewrites them in place.
+ * is first found. Only the counts move, and a refresh rewrites them in place,
+ * with the cover and the maker's avatar, which their owners can change too.
  */
 export const biliVideos = pgTable("bili_videos", {
   bvid: text("bvid").primaryKey(),
@@ -260,6 +261,10 @@ export const biliVideos = pgTable("bili_videos", {
   favorites: integer("favorites").notNull().default(0),
   shares: integer("shares").notNull().default(0),
   danmaku: integer("danmaku").notNull().default(0),
+  /** The cover and the maker's avatar, as Bilibili's image URLs. Empty until
+   *  the video is first counted. */
+  cover: text("cover").notNull().default(""),
+  face: text("face").notNull().default(""),
   comments: integer("comments").notNull().default(0),
   countedAt: timestamp("counted_at").notNull().defaultNow(),
 })

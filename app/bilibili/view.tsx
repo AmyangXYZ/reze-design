@@ -2,7 +2,8 @@
 
 // The presentation half of /bilibili, on the dashboard kit (./dash):
 // five stats; likes over time; likes by week and the top makers; and every
-// video or maker in a searchable table. One screen on a desktop.
+// video or maker in a searchable table, with covers and avatars. One screen on
+// a desktop: the charts take the left 7 of 12 columns, the table the rest.
 
 import { useMemo, useState } from "react"
 import { byMaker, byWeek, calendarWeek, cumulative, weekEndingAt } from "@/lib/bili-groups"
@@ -16,6 +17,21 @@ const LINK = "hover:underline underline-offset-2"
 const space = (mid: number) => `https://space.bilibili.com/${mid}`
 const watch = (bvid: string) => `https://www.bilibili.com/video/${bvid}`
 const WEEK = 7 * 86_400_000
+
+/** A Bilibili image at twice `w`×`h` CSS pixels, cropped to fill, as WebP:
+ *  the image host resizes on request. */
+const sized = (url: string, w: number, h: number) => `${url}@${w * 2}w_${h * 2}h_1c.webp`
+
+/** An image from Bilibili's host, which refuses a foreign referrer. A grey
+ *  placeholder until the daily count has stored one. */
+function BiliImage({ src, w, h, className }: { src: string; w: number; h: number; className: string }) {
+  return src ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={sized(src, w, h)} alt="" width={w} height={h} loading="lazy" decoding="async" referrerPolicy="no-referrer" className={cn("shrink-0 bg-muted object-cover", className)} />
+  ) : (
+    <span aria-hidden className={cn("shrink-0 bg-muted", className)} style={{ width: w, height: h }} />
+  )
+}
 
 type Maker = ReturnType<typeof byMaker>[number]
 
@@ -42,14 +58,19 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
       key: "video",
       header: t.video,
       cell: (v) => (
-        <>
-          <a href={watch(v.bvid)} target="_blank" rel="noreferrer" className={cn("block truncate text-foreground", LINK)}>
-            {v.title}
+        <div className="flex items-center gap-2.5">
+          <a href={watch(v.bvid)} target="_blank" rel="noreferrer" tabIndex={-1} aria-hidden>
+            <BiliImage src={v.cover} w={64} h={40} className="rounded-chip" />
           </a>
-          <a href={space(v.mid)} target="_blank" rel="noreferrer" className={cn("block truncate text-2xs text-muted-foreground", LINK)}>
-            {v.author}
-          </a>
-        </>
+          <div className="min-w-0">
+            <a href={watch(v.bvid)} target="_blank" rel="noreferrer" className={cn("block truncate text-foreground", LINK)}>
+              {v.title}
+            </a>
+            <a href={space(v.mid)} target="_blank" rel="noreferrer" className={cn("block truncate text-2xs text-muted-foreground", LINK)}>
+              {v.author}
+            </a>
+          </div>
+        </div>
       ),
     },
     { key: "published", header: t.published, width: "w-16", sort: (v) => Date.parse(v.published), cell: (v) => <span className="text-muted-foreground">{v.published.slice(5, 10)}</span> },
@@ -61,8 +82,9 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
       key: "maker",
       header: t.maker,
       cell: (m) => (
-        <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={cn("block truncate text-foreground", LINK)}>
-          {m.label}
+        <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={cn("flex items-center gap-2.5 text-foreground", LINK)}>
+          <BiliImage src={m.face} w={24} h={24} className="rounded-full" />
+          <span className="truncate">{m.label}</span>
         </a>
       ),
     },
@@ -108,14 +130,14 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card title={t.growth} className="lg:col-span-8">
+        <Card title={t.growth} className="lg:col-span-7">
           <AreaChart
             label={t.growth}
             points={days.map((d) => ({ key: String(d.day), label: d.label, value: d.likes, title: d.label, body: t.onDay(d.label, fmt(d.likes)) }))}
           />
         </Card>
 
-        <Card className="h-[32rem] lg:col-span-4 lg:row-span-2 lg:h-auto">
+        <Card className="h-[32rem] lg:col-span-5 lg:row-span-2 lg:h-auto">
           {tab === "videos" ? (
             <SmartTable
               rows={videos}
@@ -131,29 +153,32 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
           )}
         </Card>
 
-        <Card title={t.byWeek} className="lg:col-span-4">
-          <Columns
-            label={t.byWeek}
-            bars={weeks.map((w) => ({ key: w.key, label: w.label, a: w.likes, title: t.weekOf(w.label), body: t.tip(w.videos, fmt(w.plays), fmt(w.likes)) }))}
-          />
-        </Card>
+        {/* The left column's second row: two cards sharing its 7 columns. */}
+        <div className="grid min-h-0 gap-3 lg:col-span-7 lg:grid-cols-2">
+          <Card title={t.byWeek}>
+            <Columns
+              label={t.byWeek}
+              bars={weeks.map((w) => ({ key: w.key, label: w.label, a: w.likes, title: t.weekOf(w.label), body: t.tip(w.videos, fmt(w.plays), fmt(w.likes)) }))}
+            />
+          </Card>
 
-        <Card title={t.topMakers} className="lg:col-span-4">
-          <BarList
-            rows={makers.map((m) => ({
-              key: m.key,
-              title: t.tip(m.videos, fmt(m.plays), fmt(m.likes)),
-              label: (
-                <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={LINK}>
-                  {m.label}
-                </a>
-              ),
-              a: m.likes,
-              note: t.nVideos(m.videos),
-              value: short(m.likes),
-            }))}
-          />
-        </Card>
+          <Card title={t.topMakers}>
+            <BarList
+              rows={makers.map((m) => ({
+                key: m.key,
+                title: t.tip(m.videos, fmt(m.plays), fmt(m.likes)),
+                label: (
+                  <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={LINK}>
+                    {m.label}
+                  </a>
+                ),
+                a: m.likes,
+                note: t.nVideos(m.videos),
+                value: short(m.likes),
+              }))}
+            />
+          </Card>
+        </div>
       </div>
     </Shell>
   )

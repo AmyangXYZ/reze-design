@@ -1,7 +1,7 @@
 // How the Bilibili videos are summed for a chart: by maker, and by the week
 // they were published.
 
-export type GroupVideo = { mid: number; author: string; published: string; plays: number; likes: number; favorites: number }
+export type GroupVideo = { mid: number; author: string; published: string; plays: number; likes: number; favorites: number; face?: string }
 export type Group = { key: string; label: string; videos: number; plays: number; likes: number; favorites: number }
 
 const DAY = 86_400_000
@@ -43,11 +43,16 @@ function add(by: Map<string, Group>, key: string, label: string, v: GroupVideo) 
   by.set(key, g)
 }
 
-/** One group per maker, most liked first. */
-export function byMaker(videos: GroupVideo[]): Group[] {
+/** One group per maker, most liked first, with their avatar: the first any
+ *  of their videos carries. */
+export function byMaker(videos: GroupVideo[]): (Group & { face: string })[] {
   const by = new Map<string, Group>()
-  for (const v of videos) add(by, String(v.mid), v.author, v)
-  return [...by.values()].sort((a, b) => b.likes - a.likes)
+  const faces = new Map<string, string>()
+  for (const v of videos) {
+    add(by, String(v.mid), v.author, v)
+    if (v.face && !faces.has(String(v.mid))) faces.set(String(v.mid), v.face)
+  }
+  return [...by.values()].map((g) => ({ ...g, face: faces.get(g.key) ?? "" })).sort((a, b) => b.likes - a.likes)
 }
 
 /** One group per week as `weekOf` cuts them, every week from July to the one

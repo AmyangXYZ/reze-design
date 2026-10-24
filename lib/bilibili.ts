@@ -65,7 +65,8 @@ export type BiliFound = {
   published: Date
 }
 
-/** What a video has collected so far. */
+/** What a video has collected so far, and how it looks today: its cover and
+ *  its maker's avatar, which come back with the counts. */
 export type BiliCounts = {
   plays: number
   likes: number
@@ -74,6 +75,8 @@ export type BiliCounts = {
   shares: number
   danmaku: number
   comments: number
+  cover: string
+  face: string
 }
 
 class Blocked extends Error {}
@@ -296,7 +299,12 @@ export async function findVideos(makers: Map<number, string>, since: number, sca
 type ResourceInfo = {
   id: number
   cnt_info: { play: number; thumb_up: number; coin: number; collect: number; share: number; danmaku: number; reply: number }
+  cover?: string
+  upper?: { face?: string }
 }
+
+/** Bilibili hands some image URLs out as http; the same paths serve https. */
+const https = (url = "") => url.replace(/^http:\/\//, "https://")
 
 /** Current counts for these videos, by aid. A video Bilibili no longer
  *  returns (deleted, made private) is absent. */
@@ -311,7 +319,17 @@ export async function countVideos(aids: number[]): Promise<Map<number, BiliCount
     const data = await s.get<ResourceInfo[] | null>(`https://api.bilibili.com/medialist/gateway/base/resource/infos?resources=${resources}`, "https://www.bilibili.com/")
     for (const r of data ?? []) {
       const c = r.cnt_info
-      out.set(r.id, { plays: c.play, likes: c.thumb_up, coins: c.coin, favorites: c.collect, shares: c.share, danmaku: c.danmaku, comments: c.reply })
+      out.set(r.id, {
+        plays: c.play,
+        likes: c.thumb_up,
+        coins: c.coin,
+        favorites: c.collect,
+        shares: c.share,
+        danmaku: c.danmaku,
+        comments: c.reply,
+        cover: https(r.cover),
+        face: https(r.upper?.face),
+      })
     }
     await pause(300)
   }
