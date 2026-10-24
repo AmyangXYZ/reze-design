@@ -5,10 +5,11 @@
 // DISPLAY ONLY. What is stored is always the English name — scenes refer to a
 // stock item by it, and a scene made in one language opens in the other — so this
 // translates on the way to the screen and never into a document. A user's or a
-// published item shows as its author wrote it, in whatever language.
+// published item shows as its author wrote it, in whatever language, unless its
+// row carries a Chinese of its own (a style maker's graphs).
 
 import type { Locale } from "@/lib/i18n"
-import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
+import { stockEffects, stockGrades, stockGraphs, styleGraphs } from "@/lib/stock"
 
 // The stock's tags. Abbreviations (AG, NPR, PBR, MIDI…) stay as they are;
 // a tag already in Chinese is its own label.
@@ -44,26 +45,30 @@ const GROUP_LABELS: Record<string, string> = {
 }
 
 export type StockKind = "graph" | "effect" | "grade"
-const SHELVES = { graph: stockGraphs, effect: stockEffects, grade: stockGrades }
+// The rendering styles' graphs beside the stock's: they are curated too, and
+// a group wearing one carries only its name.
+const SHELVES = { graph: () => [...stockGraphs(), ...styleGraphs()], effect: stockEffects, grade: stockGrades }
 
 /** An item as `{ name, owner }`, with its Chinese when the caller has the row.
- *  Anything not stock is the author's own words and is never translated. */
+ *  A row's own Chinese shows whoever owns it (a style maker's graphs carry
+ *  theirs). Given only a name, the shelf is asked, and only for stock: a
+ *  community item that shares a stock name is not that item. */
 type Item = { name: string; owner?: string; nameZh?: string; descriptionZh?: string }
 const fromStock = (item: Item) => item.owner === undefined || item.owner === "stock"
 
 /** The row's Chinese, from the item itself or, given only a name, the shelf. */
 function zhOf(kind: StockKind, item: Item): { name?: string; description?: string } {
-  if (!fromStock(item)) return {}
-  const row: Item | undefined = item.nameZh !== undefined ? item : SHELVES[kind]().find((i) => i.name === item.name)
+  const row: Item | undefined =
+    item.nameZh !== undefined ? item : fromStock(item) ? SHELVES[kind]().find((i) => i.name === item.name) : undefined
   return { name: row?.nameZh || undefined, description: row?.descriptionZh || undefined }
 }
 
-/** The name to show for an item: a stock item's in Chinese, else the stored name. */
+/** The name to show for an item: its Chinese where it has one, else the stored name. */
 export function stockName(kind: StockKind, item: Item, locale: Locale): string {
   return (locale === "zh" && zhOf(kind, item).name) || item.name
 }
 
-/** The description to show: a stock item's in Chinese, else the stored one. */
+/** The description to show: its Chinese where it has one, else the stored one. */
 export function stockDescription(kind: StockKind, item: Item & { description?: string }, locale: Locale): string {
   return (locale === "zh" && zhOf(kind, item).description) || item.description || ""
 }
