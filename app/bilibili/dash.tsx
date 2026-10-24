@@ -302,7 +302,7 @@ export function BarList({ rows, colors = [BLUE, ORANGE], rank = true }: { rows: 
       <ol className="flex flex-col gap-2.5 pt-1">
         {rows.map((r, i) => (
           <li key={r.key} className="flex flex-col gap-1">
-            <div className="flex items-baseline gap-2 text-xs">
+            <div className="flex items-center gap-2 text-xs">
               {rank && <span className="w-4 shrink-0 text-2xs text-muted-foreground tabular-nums">{i + 1}</span>}
               <span className="min-w-0 flex-1 truncate text-foreground">{r.label}</span>
               {r.note && <span className="shrink-0 text-2xs text-muted-foreground">{r.note}</span>}

@@ -168,8 +168,9 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
                 key: m.key,
                 title: t.tip(m.videos, fmt(m.plays), fmt(m.likes)),
                 label: (
-                  <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={LINK}>
-                    {m.label}
+                  <a href={space(Number(m.key))} target="_blank" rel="noreferrer" className={cn("flex items-center gap-2", LINK)}>
+                    <BiliImage src={m.face} w={18} h={18} className="rounded-full" />
+                    <span className="truncate">{m.label}</span>
                   </a>
                 ),
                 a: m.likes,

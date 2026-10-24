@@ -1159,7 +1159,7 @@ const en = {
   // /bilibili: videos made with Reze Design.
   bilibili: {
     title: "On Bilibili",
-    intro: "Videos that credit Reze Design in their title, tags or description, recounted once a day.",
+    intro: "Videos that credit Reze Design in their title, tags or description.",
     videos: "Videos",
     makers: "Makers",
     plays: "Plays",
@@ -2208,7 +2208,7 @@ const zh: Dictionary = {
   },
   bilibili: {
     title: "B 站上的作品",
-    intro: "标题、标签或简介中署名 Reze Design 的视频，每天重新统计一次。",
+    intro: "标题、标签或简介中署名 Reze Design 的视频。",
     videos: "视频",
     makers: "作者",
     plays: "播放",
