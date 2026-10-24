@@ -8852,18 +8852,18 @@ function Lab() {
                         )}
                         {stage && (
                           <>
-                            {/* ONE CHIP PER STAGE, as the props are: the scene
-                                holds several, and the pane below places the one
-                                picked. The first is where the lighting comes
-                                from. */}
-                            <div className="flex flex-wrap items-center gap-1.5">
+                            {/* ONE ROW PER STAGE: the scene holds several, and
+                                the pane below places the one picked. The first
+                                is where the lighting comes from. Its delete sits
+                                at the row's end, where every other row keeps it. */}
+                            <div className="flex flex-col">
                               {stageRoots.map((root, n) => {
                                 const on = root.id === stage.id
                                 return (
                                   <span
                                     key={root.id}
                                     className={cn(
-                                      "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
+                                      "flex w-full min-w-0 items-center gap-2 py-1 text-xs transition-colors",
                                       on
                                         ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
                                         : "text-muted-foreground hover:text-foreground",

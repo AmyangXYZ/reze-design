@@ -9,7 +9,7 @@ import { storageKey } from "@/lib/storage"
 
 const KEY = storageKey("panel-backing")
 /** The deepest it goes, in percent. */
-export const BACKING_MAX = 80
+export const BACKING_MAX = 100
 
 const listeners = new Set<() => void>()
 // Held here too, so the slider still works where storage is refused.
