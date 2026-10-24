@@ -427,6 +427,22 @@ const POINT_EFFECTS = [
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
  *  this exists to prevent, and it is what applying one effect twice produces. */
+/** A phone's list of looks: the built-ins and the community's rows as one,
+ *  newest first. One row per name, a built-in's where a community row shares
+ *  it, since the name is what applying resolves by. */
+function newestFirst<T extends { name: string; createdAt?: string }>(builtins: T[], community: T[]): T[] {
+  const seen = new Set<string>()
+  const when = (r: T) => (r.createdAt ? Date.parse(r.createdAt) || 0 : 0)
+  return [...builtins, ...community]
+    .filter((r) => {
+      const k = nameKey(r.name)
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+    .sort((a, b) => when(b) - when(a))
+}
+
 function stampEffectUids(list: AppliedEffect[]): AppliedEffect[] {
   const seen = new Set<string>()
   return list.map((e) => {
@@ -4473,6 +4489,11 @@ function Lab() {
   // group back, or a look built here could only ever live in this one scene:
   // invisible in the library, unusable on another group, impossible to publish.
   const communityGraphs = useCommunity<GraphItem>("graph")
+  // The phone's lists: built-ins and community rows together, newest first.
+  // Desktop's libraries read the same rows; only the phone needs them merged.
+  const phoneEffects = phone ? newestFirst(builtinEffects(), communityEffects) : []
+  const phoneGraphs = phone ? newestFirst(builtinGraphs(), communityGraphs) : []
+  const phoneGrades = phone ? newestFirst(builtinGrades(), communityGrades) : []
   // Eager, unlike the other two editors': this panel stays MOUNTED while closed
   // (see the JSX), so it needs its rect on the first render it appears in.
   const { rect: graphPanelRect, update: updateGraphPanelRect } = useStoredRect(GRAPH_PANEL_KEY, defaultPanelRect, {
@@ -10619,10 +10640,10 @@ function Lab() {
             onColor: (hex) => patch("ground", { color: hex }),
           }}
           effects={{
-            items: builtinEffects().map((e) => ({ id: e.id, label: builtinName("effect", e, uiLocale) })),
+            items: phoneEffects.map((e) => ({ id: e.id, label: builtinName("effect", e, uiLocale) })),
             applied: (id) => bgEffects.some((x) => x.id === id),
             onToggle: (id) => {
-              const e = builtinEffects().find((x) => x.id === id)
+              const e = phoneEffects.find((x) => x.id === id)
               if (e) setBgEffects((list) => (list.some((x) => x.id === id) ? list.filter((x) => x.id !== id) : [...list, applyDefaults(e)]))
             },
             tune: (id) => {
@@ -10640,17 +10661,17 @@ function Lab() {
           }}
           materials={{
             groups: (cast[0] ? (groupsByModel[cast[0].id] ?? []) : []).map((g) => {
-              const look = builtinGraphs().find((x) => x.name === g.graph?.name)
+              const look = phoneGraphs.find((x) => x.name === g.graph?.name)
               return { id: g.id, label: localGroupLabel(groupLabel(g), uiLocale), look: look ? builtinName("graph", look, uiLocale) : (g.graph?.name ?? "—") }
             }),
-            looks: builtinGraphs().map((x) => ({ name: x.name, label: builtinName("graph", x, uiLocale) })),
+            looks: phoneGraphs.map((x) => ({ name: x.name, label: builtinName("graph", x, uiLocale) })),
             onPick: (groupId, name) => {
-              const look = builtinGraphs().find((x) => x.name === name)
+              const look = phoneGraphs.find((x) => x.name === name)
               if (cast[0] && look) applyGraphTo(cast[0].id, groupId, look.payload.graph, name)
             },
           }}
           grades={{
-            items: builtinGrades().map((g) => ({ name: g.name, label: builtinName("grade", g, uiLocale) })),
+            items: phoneGrades.map((g) => ({ name: g.name, label: builtinName("grade", g, uiLocale) })),
             current: settings.grade.preset,
             onPick: pickGrade,
             intensity: settings.grade.intensity,
