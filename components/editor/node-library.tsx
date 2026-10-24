@@ -40,6 +40,7 @@ import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
 import { stockDescription, stockName, stockSearchText } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
+import { lookPackName, lookPacks } from "@/lib/materials"
 
 
 type LibraryProps = {
@@ -147,6 +148,8 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
   const displayName = useCallback((r: (typeof ROWS)[number]) => stockName("graph", r, locale), [locale])
   const searchText = useCallback((r: (typeof ROWS)[number]) => stockSearchText("graph", r), [])
   const browse = useLibraryBrowse(ROWS, numbers, { initialFacet, displayName, searchText })
+  // The rendering styles, by the tag their graphs carry.
+  const quickTags = useMemo(() => lookPacks().map((p) => ({ tag: p.tag, label: lookPackName(p, locale) })), [locale])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // The name someone typed that is already in use. Rename REFUSES rather than
   // silently saving under "… 2": a suffix you did not ask for is how a library
@@ -294,6 +297,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
     <LibraryDock
       title={t.library.title}
       browse={browse}
+      quickTags={quickTags}
       onClose={onClose}
       // What a pick lands on, or where to choose it: the Materials pane.
       context={

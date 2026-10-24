@@ -559,6 +559,7 @@ export function LibraryDock<T extends BrowseItem>({
   onFocusCapture,
   detail,
   cards,
+  quickTags,
   children,
 }: {
   title: string
@@ -574,11 +575,14 @@ export function LibraryDock<T extends BrowseItem>({
   detail: React.ReactNode
   /** The shelf (LibraryCards). */
   cards: React.ReactNode
+  /** A second row of tags to narrow the shelf by in one click: the rendering
+   *  styles, for shaders. Picking one again lets it go. */
+  quickTags?: { tag: string; label: string }[]
   /** Its dialogs: delete and make-public confirmations. */
   children?: React.ReactNode
 }) {
   const t = useT()
-  const { facet, setFacet, filtered, clear, query, setQuery, sort, chooseSort } = browse
+  const { facet, setFacet, filtered, clear, query, setQuery, sort, chooseSort, tag, setTag } = browse
 
   const word = (on: boolean, label: React.ReactNode, onClick: () => void, key?: string) => (
     <Button
@@ -642,6 +646,24 @@ export function LibraryDock<T extends BrowseItem>({
         {word(sort === "hot", t.rail.sortHot, () => chooseSort("hot"))}
         {word(sort === "new", t.rail.sortNew, () => chooseSort("new"))}
       </div>
+      {quickTags && quickTags.length > 0 && (
+        <div className="-mt-1 -mb-1.5 flex shrink-0 flex-wrap gap-1.5">
+          {quickTags.map((q) => (
+            <Button
+              key={q.tag}
+              variant="bare"
+              aria-pressed={tag === q.tag}
+              onClick={() => setTag(tag === q.tag ? null : q.tag)}
+              className={cn(
+                "rounded-chip border px-2 py-0.5 text-2xs whitespace-nowrap",
+                tag === q.tag ? "border-blue-400 bg-blue-400 text-on-accent" : "border-line-strong text-foreground hover:bg-white/10",
+              )}
+            >
+              {q.label}
+            </Button>
+          ))}
+        </div>
+      )}
       {cards}
       {children}
     </section>
