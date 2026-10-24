@@ -458,7 +458,8 @@ export function AccountButton({
     <Button
       variant="bare"
       aria-label={t.account.label}
-      className="font-mono text-2xs tracking-wide text-muted-foreground uppercase hover:text-foreground"
+      // Underlined, as the empty file slot is: a word that is also a door.
+      className="font-mono text-2xs tracking-wide text-muted-foreground uppercase underline decoration-current/40 underline-offset-4 transition-colors hover:text-foreground hover:decoration-current"
     >
       {session ? `@${handle}` : t.account.signIn}
     </Button>
