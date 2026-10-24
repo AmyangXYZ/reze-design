@@ -147,16 +147,22 @@ plumbing.
 
 **The stock is rows too**: every public grade, graph and effect owned by the
 first of `ADMIN_EMAILS` (`lib/stock-rows.ts`). It is what scenes, stages and
-styles refer to BY NAME or role (auto-style's part looks, the style packs,
-Stage Surface and the stage material table, a stage's effects, grade names),
-which is why it is one account's and not every public row. The editor waits for the whole
-shelf from `/api/library/stock` before it starts (`lib/stock.ts`,
+styles refer to BY NAME or role (auto-style's part looks, Stage Surface and
+the stage material table, a stage's effects, grade names), which is why it is
+one account's and not every public row. The editor waits for the whole shelf
+from `/api/library/stock` before it starts (`lib/stock.ts`,
 `hooks/use-stock.ts`); a scene page gets the rows its document names from
 the server. Read them through `stockGraphs()`, `stockEffects()` and
 `stockGrades()`, never at module scope. Change one by publishing over it as
 that account, or with a script (`scripts/lib/stock-db.mjs`) followed by
 `npm run db:refresh`. Chinese names and descriptions are the row's `name_zh`
 and `description_zh`.
+
+**Rendering styles are not the stock.** They are rows of `render_styles`, each
+owned by its maker, and a style's graphs are the public graphs that maker
+publishes carrying its tag (`lib/stock-rows.ts`). They are served with the
+stock and read through `lookPacks()` (`lib/materials.ts`). There is no UI:
+`npm run db:styles` lists and writes them, then `npm run db:refresh`.
 
 **A scene recognises published work by VALUE, not by bookkeeping**
 (`lib/refs.ts`). A look that equals a published item is pinned by id. Anything

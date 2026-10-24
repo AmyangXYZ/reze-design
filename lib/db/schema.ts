@@ -23,6 +23,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
 import type { EffectPayload, GradePayload, GraphPayload, LibraryKind, ScenePayload } from "@/lib/library"
+import type { LookStaging } from "@/lib/materials"
 import { user } from "./auth-schema"
 
 export type LibraryPayload = GradePayload | GraphPayload | EffectPayload | ScenePayload
@@ -261,4 +262,28 @@ export const biliVideos = pgTable("bili_videos", {
   danmaku: integer("danmaku").notNull().default(0),
   comments: integer("comments").notNull().default(0),
   countedAt: timestamp("counted_at").notNull().defaultNow(),
+})
+
+/**
+ * The rendering styles (lib/materials lookPacks): the curated shelf the style
+ * menu lists, in `position` order. Data, not code, and owned by a maker: a
+ * style's graphs are the public graphs its owner publishes carrying its tag
+ * (lib/stock-rows styleGraphRows), whether the owner is the stock account or
+ * not. Written only by scripts/db-styles.mjs; there is no UI.
+ */
+export const renderStyles = pgTable("render_styles", {
+  /** Short and stable: a browser's remembered style and the AI's
+   *  apply_look_pack name it ("ag", "endfield"). */
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
+  /** The tag the style's graphs carry. One style per tag. */
+  tag: text("tag").notNull().unique(),
+  name: text("name").notNull(),
+  nameZh: text("name_zh").notNull().default(""),
+  /** More names to find it by in the palette: initials, short forms. */
+  keywords: text("keywords").array().notNull().default([]),
+  /** How it wants the scene lit: transform, exposure, world, and light. */
+  staging: jsonb("staging").$type<LookStaging>().notNull(),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })

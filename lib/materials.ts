@@ -1,6 +1,7 @@
-import { DEFAULT_BLOOM, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
+import type { SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
-import { stockGraphs, stockVersion, subscribeStock } from "@/lib/stock"
+import { stockGraphs, stockVersion, styleGraphs, styles, subscribeStock } from "@/lib/stock"
+import type { Locale } from "@/lib/i18n"
 import type { GraphItem } from "@/lib/library"
 
 // The built-in looks are two sets on one shelf. The character set answers to a
@@ -190,89 +191,51 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // and every surface reads fully lit, ramp untouched. Its world is not a backdrop
 // preference; it is the other half of the ramp.
 
-export type LookPack = "ag" | "wuwa" | "zzz" | "hsr" | "endfield"
+// The packs themselves are data (the render_styles table, written by
+// scripts/db-styles.mjs), served beside the stock and on the shelf before the
+// editor starts (lib/stock). Each is owned by its maker, and its graphs are the
+// ones that maker publishes carrying its tag.
 
-/** Menu order — declared, not derived, because it is a curated shelf. */
-export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr", "endfield"]
+/** A style's id: "ag", "endfield". */
+export type LookPack = string
 
-export const LOOK_PACKS: Record<
-  LookPack,
-  {
-    tag: string
-    transform: SceneSettings["view"]["transform"]
-    exposure: number
-    world: { color: string; strength: number }
-    /**
-     * How the pack wants the scene LIT, where its ramps need a particular key
-     * to read at all. Merged over what the scene has, section by section.
-     *
-     * Named for what it may hold rather than for where it lands. This was once
-     * `scene`, and a field called that accumulated depth of field, outline,
-     * grain, grade, backdrop and ground until choosing a rendering style
-     * restaged the shot. Light and its bleed are the whole of it; everything
-     * else in a scene is the author's.
-     */
-    light?: {
-      sun?: Partial<SceneSettings["sun"]>
-      bloom?: Partial<SceneSettings["bloom"]>
-    }
+/** How a pack wants the scene LIT, where its ramps need a particular key to
+ *  read at all. */
+export type LookStaging = {
+  transform: SceneSettings["view"]["transform"]
+  exposure: number
+  world: { color: string; strength: number }
+  /**
+   * Merged over what the scene has, section by section.
+   *
+   * Named for what it may hold rather than for where it lands. This was once
+   * `scene`, and a field called that accumulated depth of field, outline,
+   * grain, grade, backdrop and ground until choosing a rendering style
+   * restaged the shot. Light and its bleed are the whole of it; everything
+   * else in a scene is the author's.
+   */
+  light?: {
+    sun?: Partial<SceneSettings["sun"]>
+    bloom?: Partial<SceneSettings["bloom"]>
   }
-> = {
-  // The default scene's own staging: the game's curve at exposure 0 over the
-  // magenta world, its key, and the game's bloom in the demo's pink.
-  ag: {
-    tag: "aether-gazer",
-    transform: DEFAULT_VIEW.transform,
-    exposure: DEFAULT_VIEW.exposure,
-    world: { color: "#ed6aff", strength: 0.66 },
-    light: {
-      sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21 },
-      bloom: { ...DEFAULT_BLOOM, color: "#ffc9c9" },
-    },
-  },
-  wuwa: { tag: "wuthering-waves", transform: "none", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
-  // As set by hand in a scene (2026-09-08): no tone curve (then "standard") at 0.2 over
-  // a warm pink world at 0.62, lit by a 2.0 sun from behind and a little above,
-  // with a low wide bloom. It replaced the port's own numbers — Filmic at 0.5
-  // over a 0.122-linear grey world — which read dark and washed against the
-  // ramps. The key is part of that answer: these ramps quantise against the
-  // light that hits them, so the world alone does not get there.
-  zzz: {
-    tag: "zenless-zone-zero",
-    transform: "none",
-    exposure: 0.2,
-    world: { color: "#ffc9c9", strength: 0.62 },
-    light: {
-      sun: { color: "#ffffff", strength: 0.64, azimuth: 184, elevation: 22 },
-      bloom: { enabled: true, threshold: 1.03, scatter: 0.8, intensity: 1, color: "#ffffff" },
-    },
-  },
-  // ACES because the source is Filmic — view transform Filmic, look High
-  // Contrast, exposure 0, read straight off the .blend — and ACES is the
-  // film-like roll-off the app has now.
-  //
-  // The world does not come from the .blend, for the reason ZZZ already found
-  // the hard way: this file's Background is 0.050876, the very same near-black,
-  // and every surface here multiplies ambient. Left at that value the app's
-  // brighter sun crushes everything the key does not reach. Started from ZZZ's
-  // proven grey and lifted slightly — HSR's own presentation is airier, and its
-  // ramps barely darken, so ambient decides less about the terminator here than
-  // it does there and can afford to carry more of the fill.
-  hsr: { tag: "honkai-star-rail", transform: "aces", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
-  // As aileen_71 set it in the 祀 scene the graphs come from (2026-10-23): no
-  // tone curve over a pale blue-grey world, a warm sun low on the horizon, and
-  // a soft bloom.
-  endfield: {
-    tag: "arknights-endfield",
-    transform: "neutral",
-    exposure: 0,
-    world: { color: "#cfd6e2", strength: 0.73 },
-    light: {
-      sun: { color: "#fffbeb", strength: 1.26, azimuth: 160, elevation: 5 },
-      bloom: { enabled: true, threshold: 0.83, scatter: 0.75, intensity: 0.45, color: "#fcf9ff" },
-    },
-  },
 }
+
+export type LookStyle = {
+  id: LookPack
+  tag: string
+  name: string
+  nameZh: string
+  keywords: string[]
+  staging: LookStaging
+}
+
+/** Every style, in menu order. */
+export const lookPacks = (): LookStyle[] => styles()
+
+export const lookPack = (id: LookPack): LookStyle | undefined => styles().find((p) => p.id === id)
+
+/** The name a reader of `locale` sees; empty for no style. */
+export const lookPackName = (p: LookStyle | undefined, locale: Locale): string => (p && ((locale === "zh" && p.nameZh) || p.name)) || ""
 
 // Roles a pack may not cover. WuWa and ZZZ have one cloth look where AG has
 // three, so a rough-cloth or stockings group lands on the cloth graph rather than
@@ -288,6 +251,12 @@ export function graphRole(graph: ShaderGraph): string | undefined {
   return graph.tags?.[0]
 }
 
+/** A pack's graphs: the ones its maker publishes carrying its tag. */
+function packGraphs(pack: LookPack): GraphItem[] {
+  const tag = lookPack(pack)?.tag
+  return tag ? styleGraphs().filter((g) => g.tags.includes(tag)) : []
+}
+
 /**
  * The pack's graph for a role, or undefined when the pack has nothing for it.
  *
@@ -297,8 +266,7 @@ export function graphRole(graph: ShaderGraph): string | undefined {
  */
 export function packGraph(pack: LookPack, role: string | undefined): ShaderGraph | undefined {
   if (!role || role === "default") return undefined
-  const { tag } = LOOK_PACKS[pack]
-  const inPack = stockGraphs().filter((g) => g.tags.includes(tag))
+  const inPack = packGraphs(pack)
   const find = (r: string) => inPack.find((g) => graphRole(g.payload.graph) === r)?.payload.graph
   return find(role) ?? find(ROLE_FALLBACK[role] ?? "")
 }
@@ -317,9 +285,9 @@ export function activeLookPack(graphs: ShaderGraph[]): LookPack | null {
   const packs = new Set<LookPack>()
   for (const g of graphs) {
     const role = graphRole(g)
-    if (!role || !packGraph("ag", role)) continue
+    if (!role || !lookPacks().some((p) => packGraph(p.id, role))) continue
     const name = g.name
-    const hit = LOOK_PACK_ORDER.find((p) => stockGraphs().some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
+    const hit = lookPacks().find((p) => packGraphs(p.id).some((i) => i.name === name))?.id
     if (!hit) return null
     packs.add(hit)
   }

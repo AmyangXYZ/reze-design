@@ -1,4 +1,4 @@
-import { LOOK_PACK_ORDER, type LookPack } from "@/lib/materials"
+import { lookPack, type LookPack } from "@/lib/materials"
 import { storageKey } from "@/lib/storage"
 
 // Which rendering style this browser prefers.
@@ -19,7 +19,7 @@ export function loadLookPref(): LookPack {
   if (typeof window === "undefined") return DEFAULT_LOOK
   try {
     const raw = window.localStorage.getItem(KEY)
-    return LOOK_PACK_ORDER.includes(raw as LookPack) ? (raw as LookPack) : DEFAULT_LOOK
+    return raw && lookPack(raw) ? raw : DEFAULT_LOOK
   } catch {
     return DEFAULT_LOOK
   }

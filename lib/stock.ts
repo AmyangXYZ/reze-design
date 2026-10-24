@@ -5,14 +5,18 @@
 // React-free, like lib/community-store: the scene pipeline reads this (refs,
 // auto-style, scene parsing), and those run outside components.
 //
+// The rendering styles come with it: they are not the stock (each is its
+// maker's), but the editor needs them as early, so they ride the same request.
+//
 // The editor does not start until the whole shelf is here (hooks/use-stock):
-// auto-style, the look packs and the scene it opens on all name stock looks, and
+// auto-style, the styles and the scene it opens on all name these looks, and
 // a first frame without them is a wrong frame. The saved copy (lib/saved) makes
 // that wait an IndexedDB read on every visit after the first. A scene page gets
 // only the rows its document names, from the server, and installs them as a
 // part (`whole: false`), which never counts as the shelf.
 
 import type { EffectItem, GradeItem, GraphItem, LibraryItem } from "@/lib/library"
+import type { LookStyle } from "@/lib/materials"
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { readSaved, writeSaved } from "@/lib/saved"
 
@@ -40,6 +44,22 @@ export function installStock(items: LibraryItem[], { whole: isWhole = true } = {
   for (const l of listeners) l()
 }
 
+/** The rendering styles (lib/stock-rows styleRows), in menu order, and
+ *  their graphs. Not the stock: a style is its maker's, and a graph here is
+ *  stock only if the stock account made it. They arrive with the shelf. */
+let styleList: LookStyle[] = []
+let styleGraphList: GraphItem[] = []
+
+export function installStyles(list: LookStyle[], graphs: LibraryItem[]): void {
+  styleList = list
+  styleGraphList = graphs.filter((i): i is GraphItem => i.kind === "graph")
+  version++
+  for (const l of listeners) l()
+}
+
+export const styles = (): LookStyle[] => styleList
+export const styleGraphs = (): GraphItem[] => styleGraphList
+
 export const stockGraphs = (): GraphItem[] => shelf.graph
 export const stockEffects = (): EffectItem[] => shelf.effect
 export const stockGrades = (): GradeItem[] => shelf.grade
@@ -60,7 +80,10 @@ export function subscribeStock(l: () => void): () => void {
   }
 }
 
-const SAVED = "stock.v1"
+/** What /api/library/stock sends: the stock, the styles, their graphs. */
+type Served = { items: LibraryItem[]; styles?: LookStyle[]; styleGraphs?: LibraryItem[] }
+
+const SAVED = "stock.v2"
 let loading: Promise<void> | null = null
 
 /**
@@ -71,18 +94,20 @@ let loading: Promise<void> | null = null
 export function loadStock(): Promise<void> {
   loading ??= new Promise<void>((resolve) => {
     let fresh = false
-    void readSaved<{ items: LibraryItem[] }>(SAVED).then((saved) => {
+    void readSaved<Served>(SAVED).then((saved) => {
       if (fresh || !saved?.items?.length) return
+      installStyles(saved.styles ?? [], saved.styleGraphs ?? [])
       installStock(saved.items)
       resolve()
     })
     const attempt = () =>
-      fetchJson<{ items?: LibraryItem[] }>("/api/library/stock")
+      fetchJson<Partial<Served>>("/api/library/stock")
         .then((d) => {
           fresh = true
           retrySettled("stock")
+          installStyles(d.styles ?? [], d.styleGraphs ?? [])
           installStock(d.items ?? [])
-          writeSaved(SAVED, { items: d.items ?? [] })
+          writeSaved(SAVED, { items: d.items ?? [], styles: d.styles ?? [], styleGraphs: d.styleGraphs ?? [] })
           resolve()
         })
         .catch(() => void retryLater("stock", attempt))

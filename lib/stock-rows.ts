@@ -1,10 +1,11 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
-import { and, eq, isNull } from "drizzle-orm"
-import { hasDatabase, schema } from "@/lib/db"
+import { and, asc, eq, isNull, sql } from "drizzle-orm"
+import { db, hasDatabase, schema } from "@/lib/db"
 import { STOCK_OWNED, presetRows } from "@/lib/library-rows"
 import { LIBRARY_TAG } from "@/lib/public-pages"
 import type { LibraryItem } from "@/lib/library"
+import type { LookStyle } from "@/lib/materials"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
 
 /**
@@ -26,6 +27,42 @@ export const stockRows = unstable_cache(
   { tags: [LIBRARY_TAG] },
 )
 
+/** The rendering styles, in menu order (lib/db/schema renderStyles). */
+export const styleRows = unstable_cache(
+  async (): Promise<LookStyle[]> => {
+    if (!hasDatabase) return []
+    const s = schema.renderStyles
+    return db
+      .select({ id: s.id, tag: s.tag, name: s.name, nameZh: s.nameZh, keywords: s.keywords, staging: s.staging })
+      .from(s)
+      .orderBy(asc(s.position), asc(s.createdAt))
+  },
+  ["styles"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** Every style's graphs: public, undeleted graphs carrying a style's tag,
+ *  owned by that style's maker. Oldest first, like the stock, so a maker's
+ *  later graph for a role never displaces the one the style was set up with.
+ *  They stay the maker's, stock only if the stock account made them. */
+export const styleGraphRows = unstable_cache(
+  async (): Promise<LibraryItem[]> => {
+    if (!hasDatabase) return []
+    const i = schema.libraryItems
+    const s = schema.renderStyles
+    const rows = await presetRows(
+      and(
+        eq(i.kind, "graph"),
+        eq(i.visibility, "public"),
+        isNull(i.deletedAt),
+        sql`exists (select 1 from ${s} where ${s.ownerId} = ${i.ownerId} and ${s.tag} = any(${i.tags}))`,
+      ),
+    )
+    return rows.reverse().map((r) => ({ ...r, owner: "user" as const }))
+  },
+  ["style-graphs"],
+  { tags: [LIBRARY_TAG] },
+)
 
 /**
  * The stock a document names: by pin, or by name where it holds a string

@@ -239,8 +239,9 @@ import {
   graphRole,
   groupLabel,
   libraryGraph,
-  LOOK_PACK_ORDER,
-  LOOK_PACKS,
+  lookPack,
+  lookPackName,
+  lookPacks,
   packGraph,
   sameGraphLook,
   slotGraphs,
@@ -1452,33 +1453,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Brush,
       label: l.cmd.look,
       altLabels: [alt.cmd.look],
-      // Every pack's name in both languages: someone reaching for this is
+      // Every pack's names in both languages: someone reaching for this is
       // thinking "wuwa", not "rendering style".
       keywords: [
-        "wuwa",
-        "wuthering",
-        "鸣潮",
-        "ag",
-        "aether",
-        "gazer",
-        "深空之眼",
-        "zzz",
-        "zenless",
-        "绝区零",
-        // Star Rail answers to more names than the others: the English initials,
-        // the full title, and two Chinese short forms nobody spells out.
-        "hsr",
-        "honkai",
-        "star rail",
-        "starrail",
-        "崩坏：星穹铁道",
-        "星穹铁道",
-        "星铁",
-        "崩铁",
-        "endfield",
-        "arknights",
-        "明日方舟：终末地",
-        "终末地",
+        ...lookPacks().flatMap((p) => [p.id, p.name, p.nameZh, ...p.keywords].filter(Boolean)),
         "style",
         "look",
         "preset",
@@ -4454,6 +4432,8 @@ function Lab() {
   )
   const applyLookPack = useCallback(
     (pack: LookPack) => {
+      const staging = lookPack(pack)?.staging
+      if (!staging) return
       for (const [modelId, list] of Object.entries(groupsByModel)) {
         const next = list.map((g) => {
           const graph = packGraph(pack, graphRole(g.graph))
@@ -4465,7 +4445,7 @@ function Lab() {
       // ramps need to read. Everything else — the post, the background, the
       // ground — is the author's, and switching rendering style is not an
       // occasion to restage somebody's shot.
-      const { transform, exposure, world, light } = LOOK_PACKS[pack]
+      const { transform, exposure, world, light } = staging
       setSettings((prev) => ({
         ...prev,
         view: { transform, exposure },
@@ -5946,7 +5926,7 @@ function Lab() {
           if (c.id === "look")
             return {
               ...c,
-              hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none,
+              hint: lookPackName(lookPack(valuesShown.pack ?? ""), valuesShown.locale) || valuesShown.t.lab.ctl.none,
             }
           if (!c.id.startsWith("ctl-")) return c
           // Settings print what they are SET TO, beside the breadcrumb that says
@@ -7642,22 +7622,22 @@ function Lab() {
             <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">{t.brand.style}</DialogTitle>
           </DialogHeader>
           <ChoiceList className="relative space-y-0 border-t border-line py-1">
-            {LOOK_PACK_ORDER.map((pack) => (
+            {lookPacks().map((style) => (
               <Button variant="bare"
-                key={pack}
-                data-current={pack === activePack}
+                key={style.id}
+                data-current={style.id === activePack}
                 onClick={() => {
                   // Close first, apply after — the same law the language dialog
                   // follows, and it matters more here: applying recompiles every
                   // group, and doing that under a dialog still fading reads as a
                   // stutter rather than as the change you asked for.
                   setStyleOpen(false)
-                  applyLookPack(pack)
+                  applyLookPack(style.id)
                 }}
                 className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", "text-foreground")}
               >
-                {t.brand.styles[pack]}
-                {pack === activePack && <Check className="size-3.5 shrink-0" />}
+                {lookPackName(style, uiLocale)}
+                {style.id === activePack && <Check className="size-3.5 shrink-0" />}
               </Button>
             ))}
           </ChoiceList>

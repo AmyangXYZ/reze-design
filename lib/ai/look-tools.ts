@@ -3,12 +3,12 @@
 // mostly comes down to — a painting's palette is a grade, its brushwork a
 // shader.
 
-import { stockName, tagLabel } from "@/lib/stock-text"
+import { stockName } from "@/lib/stock-text"
 import type { GradeSpec, Range } from "@/lib/grade"
 import { specOf } from "@/lib/grade"
 import { loadDrafts } from "@/lib/drafts"
 import type { GradeItem } from "@/lib/library"
-import { LOOK_PACKS, LOOK_PACK_ORDER, sameGraphLook, type LookPack } from "@/lib/materials"
+import { lookPack, lookPacks, sameGraphLook } from "@/lib/materials"
 import { DEFAULT_GRAPH, NODE_REGISTRY, compileGraph, type ShaderGraph, type StyleGroup } from "reze-engine"
 import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 
@@ -202,10 +202,7 @@ export const LOOK_TOOLS: SceneTool[] = [
           const zh = stockName("graph", s, "zh")
           return zh !== s.name ? { ...s, zh } : s
         }),
-        lookPacks: LOOK_PACK_ORDER.map((p) => {
-          const zh = tagLabel(LOOK_PACKS[p].tag, "zh")
-          return { pack: p, style: LOOK_PACKS[p].tag, ...(zh !== LOOK_PACKS[p].tag ? { zh } : {}), transform: LOOK_PACKS[p].transform }
-        }),
+        lookPacks: lookPacks().map((p) => ({ pack: p.id, style: p.name, ...(p.nameZh ? { zh: p.nameZh } : {}), transform: p.staging.transform })),
       },
     }),
   },
@@ -419,14 +416,15 @@ export const LOOK_TOOLS: SceneTool[] = [
       "Switch the whole scene to a rendering style: every character's groups take that style's shader for their role, and the style's tone transform and world light come with it — and, for the styles that define them, its sun and bloom. The biggest single change of look — try it first when a reference is clearly one style.",
     parameters: {
       type: "object",
-      properties: { pack: { type: "string", enum: LOOK_PACK_ORDER } },
+      // No enum: the styles are data, and this is written before they load.
+      properties: { pack: { type: "string", description: "A `pack` from list_shaders' lookPacks." } },
       required: ["pack"],
     },
     run: async (args, h) => {
-      const pack = args.pack as LookPack
-      if (!LOOK_PACK_ORDER.includes(pack)) return { data: { error: `pack must be one of ${LOOK_PACK_ORDER.join(", ")}` } }
-      h.applyLookPack(pack)
-      return { data: { pack, style: LOOK_PACKS[pack].tag } }
+      const pack = lookPack(String(args.pack))
+      if (!pack) return { data: { error: `pack must be one of ${lookPacks().map((p) => p.id).join(", ")}` } }
+      h.applyLookPack(pack.id)
+      return { data: { pack: pack.id, style: pack.name } }
     },
   },
 ]

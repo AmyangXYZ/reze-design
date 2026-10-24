@@ -18,6 +18,7 @@
     "r2:check": "node --env-file=.env.local scripts/r2-check.mjs",
     "db:users": "node --env-file=.env.local scripts/db-users.mjs",
     "db:refresh": "node --env-file=.env.local scripts/db-refresh.mjs",
+    "db:styles": "node --env-file=.env.local scripts/db-styles.mjs",
     "db:swap-scene": "node --env-file=.env.local scripts/db-swap-scene-content.mjs",
     "bili:daily": "esbuild scripts/bili-daily.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --packages=external --alias:server-only=./scripts/server-only-stub.mjs --outfile=node_modules/.cache/bili-daily.mjs --log-level=warning && node --env-file=.env.local node_modules/.cache/bili-daily.mjs"
   },
