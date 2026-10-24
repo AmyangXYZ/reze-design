@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
 import {
+  canEncodeAt,
   canEncodeHevc,
   captureStill,
   exportAeScript,
@@ -38,8 +39,11 @@ import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
 
-// Minimal config, iMovie-export style
-const VIDEO_FPS = 60
+/** The frame rates offered. 60 is the web's; 120 is what Bilibili takes at
+ *  4K; 240 is for a 240 Hz screen and for slow motion. Each is offered only
+ *  where an encoder takes it at the chosen size. */
+const FPS_OPTIONS = [60, 120, 240] as const
+type Fps = (typeof FPS_OPTIONS)[number]
 
 /**
  * What lands on disk, as one choice.
@@ -85,8 +89,8 @@ const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "14
  * putting the panel into a state with no matching option.
  */
 const EXPORT_PREFS_KEY = "reze-design.export"
-type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; bitrate: ExportBitrate; codec: ExportCodec }
-const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, bitrate: "standard", codec: "h264" }
+type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; bitrate: ExportBitrate; codec: ExportCodec; fps: Fps }
+const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, bitrate: "standard", codec: "h264", fps: 60 }
 
 function readExportPrefs(): ExportPrefs {
   if (typeof window === "undefined") return EXPORT_DEFAULTS
@@ -100,6 +104,7 @@ function readExportPrefs(): ExportPrefs {
       watermark: typeof p.watermark === "boolean" ? p.watermark : EXPORT_DEFAULTS.watermark,
       bitrate: p.bitrate === "high" ? "high" : "standard",
       codec: p.codec === "hevc" ? "hevc" : "h264",
+      fps: FPS_OPTIONS.includes(p.fps as Fps) ? (p.fps as Fps) : EXPORT_DEFAULTS.fps,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -286,9 +291,12 @@ export const RenderPanel = memo(function RenderPanel({
   // Export segment, "m:ss" text; blank = the whole clip (our default
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
+  /** The range box being typed in: it shows exactly what was typed, even empty. */
+  const [rangeEditing, setRangeEditing] = useState<"start" | "end" | null>(null)
   const [watermark, setWatermark] = useState(prefs.watermark)
   const [bitrate, setBitrate] = useState<ExportBitrate>(prefs.bitrate)
   const [codec, setCodec] = useState<ExportCodec>(prefs.codec)
+  const [fps, setFps] = useState<Fps>(prefs.fps)
   // Read through the store rather than seeded into state like the prefs above:
   // those render the same on both sides because they have real defaults, while a
   // stored yes here would have the server paint the switch off and the client
@@ -313,13 +321,13 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, bitrate, codec })
-  }, [aspect, quality, watermark, bitrate, codec])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps })
+  }, [aspect, quality, watermark, bitrate, codec, fps])
 
   // The frame this panel would render, for the rates the Bitrate options print
   // and for asking whether HEVC can be encoded at it.
   const [frameW, frameH] = DIMS[aspect][quality]
-  const mbps = (level: ExportBitrate) => Math.round(videoBitrate(frameW, frameH, VIDEO_FPS, level) / 1e6)
+  const mbps = (level: ExportBitrate) => Math.round(videoBitrate(frameW, frameH, fps, level) / 1e6)
   // HEVC ENCODES AT THE STANDARD RATE ONLY. Hardware HEVC encoders cap the
   // bitrate by tier and level, and Chrome said yes to 4K at 100 Mbps when asked
   // and then refused it at configure — so the doubled rate is not offered with
@@ -329,17 +337,31 @@ export const RenderPanel = memo(function RenderPanel({
   // Asked per size: an encoder that takes 1080p can refuse 4K. Null until it
   // answers, and the option stays selectable meanwhile — the export falls back
   // to H.264 on its own if the answer turns out to be no.
-  const hevcRate = videoBitrate(frameW, frameH, VIDEO_FPS, "standard")
+  const hevcRate = videoBitrate(frameW, frameH, fps, "standard")
   const [hevcOk, setHevcOk] = useState<boolean | null>(null)
   useEffect(() => {
     let stale = false
-    canEncodeHevc(frameW, frameH, hevcRate, VIDEO_FPS)
+    canEncodeHevc(frameW, frameH, hevcRate, fps)
       .then((ok) => !stale && setHevcOk(ok))
       .catch(() => !stale && setHevcOk(false))
     return () => {
       stale = true
     }
-  }, [frameW, frameH, hevcRate])
+  }, [frameW, frameH, hevcRate, fps])
+
+  // Which frame rates an encoder takes at this size. Unknown until it answers,
+  // and selectable meanwhile; a PNG sequence has no encoder to ask.
+  const [fpsOk, setFpsOk] = useState<Partial<Record<Fps, boolean>>>({})
+  useEffect(() => {
+    if (target === "png") return
+    let stale = false
+    void Promise.all(FPS_OPTIONS.map((f) => canEncodeAt(frameW, frameH, f, target === "webm").catch(() => false))).then(
+      (oks) => !stale && setFpsOk(Object.fromEntries(FPS_OPTIONS.map((f, i) => [f, oks[i]]))),
+    )
+    return () => {
+      stale = true
+    }
+  }, [frameW, frameH, target])
   const hevc = target === "mp4" && codec === "hevc" && hevcOk !== false
   const rate: ExportBitrate = hevc ? "standard" : bitrate
 
@@ -384,9 +406,9 @@ export const RenderPanel = memo(function RenderPanel({
     return () => onFramePreviewChange(null)
   }, [active, width, height, watermark, compositing, onFramePreviewChange])
 
-  // reze-design-<scene>-<resolution>-<date>[.ext] — the folder a PNG sequence
-  // lands in is the same name without one.
-  const baseName = () => {
+  // reze-design-<scene>-<resolution>[-<fps>fps]-<date>[.ext] — the folder a PNG
+  // sequence lands in is the same name without one. A still has no frame rate.
+  const baseName = (moving = true) => {
     const scene =
       sceneName
         .toLowerCase()
@@ -396,9 +418,9 @@ export const RenderPanel = memo(function RenderPanel({
     const stamp = new Date()
     const two = (n: number) => String(n).padStart(2, "0")
     const when = `${stamp.getFullYear()}-${two(stamp.getMonth() + 1)}-${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}`
-    return `reze-design-${scene}-${width}x${height}-${when}`
+    return `reze-design-${scene}-${width}x${height}${moving ? `-${fps}fps` : ""}-${when}`
   }
-  const filenameFor = (ext: string) => `${baseName()}.${ext}`
+  const filenameFor = (ext: string, moving = true) => `${baseName(moving)}.${ext}`
 
   /** lib/scene-file's, not a second copy — the two had already drifted, and the
    *  one that was wrong was the one nobody had exported from on Safari. */
@@ -424,7 +446,7 @@ export const RenderPanel = memo(function RenderPanel({
         // frame under that pose rather than the one it opens on.
         atTime: engine.getModel(modelName)?.getAnimationProgress().current ?? 0,
       })
-      const filename = filenameFor("png")
+      const filename = filenameFor("png", false)
       download(blob, filename)
       // Same completion line the video uses: the caption names the file that
       // just landed in the downloads folder.
@@ -473,7 +495,7 @@ export const RenderPanel = memo(function RenderPanel({
         // shot at a different focal length.
         width,
         height,
-        fps: VIDEO_FPS,
+        fps: fps,
         onProgress: setProgress,
         signal: ac.signal,
       })
@@ -499,7 +521,7 @@ export const RenderPanel = memo(function RenderPanel({
     const base = baseName()
     const ext = target === "webm" ? "webm" : "mp4"
     const filename = `${base}.${ext}`
-    const totalFrames = Math.max(1, Math.round(segDuration * VIDEO_FPS))
+    const totalFrames = Math.max(1, Math.round(segDuration * fps))
 
     // File System Access path (Chromium desktop): ask WHERE first
     let fileStream: FileSystemWritableFileStream | undefined
@@ -588,7 +610,7 @@ export const RenderPanel = memo(function RenderPanel({
         settings: {
           width,
           height,
-          fps: VIDEO_FPS,
+          fps: fps,
           bitrate: rate,
           codec: hevc ? "hevc" : "h264",
           audioSource: audioSource ?? (musicUrl || footsteps ? "music" : "none"),
@@ -702,6 +724,20 @@ export const RenderPanel = memo(function RenderPanel({
               </SelectContent>
             </Select>
           </Row>
+          <Row label={t.render.frameRate}>
+            <Select value={String(fps)} onValueChange={(v) => setFps(Number(v) as Fps)} disabled={exporting}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="end">
+                {FPS_OPTIONS.map((f) => (
+                  <SelectItem key={f} value={String(f)} disabled={target !== "png" && fpsOk[f] === false} className="tabular-nums">
+                    {f} fps
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Row>
           {/* Inert, not hidden, for a PNG sequence — it has no bitrate or
               codec — so the panel does not change shape with the output. */}
           <Row label={t.render.bitrate}>
@@ -744,27 +780,46 @@ export const RenderPanel = memo(function RenderPanel({
           {/* Segment to export — blank boxes = the whole clip. */}
           <Row label={t.render.range}>
             <div className="flex items-center gap-1">
+              {/* THE VALUES, NOT PLACEHOLDERS: a placeholder in the ink read
+                  as already filled, and one in grey as a third tier. Empty
+                  state means "the default" and shows it — 0:00, and the clip's
+                  length, which a longer clip then moves — so a box left alone
+                  follows the clip and one cleared goes back to it. */}
               <Input variant="bare"
-                value={rangeStart}
+                value={rangeEditing === "start" ? rangeStart : rangeStart || "0:00"}
                 onChange={(e) => setRangeStart(e.target.value)}
-                onBlur={() => {
-                  const v = parseClock(rangeStart)
-                  setRangeStart(v === null ? "" : fmtClock(v))
+                onFocus={(e) => {
+                  if (!rangeStart) setRangeStart("0:00")
+                  setRangeEditing("start")
+                  const el = e.currentTarget
+                  requestAnimationFrame(() => el.select())
                 }}
-                placeholder="0:00"
+                onBlur={() => {
+                  setRangeEditing(null)
+                  const v = parseClock(rangeStart)
+                  setRangeStart(v === null || v === 0 ? "" : fmtClock(v))
+                }}
                 disabled={exporting}
                 className={rangeInputCover}
               />
               <span className="text-xs text-muted-foreground">–</span>
               <Input variant="bare"
-                value={rangeEnd}
+                value={rangeEditing === "end" ? rangeEnd : rangeEnd || (animDuration > 0 ? fmtClock(animDuration) : "-:--")}
                 onChange={(e) => setRangeEnd(e.target.value)}
-                onBlur={() => {
-                  // Clamp to the clip only when its duration is known
-                  const v = parseClock(rangeEnd)
-                  setRangeEnd(v === null ? "" : fmtClock(animDuration > 0 ? Math.min(v, animDuration) : v))
+                onFocus={(e) => {
+                  if (!rangeEnd && animDuration > 0) setRangeEnd(fmtClock(animDuration))
+                  setRangeEditing("end")
+                  const el = e.currentTarget
+                  requestAnimationFrame(() => el.select())
                 }}
-                placeholder={animDuration > 0 ? fmtClock(animDuration) : "-:--"}
+                onBlur={() => {
+                  setRangeEditing(null)
+                  // Clamp to the clip only when its duration is known; the
+                  // clip's own end is the default, held as empty.
+                  const v = parseClock(rangeEnd)
+                  const end = v === null ? null : animDuration > 0 ? Math.min(v, animDuration) : v
+                  setRangeEnd(end === null || (animDuration > 0 && fmtClock(end) === fmtClock(animDuration)) ? "" : fmtClock(end))
+                }}
                 disabled={exporting}
                 className={rangeInputCover}
               />

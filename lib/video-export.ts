@@ -155,10 +155,16 @@ const yieldToUI = (): Promise<void> => {
  * and they are this app's whole look. Variable bitrate either way, so a quiet
  * shot spends less than this and the file grows only where the picture needs it.
  */
-export const videoBitrate = (w: number, h: number, fps: number, level: ExportBitrate = "standard") =>
-  level === "high"
-    ? Math.round(Math.min(160e6, Math.max(12e6, w * h * fps * 0.2)))
-    : Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
+export const videoBitrate = (w: number, h: number, fps: number, level: ExportBitrate = "standard") => {
+  // THE CEILING RISES WITH THE FRAME RATE, by its square root: a 120 or 240 fps
+  // frame differs less from the one before it, so it needs fewer bits than a
+  // 60 fps one — but a ceiling fixed at the 60 fps number would spend the extra
+  // frames on blur instead of smoothness.
+  const room = Math.sqrt(Math.max(1, fps / 60))
+  return level === "high"
+    ? Math.round(Math.min(160e6 * room, Math.max(12e6, w * h * fps * 0.2)))
+    : Math.round(Math.min(80e6 * room, Math.max(6e6, w * h * fps * 0.1)))
+}
 
 /**
  * The encoder probe, asked exactly what the export will configure.
@@ -218,6 +224,18 @@ const hevcCodecString = (width: number, height: number, bitrate: number, fps: nu
  */
 export const canEncodeHevc = (width: number, height: number, bitrate: number, fps: number) =>
   canEncodeVideo("hevc", probeOptions(width, height, bitrate, fps, hevcCodecString(width, height, bitrate, fps)))
+
+/**
+ * Whether ANY encoder the export would try takes this size at this frame rate —
+ * what decides if a frame rate is offered at all. 4K at 120 or 240 is past
+ * H.264's levels on most machines, and the export then goes on with AV1 or HEVC.
+ */
+export async function canEncodeAt(width: number, height: number, fps: number, webm: boolean): Promise<boolean> {
+  const bitrate = videoBitrate(width, height, fps, "standard")
+  if (webm) return (await getFirstEncodableVideoCodec(["vp9", "vp8"], probeOptions(width, height, bitrate, fps))) !== null
+  if (await getFirstEncodableVideoCodec(["avc", "av1"], probeOptions(width, height, bitrate, fps))) return true
+  return canEncodeHevc(width, height, bitrate, fps)
+}
 
 // Watermark: "REZE DESIGN" wordmark, top-left
 
@@ -766,10 +784,16 @@ async function muxerSink(opts: {
   // does — Chrome has a software encoder for it when the hardware says no.
   const hevcString = !webm && settings.codec === "hevc" ? hevcCodecString(width, height, bitrate, fps) : null
   const useHevc = hevcString !== null && (await canEncodeHevc(width, height, bitrate, fps))
-  const videoCodec = useHevc
+  // And HEVC LAST for an MP4 when H.264 and AV1 both refuse: 4K at 120 or 240
+  // is past H.264's levels, and a machine without AV1 still has HEVC for it.
+  const lastHevc =
+    !webm && !useHevc && (await canEncodeHevc(width, height, bitrate, fps)) ? hevcCodecString(width, height, bitrate, fps) : null
+  const picked = useHevc
     ? "hevc"
     : await getFirstEncodableVideoCodec(webm ? ["vp9", "vp8"] : ["avc", "av1"], probeOptions(width, height, bitrate, fps))
-  if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
+  const videoCodec = picked ?? (lastHevc ? "hevc" : null)
+  const hevcCodec = useHevc ? hevcString : picked ? null : lastHevc
+  if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height} at ${fps} fps`)
 
   const output = new Output({
     format: webm ? new WebMOutputFormat() : new Mp4OutputFormat(),
@@ -778,7 +802,7 @@ async function muxerSink(opts: {
   })
   const videoSource = new CanvasSource(composite, {
     codec: videoCodec,
-    ...(useHevc && hevcString ? { fullCodecString: hevcString } : {}),
+    ...(hevcCodec ? { fullCodecString: hevcCodec } : {}),
     bitrate,
     // mediabunny splits colour and alpha on the CPU when the encoder cannot
     // keep alpha itself, and emits the alpha as VP9 side data — which is what

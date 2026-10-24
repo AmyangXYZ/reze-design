@@ -376,6 +376,7 @@ const en = {
     capturePng: "Capture PNG",
     range: "Range",
     /** Export bitrate; the options are the rate itself, at the current size. */
+    frameRate: "Frame rate",
     bitrate: "Bitrate",
     codec: "Codec",
     watermark: "Watermark",
@@ -1518,6 +1519,7 @@ const zh: Dictionary = {
     renderVideo: "渲染视频",
     capturePng: "截取 PNG",
     range: "区间",
+    frameRate: "帧率",
     bitrate: "码率",
     codec: "编码",
     watermark: "水印",
