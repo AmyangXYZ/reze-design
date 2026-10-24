@@ -11,11 +11,11 @@
 // page.tsx) — a module-level cache, because six components each fetching the
 // same list is how a library gets six spinners.
 //
-// Built-ins are their own shelf (lib/builtins). The public list leaves them
+// Built-ins are their own shelf (lib/stock). The public list leaves them
 // out, and your own rows — which for the built-in account are the built-ins —
 // drop them here by id, so no card appears twice.
 
-import { builtinEffects, builtinGrades, builtinGraphs, isBuiltin, subscribeBuiltins } from "@/lib/builtins"
+import { stockEffects, stockGrades, stockGraphs, isStock, subscribeStock } from "@/lib/stock"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { readSaved, writeSaved } from "@/lib/saved"
@@ -68,7 +68,8 @@ let hydrating = false
 
 /**
  * The cache is ONE merge: everyone's rows plus yours (lib/mine-store), yours
- * winning, built-ins left out (they are lib/builtins'), newest first.
+ * winning, the stock left out (lib/stock holds it; the admin's own rows include
+ * it), newest first.
  * Rebuilt whenever either side changes, so neither can overwrite the other.
  */
 function rebuild() {
@@ -77,19 +78,19 @@ function rebuild() {
   const byId = new Map<string, CommunityItem>()
   for (const r of publicRows ?? []) byId.set(r.id, { ...r, mine: mineIds.has(r.id) })
   for (const r of own) byId.set(r.id, r)
-  const builtins = [...builtinGraphs(), ...builtinEffects(), ...builtinGrades()] as PublicRow[]
-  for (const i of [...builtins, ...byId.values()]) if (i.authorImage) authorImages.set(i.author, i.authorImage)
-  noteVerified([...builtins, ...byId.values()])
+  const stock = [...stockGraphs(), ...stockEffects(), ...stockGrades()] as PublicRow[]
+  for (const i of [...stock, ...byId.values()]) if (i.authorImage) authorImages.set(i.author, i.authorImage)
+  noteVerified([...stock, ...byId.values()])
   cache =
     publicRows === null && own.length === 0
       ? null
       : [...byId.values()]
-          .filter((i) => !isBuiltin(i.id))
+          .filter((i) => !isStock(i.id))
           .sort((a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : (a.createdAt ?? "") > (b.createdAt ?? "") ? -1 : 0))
   for (const l of listeners) l()
 }
 subscribeMine(rebuild)
-subscribeBuiltins(rebuild)
+subscribeStock(rebuild)
 
 // Which request is the current one. Only the newest response may write the
 // rows, so two in flight (a library opening while the boot fetch is still out)
@@ -126,7 +127,7 @@ export function load(force = false): Promise<CommunityItem[]> {
       return cache ?? []
     })
     .catch(() => {
-      // The saved copy, builtins and drafts still browse; the line in the
+      // The saved copy, stock and drafts still browse; the line in the
       // library says so, and lib/net keeps asking until the route recovers.
       if (gen === generation) {
         inflight = null

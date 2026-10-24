@@ -15,7 +15,7 @@ import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pag
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
-import { NOT_BUILTIN, presetRows } from "@/lib/library-rows"
+import { NOT_STOCK, presetRows } from "@/lib/library-rows"
 import { publicJson } from "@/lib/cdn"
 import { parseVideoLink } from "@/lib/video-link"
 
@@ -323,8 +323,8 @@ async function galleryPage(
 }
 
 /** Every public preset, cached like the gallery. */
-// Built-ins have their own route (/api/library/builtins), which the editor waits on.
-const publicPresets = unstable_cache(() => presetRows(and(eq(schema.libraryItems.visibility, "public"), NOT_BUILTIN)), ["public-presets"], {
+// Built-ins have their own route (/api/library/stock), which the editor waits on.
+const publicPresets = unstable_cache(() => presetRows(and(eq(schema.libraryItems.visibility, "public"), NOT_STOCK)), ["public-presets"], {
   tags: [LIBRARY_TAG],
 })
 

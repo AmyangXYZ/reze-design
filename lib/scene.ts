@@ -179,7 +179,7 @@ export type SceneAssets = {
  * It used to carry a version, and resolved to that exact immutable payload. It
  * resolves to whatever the item IS now. A pin costs a few bytes where a snapshot
  * costs kilobytes, and resolution is two-tier: built-ins are on the shelf
- * (lib/builtins) before a scene opens, everything else goes through
+ * (lib/stock) before a scene opens, everything else goes through
  * /api/library/resolve.
  *
  * Documents written before this still carry `{ id, version }`. They keep

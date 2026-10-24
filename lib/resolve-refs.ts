@@ -1,11 +1,11 @@
 // Turning a document's pins into content, in two tiers.
 //
-// Built-ins are on the shelf (lib/builtins) before any scene opens, so a pin to
+// Built-ins are on the shelf (lib/stock) before any scene opens, so a pin to
 // one costs nothing. Everything else is fetched in a single request, whatever
 // the document pins.
 
 import type { ShaderGraph } from "reze-engine"
-import { builtinEffects, builtinGrades, builtinGraphs, builtinsVersion } from "@/lib/builtins"
+import { stockEffects, stockGrades, stockGraphs, stockVersion } from "@/lib/stock"
 import type { ItemRef, SceneDoc } from "@/lib/scene"
 import { sceneRefs } from "@/lib/scene"
 import { fetchJson } from "@/lib/net"
@@ -21,12 +21,12 @@ let shelfAt = -1
 let shelf = new Map<string, Resolved>()
 /** The shelf by id, rebuilt when it changes. */
 function onShelf(): Map<string, Resolved> {
-  if (shelfAt !== builtinsVersion()) {
+  if (shelfAt !== stockVersion()) {
     shelf = new Map()
-    for (const i of [...builtinGraphs(), ...builtinEffects(), ...builtinGrades()]) {
+    for (const i of [...stockGraphs(), ...stockEffects(), ...stockGrades()]) {
       shelf.set(i.id, { ...(i.payload as Payload), name: i.name })
     }
-    shelfAt = builtinsVersion()
+    shelfAt = stockVersion()
   }
   return shelf
 }

@@ -1,5 +1,5 @@
 // The one shape every library item wears — grades, shader graphs, background
-// effects — so builtin and user-made content are the same thing with a different
+// effects — so stock and user-made content are the same thing with a different
 // author, not two parallel systems.
 //
 // Split by what it has to survive:
@@ -12,7 +12,7 @@
 // EVERY item has a permanent uuid, and it is the only identity that matters.
 // Drafts mint one at creation and keep it through publishing, so a preset is the
 // same entity before and after it becomes public. Built-ins are rows like any
-// other, owned by the built-in account (lib/builtins). Names are display only: they
+// other, owned by the built-in account (lib/stock). Names are display only: they
 // are unique per author for that author's sanity, and they can change freely.
 
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
@@ -62,7 +62,7 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
   author: string
   description: string
   /** The name and description in Chinese, when the row has them. Shown in
-   *  their place to a zh reader (lib/builtin-text). */
+   *  their place to a zh reader (lib/stock-text). */
   nameZh?: string
   descriptionZh?: string
   tags: string[]
@@ -79,7 +79,7 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
 }
 
 /** `local` is an unpublished draft, held in localStorage — see lib/drafts.ts. */
-export type LibraryOwner = "builtin" | "user" | "local"
+export type LibraryOwner = "stock" | "user" | "local"
 
 /** Client-side flag on community rows: the signed-in user's own published work.
  *  Never stored — it depends on who is asking. */
@@ -174,13 +174,13 @@ export function matchesQuery(item: LibraryItem, query: string, displayName = ite
  * away behind "Browse all…", which is what that escape hatch is for.
  */
 export function quickPickItems<T extends LibraryItem>(
-  builtins: T[],
+  stock: T[],
   drafts: T[],
   appliedId: string | null,
   maxDrafts = 4,
 ): T[] {
   // Built-ins lead in shelf order, drafts follow in creation order, so a new draft appears at the end rather than reshuffling the list.
-  const list = [...builtins, ...drafts.slice(-maxDrafts)]
+  const list = [...stock, ...drafts.slice(-maxDrafts)]
   if (appliedId && !list.some((i) => i.id === appliedId)) {
     const applied = drafts.find((i) => i.id === appliedId)
     if (applied) list.push(applied)
@@ -199,6 +199,6 @@ export function quickPickItems<T extends LibraryItem>(
  */
 export function communityQuickPickItems<T extends LibraryItem>(
   items: T[],
-): { id: string; label: string; section: "community" }[] {
-  return items.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
+): { id: string; label: string }[] {
+  return items.map((i) => ({ id: i.name, label: i.name }))
 }

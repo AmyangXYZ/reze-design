@@ -7,7 +7,7 @@
 // state to keep in sync, and no way for a stale tag to mispin someone else's work.
 
 import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
-import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
+import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
 import { sameGradeLook, type GradeSpec } from "@/lib/grade"
 import { sameGraphLook } from "@/lib/materials"
 import { stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
@@ -17,8 +17,8 @@ import type { ItemRef } from "@/lib/scene"
 import { loadDrafts, type Draft, type DraftPayload } from "@/lib/drafts"
 
 /** Built-ins first: the shelf is always loaded, so a pin to one resolves at once. */
-function candidates<T>(kind: LibraryKind, builtins: T[]): T[] {
-  return [...builtins, ...(communityItems(kind) as T[])]
+function candidates<T>(kind: LibraryKind, stock: T[]): T[] {
+  return [...stock, ...(communityItems(kind) as T[])]
 }
 
 const pin = (item: { id: string } | undefined): ItemRef | undefined => (item ? { id: item.id } : undefined)
@@ -28,7 +28,7 @@ const pin = (item: { id: string } | undefined): ItemRef | undefined => (item ? {
 // stops recognising a built-in nobody edited, and the scene inlines a copy of a
 // preset it should simply have pinned.
 function graphMatch(graph: ShaderGraph): GraphItem | undefined {
-  return candidates<GraphItem>("graph", builtinGraphs()).find((i) => sameGraphLook(i.payload.graph, graph))
+  return candidates<GraphItem>("graph", stockGraphs()).find((i) => sameGraphLook(i.payload.graph, graph))
 }
 
 export function graphRef(graph: ShaderGraph): ItemRef | undefined {
@@ -42,7 +42,7 @@ export function graphLibraryName(graph: ShaderGraph): string | undefined {
 }
 
 function effectMatch(wgsl: string): EffectItem | undefined {
-  return candidates<EffectItem>("effect", builtinEffects()).find((i) => i.payload.wgsl === wgsl)
+  return candidates<EffectItem>("effect", stockEffects()).find((i) => i.payload.wgsl === wgsl)
 }
 
 export function effectRef(wgsl: string): ItemRef | undefined {
@@ -52,7 +52,7 @@ export function effectRef(wgsl: string): ItemRef | undefined {
 // By value, like graphs: a published payload's keys come back from jsonb in
 // another order, so comparing JSON text never matched a scene's own copy.
 function gradeMatch(spec: GradeSpec): GradeItem | undefined {
-  return candidates<GradeItem>("grade", builtinGrades()).find((i) => sameGradeLook(i.payload.spec, spec))
+  return candidates<GradeItem>("grade", stockGrades()).find((i) => sameGradeLook(i.payload.spec, spec))
 }
 
 export function gradeRef(spec: GradeSpec): ItemRef | undefined {

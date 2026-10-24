@@ -27,7 +27,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
-import { useBuiltins } from "@/hooks/use-builtins"
+import { useStock } from "@/hooks/use-stock"
 import {
   addCommunityItem,
   isMine,
@@ -38,7 +38,7 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
-import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { stockDescription, stockName, stockSearchText } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
 
 
@@ -90,12 +90,12 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
   // stack closes only the topmost surface.
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
-  const builtins = useBuiltins("graph")
+  const stock = useStock("graph")
   const community = useCommunity<GraphItem>("graph")
   const ROWS = useMemo(
     // Built-ins carry no idea who is asking; the fetched rows do.
-    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [builtins, community, drafts],
+    () => [...stock.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [stock, community, drafts],
   )
   const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
@@ -144,8 +144,8 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
   )
   // Built-in names and descriptions are chrome and translate; the library ranks,
   // searches and sorts on what the reader sees, and answers to either language.
-  const displayName = useCallback((r: (typeof ROWS)[number]) => builtinName("graph", r, locale), [locale])
-  const searchText = useCallback((r: (typeof ROWS)[number]) => builtinSearchText("graph", r), [])
+  const displayName = useCallback((r: (typeof ROWS)[number]) => stockName("graph", r, locale), [locale])
+  const searchText = useCallback((r: (typeof ROWS)[number]) => stockSearchText("graph", r), [])
   const browse = useLibraryBrowse(ROWS, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // The name someone typed that is already in use. Rename REFUSES rather than
@@ -167,7 +167,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
     }
     const clash = conflictingName(
       wanted,
-      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...stock, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       // Stays in edit mode with the message attached, so the fix is one keystroke
@@ -326,7 +326,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
                     onToggle: () => void toggleLike(selected.id),
                   }
             }
-            description={selected.description ? builtinDescription("graph", selected, locale) : undefined}
+            description={selected.description ? stockDescription("graph", selected, locale) : undefined}
             aside={
               selected.owner === "local" && (
                 <PublishButton

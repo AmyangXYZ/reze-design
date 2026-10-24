@@ -11,11 +11,11 @@
 // field, a repack that keeps the scene.json's word for the stage and loses the
 // files it names.
 
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, serializeSceneDoc, assetsDocOf, parseAssetsDoc, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
-import { builtinEffect } from "@/lib/effects"
+import { stockEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { collectSceneSlots } from "@/lib/scene-collect"
 import type { EngineModelInfo } from "@/lib/scene-host"
@@ -62,7 +62,7 @@ const doc: SceneDoc = {
   ...EMPTY_SCENE_DOC,
   assets: { ...EMPTY_SCENE_DOC.assets, models: [prop], nativeStage: "stage/" },
 }
-const scene = parseSceneDoc(doc, builtinEffect, libraryGraph)
+const scene = parseSceneDoc(doc, stockEffect, libraryGraph)
 {
   assert.equal(scene.assets.nativeStage, "stage/")
   assert.equal(scene.assets.models[0]!.look, "props/X306a_beizi/look.json")
@@ -72,7 +72,7 @@ const scene = parseSceneDoc(doc, builtinEffect, libraryGraph)
   assert.equal(stored.models[0]!.look, "props/X306a_beizi/look.json")
   assert.deepEqual(parseAssetsDoc(stored).models[0]!.look, "props/X306a_beizi/look.json")
   // A scene with neither writes neither — it reads as every scene before them.
-  const plain = assetsDocOf(parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, libraryGraph).assets)
+  const plain = assetsDocOf(parseSceneDoc(EMPTY_SCENE_DOC, stockEffect, libraryGraph).assets)
   assert.ok(!("nativeStage" in plain), "no stage, no key")
 }
 

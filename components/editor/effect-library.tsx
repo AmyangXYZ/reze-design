@@ -39,8 +39,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
-import { useBuiltins } from "@/hooks/use-builtins"
-import { builtinEffects } from "@/lib/builtins"
+import { useStock } from "@/hooks/use-stock"
+import { stockEffects } from "@/lib/stock"
 import {
   addCommunityItem,
   isMine,
@@ -51,7 +51,7 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
-import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { stockDescription, stockName, stockSearchText } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
 
 type LibraryProps = {
@@ -100,7 +100,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // stack closes only the topmost surface.
   const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? builtinEffects()[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? stockEffects()[0]?.id ?? null)
   // Follow a layer when one is ADDED — creating or editing one should move the
   // selection with it, rather than leaving the ring on the previous entry. A
   // removal lets go (pick, below), and the pane's focus moving on to another
@@ -123,12 +123,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
-  const builtins = useBuiltins("effect")
+  const stock = useStock("effect")
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(
     // Built-ins carry no idea who is asking; the fetched rows do.
-    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [builtins, community, drafts],
+    () => [...stock.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [stock, community, drafts],
   )
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
@@ -150,8 +150,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   )
   // Built-in names and descriptions are chrome and translate; the library ranks,
   // searches and sorts on what the reader sees, and answers to either language.
-  const displayName = useCallback((e: EffectItem) => builtinName("effect", e, locale), [locale])
-  const searchText = useCallback((e: EffectItem) => builtinSearchText("effect", e), [])
+  const displayName = useCallback((e: EffectItem) => stockName("effect", e, locale), [locale])
+  const searchText = useCallback((e: EffectItem) => stockSearchText("effect", e), [])
   const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
@@ -173,7 +173,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     // Refused, not silently suffixed — see the graph library's commitRename.
     const clash = conflictingName(
       wanted,
-      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...stock, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
@@ -317,7 +317,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     onToggle: () => void toggleLike(selected.id),
                   }
             }
-            description={builtinDescription("effect", selected, locale)}
+            description={stockDescription("effect", selected, locale)}
             aside={
               selected.owner === "local" && (
                 <PublishButton

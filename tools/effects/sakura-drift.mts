@@ -20,7 +20,7 @@ import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
 import { readPmxDocument } from "reze-engine"
 import { glbToStage } from "@/lib/gltf-stage"
-import { builtinRows } from "../../scripts/lib/builtins-db.mjs"
+import { stockRows } from "../../scripts/lib/stock-db.mjs"
 import { particleEffectWgsl, type BakedEmitter, type ParticleClass } from "@/lib/unity-particles"
 
 const glbPath = process.argv[2]
@@ -96,7 +96,7 @@ const textures = (base.textures ?? []).map((t) => (t?.png ? { url: `data:image/p
 
 neonConfig.webSocketConstructor = ws
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const entry = ((await builtinRows(pool, "effect")) as { id: string; name: string }[]).find((e) => e.name === "Sakura Drift")
+const entry = ((await stockRows(pool, "effect")) as { id: string; name: string }[]).find((e) => e.name === "Sakura Drift")
 if (!entry) throw new Error("no built-in Sakura Drift")
 const description =
   "Cherry petals from Aether Gazer's X343 shrine, drawn by the game's own particle rules and petal picture: " +

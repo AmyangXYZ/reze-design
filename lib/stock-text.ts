@@ -1,16 +1,16 @@
-// The built-ins in Chinese: their names and descriptions come with their rows
+// The stock in Chinese: their names and descriptions come with their rows
 // (`nameZh`, `descriptionZh`); their tags and a character's default group
 // labels are translated here.
 //
 // DISPLAY ONLY. What is stored is always the English name — scenes refer to a
-// built-in by it, and a scene made in one language opens in the other — so this
+// stock item by it, and a scene made in one language opens in the other — so this
 // translates on the way to the screen and never into a document. A user's or a
 // published item shows as its author wrote it, in whatever language.
 
 import type { Locale } from "@/lib/i18n"
-import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
+import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
 
-// The built-ins' tags. Abbreviations (AG, NPR, PBR, MIDI…) stay as they are;
+// The stock's tags. Abbreviations (AG, NPR, PBR, MIDI…) stay as they are;
 // a tag already in Chinese is its own label.
 const TAGS: Record<string, string> = {
   "aether-gazer": "深空之眼", "wuthering-waves": "鸣潮", "zenless-zone-zero": "绝区零", "honkai-star-rail": "星穹铁道", "arknights-endfield": "终末地",
@@ -43,32 +43,32 @@ const GROUP_LABELS: Record<string, string> = {
   "Smooth Cloth": "光滑布料", "Rough Cloth": "粗糙布料", Stockings: "丝袜", Metal: "金属",
 }
 
-export type BuiltinKind = "graph" | "effect" | "grade"
-const SHELVES = { graph: builtinGraphs, effect: builtinEffects, grade: builtinGrades }
+export type StockKind = "graph" | "effect" | "grade"
+const SHELVES = { graph: stockGraphs, effect: stockEffects, grade: stockGrades }
 
 /** An item as `{ name, owner }`, with its Chinese when the caller has the row.
- *  Anything not built-in is the author's own words and is never translated. */
+ *  Anything not stock is the author's own words and is never translated. */
 type Item = { name: string; owner?: string; nameZh?: string; descriptionZh?: string }
-const builtin = (item: Item) => item.owner === undefined || item.owner === "builtin"
+const fromStock = (item: Item) => item.owner === undefined || item.owner === "stock"
 
 /** The row's Chinese, from the item itself or, given only a name, the shelf. */
-function zhOf(kind: BuiltinKind, item: Item): { name?: string; description?: string } {
-  if (!builtin(item)) return {}
+function zhOf(kind: StockKind, item: Item): { name?: string; description?: string } {
+  if (!fromStock(item)) return {}
   const row: Item | undefined = item.nameZh !== undefined ? item : SHELVES[kind]().find((i) => i.name === item.name)
   return { name: row?.nameZh || undefined, description: row?.descriptionZh || undefined }
 }
 
-/** The name to show for an item: a built-in's in Chinese, else the stored name. */
-export function builtinName(kind: BuiltinKind, item: Item, locale: Locale): string {
+/** The name to show for an item: a stock item's in Chinese, else the stored name. */
+export function stockName(kind: StockKind, item: Item, locale: Locale): string {
   return (locale === "zh" && zhOf(kind, item).name) || item.name
 }
 
-/** The description to show: a built-in's in Chinese, else the stored one. */
-export function builtinDescription(kind: BuiltinKind, item: Item & { description?: string }, locale: Locale): string {
+/** The description to show: a stock item's in Chinese, else the stored one. */
+export function stockDescription(kind: StockKind, item: Item & { description?: string }, locale: Locale): string {
   return (locale === "zh" && zhOf(kind, item).description) || item.description || ""
 }
 
-/** A tag's label: a built-in tag in Chinese; any other tag as written. */
+/** A tag's label: a stock tag in Chinese; any other tag as written. */
 export function tagLabel(tag: string, locale: Locale): string {
   return (locale === "zh" && TAGS[tag]) || tag
 }
@@ -78,9 +78,9 @@ export function localGroupLabel(label: string, locale: Locale): string {
   return (locale === "zh" && GROUP_LABELS[label]) || label
 }
 
-/** Every Chinese name and tag of a built-in, for search: either language finds it. */
-export function builtinSearchText(kind: BuiltinKind, item: Item & { tags?: string[] }): string {
-  if (!builtin(item)) return ""
+/** Every Chinese name and tag of a stock item, for search: either language finds it. */
+export function stockSearchText(kind: StockKind, item: Item & { tags?: string[] }): string {
+  if (!fromStock(item)) return ""
   const zh = zhOf(kind, item)
   return [zh.name, zh.description, ...(item.tags ?? []).map((t) => TAGS[t])].filter(Boolean).join(" ")
 }

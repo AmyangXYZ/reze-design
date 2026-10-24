@@ -3,7 +3,7 @@
 // mostly comes down to — a painting's palette is a grade, its brushwork a
 // shader.
 
-import { builtinName, tagLabel } from "@/lib/builtin-text"
+import { stockName, tagLabel } from "@/lib/stock-text"
 import type { GradeSpec, Range } from "@/lib/grade"
 import { specOf } from "@/lib/grade"
 import { loadDrafts } from "@/lib/drafts"
@@ -199,7 +199,7 @@ export const LOOK_TOOLS: SceneTool[] = [
         // Each with the name a Chinese-speaking user sees and types (`zh`);
         // pass the English `name` / `pack`.
         shaders: h.shaderLibrary.map((s) => {
-          const zh = builtinName("graph", s, "zh")
+          const zh = stockName("graph", s, "zh")
           return zh !== s.name ? { ...s, zh } : s
         }),
         lookPacks: LOOK_PACK_ORDER.map((p) => {

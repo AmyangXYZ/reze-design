@@ -18,11 +18,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { groupLabel, sameGraphLook } from "@/lib/materials"
-import { builtinGraphs } from "@/lib/builtins"
+import { stockGraphs } from "@/lib/stock"
 import { type GraphItem } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import type { MaterialRow } from "@/hooks/use-engine"
-import { builtinName, localGroupLabel } from "@/lib/builtin-text"
+import { stockName, localGroupLabel } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { useCover } from "@/components/ui/cover"
@@ -105,7 +105,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
 }) {
   const { t, locale } = useI18n()
   // A default group's label and a built-in graph's name translate on screen;
-  // what is stored stays English (lib/builtin-text).
+  // what is stored stays English (lib/stock-text).
   const shownLabel = (g: StyleGroup) => localGroupLabel(groupLabel(g), locale)
   // Groups start folded, but the chosen one: a stage brings hundreds of
   // materials, and mounting a row for each made the pane slow to open.
@@ -138,7 +138,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       // Community entries count too — a group built on someone's published graph
       // could never read as edited while only built-ins were consulted.
       const lib =
-        builtinGraphs().find((e) => e.name === g.graph?.name) ??
+        stockGraphs().find((e) => e.name === g.graph?.name) ??
         communityGraphs.find((e) => e.name === g.graph?.name)
       if (lib && !sameGraphLook(g.graph, lib.payload.graph)) out.add(g.id)
     }
@@ -460,8 +460,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       >
                         {g.graph.name === ENGINE_DEFAULT_GRAPH
                           ? t.materials.defaultGraph
-                          : builtinGraphs().some((e) => e.name === g.graph.name)
-                            ? builtinName("graph", g.graph, locale)
+                          : stockGraphs().some((e) => e.name === g.graph.name)
+                            ? stockName("graph", g.graph, locale)
                             : g.graph.name}
                         {editedGroups.has(g.id) && ` · ${t.scene.edited}`}
                       </span>

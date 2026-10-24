@@ -10,7 +10,7 @@ import Link from "next/link"
 import { ChevronsLeft, GitFork, Heart, ScrollText } from "lucide-react"
 import { DisplayOnlyTag } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
-import { builtinEffect } from "@/lib/effects"
+import { stockEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useSceneMedia } from "@/hooks/use-scene-media"
@@ -29,7 +29,7 @@ import type { BundleFile } from "@/lib/uploads"
 import { setForkTarget } from "@/lib/fork"
 import { LoadError, LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
-import { installBuiltins } from "@/lib/builtins"
+import { installStock } from "@/lib/stock"
 import type { LibraryItem } from "@/lib/library"
 import { useSession } from "@/lib/auth-client"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -46,8 +46,8 @@ import { VerifiedBadge } from "@/components/verified-badge"
 
 type ViewerProps = {
   doc: SceneDoc
-  /** The built-ins the document names (lib/builtin-rows builtinRowsFor). */
-  builtins: LibraryItem[]
+  /** The built-ins the document names (lib/stock-rows stockRowsFor). */
+  stock: LibraryItem[]
   sceneId: string
   title: string
   author: string
@@ -111,15 +111,15 @@ export function SceneViewer(props: ViewerProps) {
   // sent those rows, so the canvas is in the first render and the engine starts
   // on mount, instead of after a resolve round trip and a second pass.
   const [scene, setScene] = useState<Scene | null>(() => {
-    installBuiltins(props.builtins, { whole: false })
+    installStock(props.stock, { whole: false })
     const resolve = resolveSceneRefsSync(props.doc)
-    return resolve ? parseSceneDoc(props.doc, builtinEffect, libraryGraph, resolve) : null
+    return resolve ? parseSceneDoc(props.doc, stockEffect, libraryGraph, resolve) : null
   })
   useEffect(() => {
     if (scene) return
     let stale = false
     void resolveSceneRefs(props.doc).then((resolve) => {
-      if (!stale) setScene(parseSceneDoc(props.doc, builtinEffect, libraryGraph, resolve))
+      if (!stale) setScene(parseSceneDoc(props.doc, stockEffect, libraryGraph, resolve))
     })
     return () => {
       stale = true

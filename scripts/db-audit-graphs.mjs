@@ -11,7 +11,7 @@
 // Reports, never writes. Anything it flags is fixed by a deliberate patch script.
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
-import { builtinRows } from "./lib/builtins-db.mjs"
+import { stockRows } from "./lib/stock-db.mjs"
 // reze-engine's dist uses extensionless relative imports, so it resolves under a
 // bundler and NOT under plain node — the app never noticed because Next resolves
 // them. A resolve hook puts the extension back, which keeps this script a
@@ -34,9 +34,9 @@ const { compileGraph } = await import("reze-engine")
 neonConfig.webSocketConstructor = ws
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 
-const builtins = await builtinRows(pool, "graph")
-const builtinById = new Map(builtins.map((b) => [b.id, b]))
-const builtinNames = new Set(builtins.map((b) => b.name))
+const stock = await stockRows(pool, "graph")
+const stockById = new Map(stock.map((b) => [b.id, b]))
+const stockNames = new Set(stock.map((b) => b.name))
 
 const bad = []
 const errs = (g) => {
@@ -76,11 +76,11 @@ for (const row of byKind.scene ?? []) {
     for (const g of m.materials?.groups ?? []) {
       const ref = g.graph
       if (ref && typeof ref === "object" && "id" in ref && !("nodes" in ref)) {
-        if (!builtinById.has(ref.id) && !rows.some((x) => x.id === ref.id)) {
+        if (!stockById.has(ref.id) && !rows.some((x) => x.id === ref.id)) {
           danglingPins.push(`scene "${row.name}": group "${g.label ?? "?"}" pins missing item ${ref.id}`)
         }
       } else if (typeof ref === "string") {
-        if (!builtinNames.has(ref)) {
+        if (!stockNames.has(ref)) {
           danglingPins.push(`scene "${row.name}": group "${g.label ?? "?"}" names missing built-in "${ref}"`)
         }
       } else {
@@ -100,10 +100,10 @@ const canon = (g) =>
     links: [...(g.links ?? [])].map((l) => `${l.from.node}.${l.from.socket}>${l.to.node}.${l.to.socket}`).sort(),
     output: g.output,
   })
-const builtinLooks = new Map(builtins.map((b) => [canon(b.payload.graph), b.name]))
+const stockLooks = new Map(stock.map((b) => [canon(b.payload.graph), b.name]))
 const dupes = []
 for (const row of byKind.graph ?? []) {
-  const hit = builtinLooks.get(canon(row.payload?.graph ?? {}))
+  const hit = stockLooks.get(canon(row.payload?.graph ?? {}))
   if (hit) dupes.push(`"${row.name}" by ${row.author} — same look as built-in "${hit}"`)
 }
 console.log(`\n=== published copies of a built-in: ${dupes.length} ===`)
@@ -124,10 +124,10 @@ const add = (kind, name, label) => {
 // db-seed mirrors every built-in into library_items under its AUTHORED uuid, so
 // the same entity appears in both lists. That is the design (likes and usage
 // stats need a row to reference), not a clash — matched by id, not by name.
-const builtinIds = new Set(builtins.map((b) => b.id))
-for (const b of builtins) add("graph", b.name, `built-in graph "${b.name}"`)
+const stockIds = new Set(stock.map((b) => b.id))
+for (const b of stock) add("graph", b.name, `built-in graph "${b.name}"`)
 for (const row of rows) {
-  if (builtinIds.has(row.id)) continue
+  if (stockIds.has(row.id)) continue
   add(row.kind, row.name, `${row.kind} "${row.name}" by ${row.author}`)
 }
 const clashes = [...byName.values()].filter((v) => v.length > 1)

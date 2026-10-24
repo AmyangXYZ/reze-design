@@ -15,9 +15,9 @@ const ADMINS = new Set(
     .filter(Boolean),
 )
 
-/** The account whose published grades, graphs and effects ARE the built-ins:
+/** The account whose published grades, graphs and effects ARE the stock:
  *  the first admin. */
-export const BUILTIN_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",")[0]?.trim().toLowerCase() ?? ""
+export const STOCK_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",")[0]?.trim().toLowerCase() ?? ""
 
 export function isAdminEmail(email?: string | null): boolean {
   return !!email && ADMINS.has(email.toLowerCase())

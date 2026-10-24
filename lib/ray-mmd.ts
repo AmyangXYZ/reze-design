@@ -413,7 +413,7 @@ export type PlannedGroup = {
 }
 
 /** ray-mmd's own presets, which ship with the renderer rather than the stage. */
-function builtinLook(fx: string): string | null | undefined {
+function stockLook(fx: string): string | null | undefined {
   const base = baseOf(normalize(fx)).toLowerCase()
   if (base.startsWith("material_glass")) return "Glass"
   if (base.startsWith("material_water")) return "Water"
@@ -459,12 +459,12 @@ export function planRayMmd(
     let key: string
     let look: PlannedGroup["look"]
     let label: string
-    const builtin = builtinLook(fx)
-    if (builtin === null) return
-    if (builtin) {
-      key = `look:${builtin}`
-      look = { kind: "library", name: builtin }
-      label = builtin
+    const stock = stockLook(fx)
+    if (stock === null) return
+    if (stock) {
+      key = `look:${stock}`
+      look = { kind: "library", name: stock }
+      label = stock
     } else {
       const path = resolve(fx)
       if (!path) {

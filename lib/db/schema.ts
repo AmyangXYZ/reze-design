@@ -5,8 +5,8 @@
 // `payload`. That means one publish path, one permissions model, and a gallery
 // that is a filtered query rather than a fourth code path.
 //
-// Built-ins live here like anything else: they are the presets the built-in
-// account owns (lib/admin BUILTIN_EMAIL).
+// The stock lives here like anything else: it is the presets the stock
+// account owns (lib/admin STOCK_EMAIL).
 
 import { sql } from "drizzle-orm"
 import {

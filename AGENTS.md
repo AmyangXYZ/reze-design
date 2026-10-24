@@ -135,22 +135,26 @@ scrolling body and a footer holding the submit, all capped at the viewport.
 - Tests are plain `*.test.mts` files under `lib/`, with no test runner. Each
   says how to run it at the top, always in this form:
   `npx esbuild <file> --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/t.mjs && node /tmp/t.mjs`
-  A test that needs built-ins imports `@/lib/test-builtins.mts` first; it
+  A test that needs the stock imports `@/lib/test-stock.mts` first; it
   reads them from the database in `.env.local`.
 
-# The library: built-ins, community items, drafts
+# The library: stock, community items, drafts
 
-Grades, shader graphs and effects come from three places: built-ins, community
+Grades, shader graphs and effects come from three places: the stock, community
 items (published rows) and local drafts (`lib/drafts.ts`, in localStorage,
-never on the server).
+never on the server). A person browsing sees one list; the split below is
+plumbing.
 
-**Built-ins are rows too**: every public grade, graph and effect owned by the
-first of `ADMIN_EMAILS` (`lib/builtin-rows.ts`). The editor waits for the whole
-shelf from `/api/library/builtins` before it starts (`lib/builtins.ts`,
-`hooks/use-builtins.ts`); a scene page gets the rows its document names from
-the server. Read them through `builtinGraphs()`, `builtinEffects()` and
-`builtinGrades()`, never at module scope. Change one by publishing over it as
-that account, or with a script (`scripts/lib/builtins-db.mjs`) followed by
+**The stock is rows too**: every public grade, graph and effect owned by the
+first of `ADMIN_EMAILS` (`lib/stock-rows.ts`). It is what scenes, stages and
+styles refer to BY NAME or role (auto-style's part looks, the style packs,
+Stage Surface and the stage material table, a stage's effects, grade names),
+which is why it is one account's and not every public row. The editor waits for the whole
+shelf from `/api/library/stock` before it starts (`lib/stock.ts`,
+`hooks/use-stock.ts`); a scene page gets the rows its document names from
+the server. Read them through `stockGraphs()`, `stockEffects()` and
+`stockGrades()`, never at module scope. Change one by publishing over it as
+that account, or with a script (`scripts/lib/stock-db.mjs`) followed by
 `npm run db:refresh`. Chinese names and descriptions are the row's `name_zh`
 and `description_zh`.
 

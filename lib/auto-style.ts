@@ -184,7 +184,7 @@ export function autoStyle(
     const graph = packGraph(opts.pack, id) ?? slotGraphs()[id]
     if (!graph) continue
     taken.add(id)
-    // Labelled as the seeded drop targets are, so builtin-text translates it.
+    // Labelled as the seeded drop targets are, so stock-text translates it.
     next.push({ id, label, materials: names, graph: structuredClone(graph), renderClass, ...(alphaMode ? { alphaMode } : {}) })
     changed = true
   }

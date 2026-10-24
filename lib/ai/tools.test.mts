@@ -8,12 +8,12 @@
 // and with what. What needs a GPU — capture, and framing against a posed model
 // — is checked in the browser through window.rezeTools.
 
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { runSceneTool, type SceneToolHandles } from "./scene-tools"
 import { checkSettingsPatch, describeSettings } from "./settings-schema"
 import { frameShot, type Figure } from "./framing"
-import { builtinEffects, builtinGraphs } from "@/lib/builtins"
+import { stockEffects, stockGraphs } from "@/lib/stock"
 import { sameGradeLook } from "@/lib/grade"
 import type { SceneLight } from "@/lib/scene"
 import type { AppliedEffect } from "@/lib/effects"
@@ -22,7 +22,7 @@ import { installCrashLog } from "@/lib/crash-log"
 import { guardLoops } from "./wgsl-guard"
 
 /** A real built-in graph, so the compile in write_shader is the real check. */
-const REAL_GRAPH = builtinGraphs()[0].payload.graph as unknown as Record<string, unknown>
+const REAL_GRAPH = stockGraphs()[0].payload.graph as unknown as Record<string, unknown>
 
 /** A graph with one wired input and two literal ones — enough to tell a
  *  tunable value from a socket another node feeds. */
@@ -83,7 +83,7 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     get effects() {
       return state.effects
     },
-    effectLibrary: builtinEffects().map((e) => ({ id: e.id, name: e.name, description: e.description ?? "", wgsl: e.payload.wgsl, tags: e.tags })),
+    effectLibrary: stockEffects().map((e) => ({ id: e.id, name: e.name, description: e.description ?? "", wgsl: e.payload.wgsl, tags: e.tags })),
     addEffect: (e) => {
       const uid = `u${state.effects.length + 1}`
       state.effects = [...state.effects, { ...e, uid }]
@@ -363,7 +363,7 @@ await test("list_effects is a short line per built-in; names gives the full dial
   const { h } = fake()
   const r = await runSceneTool("list_effects", {}, h)
   const list = r.data as { name: string; about: string; dials: string[] }[]
-  assert.equal(list.length, builtinEffects().length)
+  assert.equal(list.length, stockEffects().length)
   assert.ok(list.every((e) => e.about.length <= 100), "one short line each")
   const withDials = list.find((e) => e.dials.length > 0)!
   assert.equal(typeof withDials.dials[0], "string", "dial names only")
@@ -377,7 +377,7 @@ await test("list_effects is a short line per built-in; names gives the full dial
 
 await test("read_effect_source reads a long effect in pieces", async () => {
   const { h } = fake()
-  const longest = [...builtinEffects()].sort((a, b) => b.payload.wgsl.split("\n").length - a.payload.wgsl.split("\n").length)[0]
+  const longest = [...stockEffects()].sort((a, b) => b.payload.wgsl.split("\n").length - a.payload.wgsl.split("\n").length)[0]
   const total = longest.payload.wgsl.split("\n").length
   assert.ok(total > 400, "a built-in longer than one read")
   const first = (await runSceneTool("read_effect_source", { effect: longest.name }, h)).data as { lines: number; wgsl: string; note?: string }
@@ -401,7 +401,7 @@ await test("add_effect clamps a dial to its author's range and names a wrong one
   const { h, state } = fake()
   // `#param float NAME default min max`
   const ranged = /#param\s+float\s+(\w+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)/
-  const withDial = builtinEffects().find((e) => ranged.test(e.payload.wgsl))
+  const withDial = stockEffects().find((e) => ranged.test(e.payload.wgsl))
   assert.ok(withDial, "a built-in with a ranged float dial")
   const m = withDial!.payload.wgsl.match(ranged)!
   const [, dial, , , max] = m

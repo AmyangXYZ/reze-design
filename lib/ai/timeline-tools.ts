@@ -6,7 +6,7 @@
 // timeline's own lanes use, so it plays, exports, saves and undoes like a hand
 // edit.
 
-import { builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { stockName, stockSearchText } from "@/lib/stock-text"
 import type { EffectParamValue } from "reze-engine"
 import { parseDirectives } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
@@ -204,11 +204,11 @@ export const TIMELINE_TOOLS: SceneTool[] = [
     run: async (args, h) => {
       const names = Array.isArray(args.names) ? (args.names as unknown[]).map((n) => String(n).toLowerCase()) : null
       const q = typeof args.query === "string" ? args.query.trim().toLowerCase() : ""
-      const zhOf = (e: (typeof h.effectLibrary)[number]) => builtinName("effect", e, "zh")
+      const zhOf = (e: (typeof h.effectLibrary)[number]) => stockName("effect", e, "zh")
       const picked = h.effectLibrary.filter((e) =>
         names
           ? names.includes(e.name.toLowerCase())
-          : !q || [e.name, e.description, ...(e.tags ?? []), builtinSearchText("effect", e)].some((t) => t.toLowerCase().includes(q)),
+          : !q || [e.name, e.description, ...(e.tags ?? []), stockSearchText("effect", e)].some((t) => t.toLowerCase().includes(q)),
       )
       return {
         data: picked.map((e) => {

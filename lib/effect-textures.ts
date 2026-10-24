@@ -10,7 +10,7 @@
 // again after a reload: the source comes back from the document, the pictures
 // from the stage's own files.
 
-import { builtinEffects, subscribeBuiltins } from "@/lib/builtins"
+import { stockEffects, subscribeStock } from "@/lib/stock"
 
 type EffectTexture = { source: ImageBitmap; srgb: boolean } | null
 
@@ -39,20 +39,20 @@ export function subscribeEffectTextures(cb: () => void): () => void {
 // them. They load the first time the effect asks, and the version bump installs
 // it again with them, as a stage's do.
 type PictureSpec = { url: string; srgb?: boolean } | null
-const builtinPictures = (wgsl: string): PictureSpec[] | undefined => {
-  const payload = builtinEffects().find((e) => e.payload.wgsl === wgsl)?.payload as { textures?: unknown } | undefined
+const stockPictures = (wgsl: string): PictureSpec[] | undefined => {
+  const payload = stockEffects().find((e) => e.payload.wgsl === wgsl)?.payload as { textures?: unknown } | undefined
   return Array.isArray(payload?.textures) ? (payload.textures as PictureSpec[]) : undefined
 }
 const loading = new Set<string>()
 
-function startBuiltin(wgsl: string): void {
-  const specs = builtinPictures(wgsl)
+function startStock(wgsl: string): void {
+  const specs = stockPictures(wgsl)
   if (!specs || loading.has(wgsl) || typeof createImageBitmap !== "function") return
   loading.add(wgsl)
-  void loadBuiltinPictures(wgsl, specs)
+  void loadStockPictures(wgsl, specs)
 }
 
-async function loadBuiltinPictures(wgsl: string, specs: PictureSpec[]): Promise<void> {
+async function loadStockPictures(wgsl: string, specs: PictureSpec[]): Promise<void> {
   const textures = await Promise.all(
     specs.map(async (spec): Promise<EffectTexture> => {
       if (!spec?.url) return null
@@ -74,7 +74,7 @@ async function loadBuiltinPictures(wgsl: string, specs: PictureSpec[]): Promise<
 export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
   const known = byWgsl.get(wgsl)
   if (known) return known
-  startBuiltin(wgsl)
+  startStock(wgsl)
   return undefined
 }
 
@@ -83,8 +83,8 @@ export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
 // rebind, so loading them up front (Sakura Drift's 43 KB petal) makes the first
 // install the right one.
 if (typeof window !== "undefined")
-  subscribeBuiltins(() => {
-    for (const e of builtinEffects()) startBuiltin(e.payload.wgsl)
+  subscribeStock(() => {
+    for (const e of stockEffects()) startStock(e.payload.wgsl)
   })
 
 /**

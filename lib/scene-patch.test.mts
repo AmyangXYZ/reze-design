@@ -9,11 +9,11 @@
 // than stack on them. Those are the failures guarded here, with the plain merge
 // rules (null clears, absent keeps, objects merge) beside them.
 
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
-import { builtinEffect } from "@/lib/effects"
+import { stockEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { isScenePatch, mergePatch, mergePatchFiles, mergeScenePatch, patchRoots } from "@/lib/scene-patch"
 
@@ -115,7 +115,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
     ["107402", "107402"],
   )
   // And it parses: the tag survives into the runtime scene.
-  const scene = parseSceneDoc(one, builtinEffect, libraryGraph)
+  const scene = parseSceneDoc(one, stockEffect, libraryGraph)
   assert.deepEqual(
     scene.assets.models.map((m) => [m.model.id, m.origin ?? null]),
     [
@@ -181,7 +181,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
     ["props/cup/cup.pmx", "stages/room/room.pmx"],
   )
   assert.equal(out.assets.cameraAnimation, undefined)
-  assert.equal(parseSceneDoc(out, builtinEffect, libraryGraph).assets.cameraAnimation, null)
+  assert.equal(parseSceneDoc(out, stockEffect, libraryGraph).assets.cameraAnimation, null)
   assert.deepEqual(out.settings.background.effects, [])
   assert.equal("cast" in out.assets, false, "the patch's own vocabulary never lands in the scene")
 }
@@ -249,7 +249,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   const her2 = ref.assets.models.find((m) => m.model === "/models/reze/reze.pmx")!
   assert.deepEqual([her2.animation, her2.morph], ["character.vmd", "face.vmd"])
   // It parses into the runtime slot.
-  const scene = parseSceneDoc(out, builtinEffect, libraryGraph)
+  const scene = parseSceneDoc(out, stockEffect, libraryGraph)
   const lead = scene.assets.models.find((m) => m.model.id === "reze")!
   assert.equal(lead.animation?.url, "character.vmd")
   assert.equal(lead.animation?.name, "character.vmd")
@@ -275,7 +275,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   const r = out.assets.models.find((m) => m.model === "props/ring/ring.pmx")!
   assert.deepEqual(r.attach, { model: "reze", bone: "左手首" }, "the lead's own key")
   assert.deepEqual(r.parentKeys?.map((k) => k.model), [null, "reze"])
-  const scene = parseSceneDoc(out, builtinEffect, libraryGraph)
+  const scene = parseSceneDoc(out, stockEffect, libraryGraph)
   assert.equal(scene.assets.models.find((m) => m.model.id === "ring")?.attach?.model, "reze")
   // No cast member: the prop stands on its own.
   const empty = base()
@@ -292,7 +292,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.equal(out.assets.models[0].morph, null)
   assert.equal(out.assets.models[0].model, "/models/reze/reze.pmx", "she stays")
   assert.equal(out.assets.models[0].materials?.groups[0].label, "Body")
-  assert.equal(parseSceneDoc(out, builtinEffect, libraryGraph).assets.models[0].animation, null)
+  assert.equal(parseSceneDoc(out, stockEffect, libraryGraph).assets.models[0].animation, null)
 
   const empty = base()
   empty.assets.models = [{ model: "stages/room/room.pmx", stage: true }, prop("cup")]

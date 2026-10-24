@@ -11,11 +11,11 @@
 // invisible in the editor, where the value never left React state: it shows up
 // as a published scene that opens unlit.
 
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, serializeSceneDoc, stageLightsFromFile, type SceneLight, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
-import { builtinEffect } from "@/lib/effects"
+import { stockEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { sceneOwned } from "@/lib/scene-settings"
 import { applyLampFrame, lampAt, setLampRig } from "@/lib/timeline/lights"
@@ -54,7 +54,7 @@ const empty = () => ({
   bundle: null,
 })
 
-const base = parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, libraryGraph)
+const base = parseSceneDoc(EMPTY_SCENE_DOC, stockEffect, libraryGraph)
 
 function docWith(lights: SceneLight[]): SceneDoc {
   return serializeSceneDoc({
@@ -69,7 +69,7 @@ function docWith(lights: SceneLight[]): SceneDoc {
   })
 }
 
-const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).state.lights
+const read = (doc: SceneDoc) => parseSceneDoc(doc, stockEffect, libraryGraph).state.lights
 
 // ── The trip itself ──
 {
@@ -159,7 +159,7 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
     hidden: {},
     lights: [],
   })
-  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.settings.sun
+  const back = parseSceneDoc(doc, stockEffect, libraryGraph).state.settings.sun
   assert.deepEqual(back.stage, { id: "stage-id", before }, "the claim and the sun it replaced survive the document")
   assert.equal(back.elevation, 77)
   assert.ok(!("stage" in sceneOwned(back)), "an edited sun carries no claim")
@@ -180,7 +180,7 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
     hidden: {},
     lights: [],
   })
-  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.settings.world
+  const back = parseSceneDoc(doc, stockEffect, libraryGraph).state.settings.world
   assert.deepEqual(back, claimed, "the world's claim survives the document")
   assert.deepEqual(sceneOwned(back), { ...before, strength: 1 }, "and an edit leaves the strength without it")
 }
@@ -224,7 +224,7 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
 
 // ── An effect remembers the stage it came with ──
 {
-  const sky = { ...builtinEffect("Galaxy Sky"), params: { TURN: 30 }, stage: "stage-id" }
+  const sky = { ...stockEffect("Galaxy Sky"), params: { TURN: 30 }, stage: "stage-id" }
   const doc = serializeSceneDoc({
     ...empty(),
     name: "t",
@@ -235,7 +235,7 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
     hidden: {},
     lights: [],
   })
-  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.backgroundEffects
+  const back = parseSceneDoc(doc, stockEffect, libraryGraph).state.backgroundEffects
   assert.equal(back[0].stage, "stage-id", "the stage that brought it survives the document")
   assert.deepEqual(back[0].params, { TURN: 30 })
 }

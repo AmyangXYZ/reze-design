@@ -3,7 +3,7 @@
 // Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { builtinEffects } from "@/lib/builtins"
+import { stockEffects } from "@/lib/stock"
 import { Engine, parseLRC, parseMidi, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup, type LyricLine } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
@@ -297,7 +297,7 @@ export function useEngine(
         // otherwise has no way to reach a real shader to pass it.
         if (process.env.NODE_ENV === "development") {
           ;(window as unknown as { __rezeEffects?: Record<string, string> }).__rezeEffects = Object.fromEntries(
-            builtinEffects().map((e) => [e.name, e.payload.wgsl]),
+            stockEffects().map((e) => [e.name, e.payload.wgsl]),
           )
           // Fetch + parse + install a .mid in one call. The score UI does not
           // exist yet, and a parser that can only be reached by rebuilding the

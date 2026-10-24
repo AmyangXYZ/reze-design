@@ -17,8 +17,8 @@ export type QuickPickItem = {
   id: string
   label: string
   hint?: string
-  /** Which section the row sits in. Defaults to "builtin". */
-  section?: "builtin" | "community" | "local"
+  /** A local draft: listed apart from what is published. */
+  draft?: boolean
 }
 
 export function QuickPick({
@@ -82,8 +82,8 @@ export function QuickPick({
   const shown = needle
     ? items.filter((i) => i.label.toLowerCase().includes(needle) || i.id.toLowerCase().includes(needle))
     : items
-  const local = shown.filter((i) => i.section === "local")
-  const published = shown.filter((i) => i.section !== "local")
+  const local = shown.filter((i) => i.draft)
+  const published = shown.filter((i) => !i.draft)
   const row = (i: QuickPickItem) => (
     <Button variant="bare"
       key={i.id}

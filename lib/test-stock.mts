@@ -1,10 +1,10 @@
-// The built-ins for a test: the shelf the editor would get, read from the
+// The stock for a test: the shelf the editor would get, read from the
 // database named in .env.local, installed before the test runs. Import it
 // first; its top-level await holds the importing test until the rows are in.
 
 import { readFileSync } from "node:fs"
 import { neon } from "@neondatabase/serverless"
-import { installBuiltins } from "@/lib/builtins"
+import { installStock } from "@/lib/stock"
 import type { LibraryItem } from "@/lib/library"
 
 const env = Object.fromEntries(
@@ -22,4 +22,4 @@ const rows = (await neon(env.DATABASE_URL).query(
     order by i.created_at`,
   [(env.ADMIN_EMAILS ?? "").split(",")[0].trim().toLowerCase()],
 )) as LibraryItem[]
-installBuiltins(rows)
+installStock(rows)

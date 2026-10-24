@@ -1,7 +1,7 @@
 // Color grading — the LOOK layer, and the clearest example of this app's posture
 
 import { storageKey } from "@/lib/storage"
-import { builtinGrades } from "@/lib/builtins"
+import { stockGrades } from "@/lib/stock"
 import type { GradeItem } from "@/lib/library"
 
 export function hslToHex(h: number, s: number, l: number): string {
@@ -65,7 +65,7 @@ export type GradeSettings = {
   from?: { id: string }
 }
 
-// The built-in grades are rows on the shelf (lib/builtins), in the envelope
+// The built-in grades are rows on the shelf (lib/stock), in the envelope
 // every grade wears. Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
 // reference frame; eyeballing hue/sat numbers has never once landed.
 // Judge DETAIL on a grey ramp (a shaded white dress is one): sum the per-step
@@ -151,7 +151,7 @@ export function sameGradeLook(a: GradeSpec, b: GradeSpec): boolean {
  *  ungraded rather than wrongly graded. */
 export function gradeSpec(name: string, drafts: GradeItem[] = []): GradeSpec {
   return (
-    (builtinGrades().find((p) => p.name === name) ?? drafts.find((d) => d.name === name))?.payload.spec ?? NEUTRAL_SPEC
+    (stockGrades().find((p) => p.name === name) ?? drafts.find((d) => d.name === name))?.payload.spec ?? NEUTRAL_SPEC
   )
 }
 

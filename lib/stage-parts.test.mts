@@ -3,12 +3,12 @@
 //
 //   npx esbuild lib/stage-parts.test.mts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/sp.mjs && node /tmp/sp.mjs
 
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, type SceneDoc } from "@/lib/scene"
 import { withStageParts, type StageInfo } from "@/lib/scene-host"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
-import { builtinEffect } from "@/lib/effects"
+import { stockEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 
 let failed = 0
@@ -39,7 +39,7 @@ test("a document carries which stage a part belongs to", () => {
       ],
     },
   }
-  const models = parseSceneDoc(doc, builtinEffect, libraryGraph).assets.models
+  const models = parseSceneDoc(doc, stockEffect, libraryGraph).assets.models
   assert.deepEqual(
     models.map((m) => m.partOf ?? null),
     [null, "room", null, null],

@@ -1,7 +1,7 @@
 // One classifier for every model: a figure's parts only where there is a head,
 // a material's look wherever its name or shader says what it is. Run:
 //   npx esbuild lib/auto-style.test.mts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/t.mjs && node /tmp/t.mjs
-import "@/lib/test-builtins.mts"
+import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
 import { autoStyle, classify, isFigure, roleFor } from "./auto-style"
 import { STAGE_SURFACE } from "./stage-style"

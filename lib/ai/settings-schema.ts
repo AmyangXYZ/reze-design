@@ -11,8 +11,8 @@
 
 import type { SceneSettings } from "@/lib/scene-settings"
 import { VIEW_TRANSFORMS } from "@/lib/scene-settings"
-import { builtinGrades } from "@/lib/builtins"
-import { builtinName } from "@/lib/builtin-text"
+import { stockGrades } from "@/lib/stock"
+import { stockName } from "@/lib/stock-text"
 
 export type FieldSpec =
   | { kind: "number"; min: number; max: number; about: string }
@@ -75,11 +75,11 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
         kind: "enum",
         // Read when the tools are built, from whatever the shelf holds then.
         get values() {
-          return builtinGrades().map((g) => g.name)
+          return stockGrades().map((g) => g.name)
         },
         get about() {
-          return `Built-in grade by name. As a Chinese-speaking user calls them: ${builtinGrades()
-            .map((g) => [g.name, builtinName("grade", g, "zh")] as const)
+          return `Built-in grade by name. As a Chinese-speaking user calls them: ${stockGrades()
+            .map((g) => [g.name, stockName("grade", g, "zh")] as const)
             .filter(([en, zh]) => zh !== en)
             .map(([en, zh]) => `${zh} = ${en}`)
             .join(", ")}.`

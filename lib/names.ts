@@ -7,15 +7,15 @@
 // Asking three slightly different questions is how one name came to mean two
 // things depending on which list you were looking at.
 
-import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
+import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
 import { communityItems } from "@/lib/community-store"
 import { loadDrafts, nextDraftName, type DraftKind } from "@/lib/drafts"
 import { conflictingName, type LibraryItem } from "@/lib/library"
 
-const BUILTINS: Record<DraftKind, () => LibraryItem[]> = {
-  grade: builtinGrades,
-  effect: builtinEffects,
-  graph: builtinGraphs,
+const STOCK: Record<DraftKind, () => LibraryItem[]> = {
+  grade: stockGrades,
+  effect: stockEffects,
+  graph: stockGraphs,
 }
 
 /**
@@ -32,7 +32,7 @@ const BUILTINS: Record<DraftKind, () => LibraryItem[]> = {
  */
 export function freeName(kind: DraftKind, wanted: string, draftId?: string): string {
   return nextDraftName(wanted, [
-    ...BUILTINS[kind]().map((i) => i.name),
+    ...STOCK[kind]().map((i) => i.name),
     ...communityItems(kind).map((i) => i.name),
     ...loadDrafts()[kind].filter((d) => d.id !== draftId).map((d) => d.name),
   ])
@@ -56,7 +56,7 @@ export function freeName(kind: DraftKind, wanted: string, draftId?: string): str
  */
 export function publishClash(kind: DraftKind, wanted: string, itemId?: string): string | undefined {
   return conflictingName(wanted, [
-    ...BUILTINS[kind]().filter((i) => i.id !== itemId).map((i) => i.name),
+    ...STOCK[kind]().filter((i) => i.id !== itemId).map((i) => i.name),
     ...communityItems(kind).filter((i) => i.id !== itemId).map((i) => i.name),
   ])
 }

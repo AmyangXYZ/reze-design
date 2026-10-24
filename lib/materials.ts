@@ -1,6 +1,6 @@
 import { DEFAULT_BLOOM, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
-import { builtinGraphs, builtinsVersion, subscribeBuiltins } from "@/lib/builtins"
+import { stockGraphs, stockVersion, subscribeStock } from "@/lib/stock"
 import type { GraphItem } from "@/lib/library"
 
 // The built-in looks are two sets on one shelf. The character set answers to a
@@ -22,7 +22,7 @@ import type { GraphItem } from "@/lib/library"
 // no type checks, since a graph is data. Checked each time the shelf arrives.
 function checkGraphs() {
   const problems: string[] = []
-  for (const item of builtinGraphs()) {
+  for (const item of stockGraphs()) {
     const graph = item.payload?.graph
     if (!graph) continue
     const types = new Map(graph.nodes.map((n) => [n.id, n.type]))
@@ -48,16 +48,16 @@ function checkGraphs() {
   }
   if (problems.length) console.error(`built-in looks do not match NODE_REGISTRY:\n  ${problems.join("\n  ")}`)
 }
-if (process.env.NODE_ENV !== "production") subscribeBuiltins(checkGraphs)
+if (process.env.NODE_ENV !== "production") subscribeStock(checkGraphs)
 
 /** Derived from the shelf, and rebuilt only when it changes. */
 function onShelf<T>(derive: () => T): () => T {
   let at = -1
   let value: T
   return () => {
-    if (at !== builtinsVersion()) {
+    if (at !== stockVersion()) {
       value = derive()
-      at = builtinsVersion()
+      at = stockVersion()
     }
     return value
   }
@@ -67,7 +67,7 @@ function onShelf<T>(derive: () => T): () => T {
 export const slotGraphs = onShelf(
   () =>
     Object.fromEntries(
-      builtinGraphs()
+      stockGraphs()
         .filter((g) => g.payload.role)
         .map((g) => [g.payload.role, g.payload.graph]),
     ) as Partial<Record<MaterialPreset, GraphItem["payload"]["graph"]>>,
@@ -77,7 +77,7 @@ export const slotGraphs = onShelf(
  *  graphs travel as pins, and an EDITED one is saved as a local draft by
  *  whatever edited it (the graph editor's save, the AI's tools). */
 export function libraryGraph(name: string): GraphItem["payload"]["graph"] | undefined {
-  return builtinGraphs().find((g) => g.name === name)?.payload.graph
+  return stockGraphs().find((g) => g.name === name)?.payload.graph
 }
 
 /**
@@ -89,7 +89,7 @@ export function libraryGraph(name: string): GraphItem["payload"]["graph"] | unde
  */
 const slotLabels = onShelf(
   () =>
-    Object.fromEntries(builtinGraphs().filter((g) => g.payload.role).map((g) => [g.payload.role, g.name])) as Record<
+    Object.fromEntries(stockGraphs().filter((g) => g.payload.role).map((g) => [g.payload.role, g.name])) as Record<
       MaterialPreset,
       string
     >,
@@ -298,7 +298,7 @@ export function graphRole(graph: ShaderGraph): string | undefined {
 export function packGraph(pack: LookPack, role: string | undefined): ShaderGraph | undefined {
   if (!role || role === "default") return undefined
   const { tag } = LOOK_PACKS[pack]
-  const inPack = builtinGraphs().filter((g) => g.tags.includes(tag))
+  const inPack = stockGraphs().filter((g) => g.tags.includes(tag))
   const find = (r: string) => inPack.find((g) => graphRole(g.payload.graph) === r)?.payload.graph
   return find(role) ?? find(ROLE_FALLBACK[role] ?? "")
 }
@@ -319,7 +319,7 @@ export function activeLookPack(graphs: ShaderGraph[]): LookPack | null {
     const role = graphRole(g)
     if (!role || !packGraph("ag", role)) continue
     const name = g.name
-    const hit = LOOK_PACK_ORDER.find((p) => builtinGraphs().some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
+    const hit = LOOK_PACK_ORDER.find((p) => stockGraphs().some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
     if (!hit) return null
     packs.add(hit)
   }

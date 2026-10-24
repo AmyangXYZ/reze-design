@@ -30,7 +30,7 @@ import {
 import { conflictingName, nameKey, normalizeName, type GradeItem } from "@/lib/library"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
-import { useBuiltins } from "@/hooks/use-builtins"
+import { useStock } from "@/hooks/use-stock"
 import {
   addCommunityItem,
   isMine,
@@ -44,7 +44,7 @@ import { PublishButton } from "@/components/editor/publish-button"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
-import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { stockDescription, stockName, stockSearchText } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
 
 type Props = {
@@ -87,16 +87,16 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   // Built-in names are UI chrome and translate by id; descriptions are AUTHOR
   // text and stay as written, exactly as the effects library already shows them.
-  const nameOf = (g: GradeItem) => builtinName("grade", g, locale)
+  const nameOf = (g: GradeItem) => stockName("grade", g, locale)
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
-  const builtins = useBuiltins("grade")
+  const stock = useStock("grade")
   const community = useCommunity<GradeItem>("grade")
   const all = useMemo(
     // Built-ins carry no idea who is asking; the fetched rows do.
-    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [builtins, community, drafts],
+    () => [...stock.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [stock, community, drafts],
   )
   const selected =
     all.find((g) => g.id === selectedId) ?? all.find((g) => g.name === grade.preset) ?? all[0]
@@ -112,7 +112,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // and sort on what the reader actually sees.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const displayName = useCallback((g: GradeItem) => nameOf(g), [locale])
-  const searchText = useCallback((g: GradeItem) => builtinSearchText("grade", g), [])
+  const searchText = useCallback((g: GradeItem) => stockSearchText("grade", g), [])
   const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
@@ -133,7 +133,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     // Refused, not silently suffixed — see the graph library's commitRename.
     const clash = conflictingName(
       wanted,
-      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...stock, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
@@ -167,7 +167,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const startEdit = (g: GradeItem) => {
     if (!onEdit) return
     setSelectedId(g.id)
-    onEdit({ id: g.id, name: g.name, spec: g.payload.spec, origin: g.owner === "builtin" ? g.name : undefined })
+    onEdit({ id: g.id, name: g.name, spec: g.payload.spec, origin: g.owner === "stock" ? g.name : undefined })
   }
   // Nothing is created here — the editor is a scratchpad, and the save-on-close
   // dialog is what turns the work into a draft.
@@ -281,7 +281,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     onToggle: () => void toggleLike(selected.id),
                   }
             }
-            description={selected.description ? builtinDescription("grade", selected, locale) : undefined}
+            description={selected.description ? stockDescription("grade", selected, locale) : undefined}
             aside={
               selected.owner === "local" && (
                 <PublishButton

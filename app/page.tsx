@@ -162,8 +162,8 @@ import { useZOrder } from "@/hooks/use-z-order"
 import { BACKING_MAX, usePanelBacking } from "@/hooks/use-panel-backing"
 import { useInkChoice } from "@/hooks/use-ink-choice"
 import { DEFAULT_SCENE_DOC, defaultScene, demoScene, EMPTY_SCENE } from "@/lib/default-scene"
-import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
-import { useBuiltinsWhole } from "@/hooks/use-builtins"
+import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
+import { useStockWhole } from "@/hooks/use-stock"
 import {
   assetsDocOf,
   CAMERA_DEFAULT_FOV,
@@ -192,7 +192,7 @@ import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/s
 import { clearLocalBundle, loadLocalBundle, loadModelLooks, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
 import { modelLooksKey, sameLooks, savableLooks } from "@/lib/model-looks"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
-import { builtinName, localGroupLabel } from "@/lib/builtin-text"
+import { stockName, localGroupLabel } from "@/lib/stock-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
 import { gradeSpec, NEUTRAL_SPEC, sameGradeLook, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
@@ -221,7 +221,7 @@ import { freeName } from "@/lib/names"
 import {
   applyDefaults,
   effectParams,
-  builtinEffect,
+  stockEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
   type EffectSurface,
@@ -427,13 +427,13 @@ const POINT_EFFECTS = [
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
  *  this exists to prevent, and it is what applying one effect twice produces. */
-/** A phone's list of looks: the built-ins and the community's rows as one,
- *  newest first. One row per name, a built-in's where a community row shares
+/** A phone's list of looks: the stock and the community's rows as one,
+ *  newest first. One row per name, the stock's where a community row shares
  *  it, since the name is what applying resolves by. */
-function newestFirst<T extends { name: string; createdAt?: string }>(builtins: T[], community: T[]): T[] {
+function newestFirst<T extends { name: string; createdAt?: string }>(stock: T[], community: T[]): T[] {
   const seen = new Set<string>()
   const when = (r: T) => (r.createdAt ? Date.parse(r.createdAt) || 0 : 0)
-  return [...builtins, ...community]
+  return [...stock, ...community]
     .filter((r) => {
       const k = nameKey(r.name)
       if (seen.has(k)) return false
@@ -2250,9 +2250,9 @@ const NO_COOKIE = "__none"
 const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
 
 /** The editor waits for the built-ins: auto-style, the look packs and the scene
- *  it opens on all name them (lib/builtins). */
+ *  it opens on all name them (lib/stock). */
 export default function Page() {
-  return useBuiltinsWhole() ? <Lab /> : null
+  return useStockWhole() ? <Lab /> : null
 }
 
 function Lab() {
@@ -3420,11 +3420,11 @@ function Lab() {
   // A built-in grade's name is its ID in the document and a TRANSLATION on
   // screen — the same split main uses. Drafts and community grades are user
   // strings, so they show exactly as authored.
-  const gradeLabel = useCallback((name: string) => builtinName("grade", { name }, uiLocale), [uiLocale])
+  const gradeLabel = useCallback((name: string) => stockName("grade", { name }, uiLocale), [uiLocale])
   // An applied effect's shown name: a built-in's translates, anything else is
   // its author's (an effect is a built-in when the library ships one by that name).
   const effectLabel = useCallback(
-    (name: string) => (builtinEffects().some((x) => x.name === name) ? builtinName("effect", { name }, uiLocale) : name),
+    (name: string) => (stockEffects().some((x) => x.name === name) ? stockName("effect", { name }, uiLocale) : name),
     [uiLocale],
   )
   const pickGrade = useCallback(
@@ -3463,13 +3463,13 @@ function Lab() {
       // lists hold the same set, so a different order between them means hunting
       // for a name in a place it was not a moment ago.
       ...quickPickItems(
-        [...builtinGrades()].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))),
+        [...stockGrades()].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))),
         gradeDrafts,
         appliedGradeDraftId,
       ).map((g) => ({
         id: g.name,
         label: gradeLabel(g.name),
-        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
+        draft: g.owner === "local",
       })),
       ...communityQuickPickItems(communityGrades),
     ]
@@ -3477,7 +3477,7 @@ function Lab() {
     const source = gradeSpec(preset, [...gradeDrafts, ...communityGrades])
     if (sameGradeLook(appliedGradeSpec, source)) return items
     const known = items.some((i) => i.id === preset)
-    const withOwn = known ? items : [...items, { id: preset, label: preset, section: "local" as const }]
+    const withOwn = known ? items : [...items, { id: preset, label: preset, draft: true }]
     return withOwn.map((i) => (i.id === preset ? { ...i, hint: t.scene.edited } : i))
   }, [gradeDrafts, appliedGradeDraftId, communityGrades, gradeLabel, settings.grade.preset, appliedGradeSpec, t])
   // Plain functions, the shipped editor's own call: they feed dialogs that are
@@ -3524,7 +3524,7 @@ function Lab() {
   /** The BUILT-IN spec an edit descends from — what "back to preset" reverts to.
    *  Neutral, never the authoring starting point: revert means back to no grade. */
   const gradeAncestor = (subject?: GradeEditorSubject) =>
-    builtinGrades().find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC
+    stockGrades().find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC
   const requestCloseGradeEditor = () => {
     if (!gradeEditor) return
     const { subject, opened } = gradeEditor
@@ -4491,9 +4491,9 @@ function Lab() {
   const communityGraphs = useCommunity<GraphItem>("graph")
   // The phone's lists: built-ins and community rows together, newest first.
   // Desktop's libraries read the same rows; only the phone needs them merged.
-  const phoneEffects = phone ? newestFirst(builtinEffects(), communityEffects) : []
-  const phoneGraphs = phone ? newestFirst(builtinGraphs(), communityGraphs) : []
-  const phoneGrades = phone ? newestFirst(builtinGrades(), communityGrades) : []
+  const phoneEffects = phone ? newestFirst(stockEffects(), communityEffects) : []
+  const phoneGraphs = phone ? newestFirst(stockGraphs(), communityGraphs) : []
+  const phoneGrades = phone ? newestFirst(stockGrades(), communityGrades) : []
   // Eager, unlike the other two editors': this panel stays MOUNTED while closed
   // (see the JSX), so it needs its rect on the first render it appears in.
   const { rect: graphPanelRect, update: updateGraphPanelRect } = useStoredRect(GRAPH_PANEL_KEY, defaultPanelRect, {
@@ -4543,7 +4543,7 @@ function Lab() {
   // group's graph came from, never the group's live graph — which would make
   // Reset restore the state you were trying to leave.
   const presetGraph = activeGroup
-    ? (builtinGraphs().find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
+    ? (stockGraphs().find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
       slotGraphs()[activeGroup.id as MaterialPreset] ??
       DEFAULT_GRAPH)
     : null
@@ -5391,7 +5391,7 @@ function Lab() {
         // Its water splashes the same way (POINT_EFFECTS).
         for (const pe of POINT_EFFECTS) {
           if (hasPoints(id, pe.prefix)) {
-            setBgEffects((list) => (list.some((e) => e.name === pe.effect) ? list : [...list, builtinEffect(pe.effect)]))
+            setBgEffects((list) => (list.some((e) => e.name === pe.effect) ? list : [...list, stockEffect(pe.effect)]))
           } else if (leavingLit && !models.some((m) => !leavingIds.has(m.id) && m.id !== id && hasPoints(m.id, pe.prefix))) {
             setBgEffects((list) => list.filter((e) => e.name !== pe.effect))
           }
@@ -5408,7 +5408,7 @@ function Lab() {
         for (const fx of rig?.effects ?? []) {
           let applied: AppliedEffect
           try {
-            applied = { ...builtinEffect(fx.name), params: fx.params, stage: id }
+            applied = { ...stockEffect(fx.name), params: fx.params, stage: id }
           } catch {
             console.warn(`[stage] it names an effect this app does not have: ${fx.name}`)
             continue
@@ -6024,7 +6024,7 @@ function Lab() {
     groups: groupsByModel,
     hidden: hiddenByModel,
     effects: documentEffects,
-    effectLibrary: [...builtinEffects(), ...communityEffects, ...effectDrafts].map((e) => ({
+    effectLibrary: [...stockEffects(), ...communityEffects, ...effectDrafts].map((e) => ({
       id: e.id,
       name: e.name,
       description: e.description ?? "",
@@ -6050,12 +6050,12 @@ function Lab() {
       visibility: m.visibility ?? [],
     })),
     setVisibility: (id, windows) => setCastVisibility(id, windows),
-    shaderLibrary: [...builtinGraphs(), ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
+    shaderLibrary: [...stockGraphs(), ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
       name: g.name,
       about: g.description ?? "",
     })),
     assignShader: (modelId, groupId, shader) => {
-      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...builtinGraphs()].find(
+      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...stockGraphs()].find(
         (e) => e.name.toLowerCase() === shader.toLowerCase(),
       ) as GraphItem | undefined
       if (!entry) return `no shader named "${shader}" — see list_shaders`
@@ -6164,7 +6164,7 @@ function Lab() {
     },
     graphSource: (name) => {
       const key = name.toLowerCase()
-      const hit = [...loadDrafts().graph, ...communityItems("graph"), ...builtinGraphs()].find((g) => g.name.toLowerCase() === key) as GraphItem | undefined
+      const hit = [...loadDrafts().graph, ...communityItems("graph"), ...stockGraphs()].find((g) => g.name.toLowerCase() === key) as GraphItem | undefined
       return hit ? { ...hit.payload.graph, name: hit.name } : null
     },
     saveGraphDraft: (wanted, graph) => {
@@ -6630,7 +6630,7 @@ function Lab() {
           })
         }
         const resolve = await resolveSceneRefs(item.payload.doc)
-        const scene = parseSceneDoc(item.payload.doc, builtinEffect, libraryGraph, resolve)
+        const scene = parseSceneDoc(item.payload.doc, stockEffect, libraryGraph, resolve)
         // The viewer parked its unzipped assets on the way here. Opening them
         // from IndexedDB skips both the download and the unzip of a bundle this
         // browser already holds — and the scene takes the id they were stored
@@ -6881,7 +6881,7 @@ function Lab() {
       } else {
         const doc = parsed as SceneDoc
         const resolve = await resolveSceneRefs(doc)
-        const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
+        const imported = parseSceneDoc(doc, stockEffect, libraryGraph, resolve)
         draftArrivedLooks(imported)
         // A blob URL holding the zip already open, so loadSceneInto reads it as is.
         const url = holdBundle(files, file)
@@ -6944,7 +6944,7 @@ function Lab() {
       const url = stored ? null : holdBundle(entries.map((e) => bundleFileOf(e.path, e.file)))
       try {
         const resolve = await resolveSceneRefs(merged)
-        const next = parseSceneDoc(merged, builtinEffect, libraryGraph, resolve)
+        const next = parseSceneDoc(merged, stockEffect, libraryGraph, resolve)
         toast.loading(t.lab.uploadLoading(name), { id: toastId })
         const failed = await applyLabScene({
           ...next,
@@ -10640,7 +10640,7 @@ function Lab() {
             onColor: (hex) => patch("ground", { color: hex }),
           }}
           effects={{
-            items: phoneEffects.map((e) => ({ id: e.id, label: builtinName("effect", e, uiLocale) })),
+            items: phoneEffects.map((e) => ({ id: e.id, label: stockName("effect", e, uiLocale) })),
             applied: (id) => bgEffects.some((x) => x.id === id),
             onToggle: (id) => {
               const e = phoneEffects.find((x) => x.id === id)
@@ -10662,16 +10662,16 @@ function Lab() {
           materials={{
             groups: (cast[0] ? (groupsByModel[cast[0].id] ?? []) : []).map((g) => {
               const look = phoneGraphs.find((x) => x.name === g.graph?.name)
-              return { id: g.id, label: localGroupLabel(groupLabel(g), uiLocale), look: look ? builtinName("graph", look, uiLocale) : (g.graph?.name ?? "—") }
+              return { id: g.id, label: localGroupLabel(groupLabel(g), uiLocale), look: look ? stockName("graph", look, uiLocale) : (g.graph?.name ?? "—") }
             }),
-            looks: phoneGraphs.map((x) => ({ name: x.name, label: builtinName("graph", x, uiLocale) })),
+            looks: phoneGraphs.map((x) => ({ name: x.name, label: stockName("graph", x, uiLocale) })),
             onPick: (groupId, name) => {
               const look = phoneGraphs.find((x) => x.name === name)
               if (cast[0] && look) applyGraphTo(cast[0].id, groupId, look.payload.graph, name)
             },
           }}
           grades={{
-            items: phoneGrades.map((g) => ({ name: g.name, label: builtinName("grade", g, uiLocale) })),
+            items: phoneGrades.map((g) => ({ name: g.name, label: stockName("grade", g, uiLocale) })),
             current: settings.grade.preset,
             onPick: pickGrade,
             intensity: settings.grade.intensity,

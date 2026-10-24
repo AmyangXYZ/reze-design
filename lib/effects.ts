@@ -1,4 +1,4 @@
-// WGSL effects: what a scene applies, and the built-in shelf (lib/builtins).
+// WGSL effects: what a scene applies, and the built-in shelf (lib/stock).
 //
 // The TYPE names dropped "Background" with the library; the FIELD names did
 // not. `SceneState.backgroundEffects` is read out of exported scene files and
@@ -11,7 +11,7 @@
 // an AI), and one shape for every library kind beats one convenient one.
 
 import { parseDirectives, type EffectParamDecl, type EffectParamValue } from "reze-engine"
-import { builtinEffects } from "@/lib/builtins"
+import { stockEffects } from "@/lib/stock"
 import type { EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
 
@@ -140,8 +140,8 @@ export const applyDefaults = (def: EffectItem): AppliedEffect => ({
 })
 
 /** A built-in effect as an applied snapshot, by name — how scene documents refer to it. */
-export function builtinEffect(name: string): AppliedEffect {
-  const def = builtinEffects().find((e) => e.name === name)
+export function stockEffect(name: string): AppliedEffect {
+  const def = stockEffects().find((e) => e.name === name)
   if (!def) throw new Error(`unknown background effect: ${name}`)
   return applyDefaults(def)
 }
@@ -359,6 +359,6 @@ fn noise2(p: vec2f) -> f32 {
 // built-in previews the same way.
 /** Does this effect's card show the stand-in cast? */
 export const previewHasCast = (wgsl: string) =>
-  !builtinEffects().some(
+  !stockEffects().some(
     (e) => e.payload.wgsl === wgsl && (e.payload as { preview?: { cast?: unknown } }).preview?.cast === false,
   )

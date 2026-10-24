@@ -9,7 +9,7 @@
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
 import { exposeParams } from "./lib/expose-params.mjs"
-import { builtinRows } from "./lib/builtins-db.mjs"
+import { stockRows } from "./lib/stock-db.mjs"
 
 const args = process.argv.slice(2)
 const write = args.includes("--write")
@@ -17,7 +17,7 @@ const [name, ...specs] = args.filter((a) => a !== "--write")
 
 neonConfig.webSocketConstructor = ws
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const item = (await builtinRows(pool, "effect")).find((e) => e.name === name)
+const item = (await stockRows(pool, "effect")).find((e) => e.name === name)
 if (!item) throw new Error(`no built-in effect named ${name}`)
 
 const { wgsl, directives } = exposeParams(item.payload.wgsl, specs, name)
