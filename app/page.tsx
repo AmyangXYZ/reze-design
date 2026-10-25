@@ -191,6 +191,7 @@ import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, loadLocalBundle, loadModelLooks, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
 import { modelLooksKey, sameLooks, savableLooks } from "@/lib/model-looks"
+import { preload } from "react-dom"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { stockName, localGroupLabel } from "@/lib/stock-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
@@ -2230,6 +2231,10 @@ const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
 /** The editor waits for the built-ins: auto-style, the look packs and the scene
  *  it opens on all name them (lib/stock). */
 export default function Page() {
+  // Asked for at HTML parse rather than after the scripts: on a first visit
+  // over a slow link this request is most of the wait, and the shelf's fetch
+  // (lib/stock) then takes the preloaded response.
+  preload("/api/library/stock", { as: "fetch", crossOrigin: "anonymous" })
   return useStockWhole() ? <Lab /> : null
 }
 
