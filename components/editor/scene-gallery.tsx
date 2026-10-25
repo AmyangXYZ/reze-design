@@ -52,6 +52,9 @@ export type GalleryScene = {
   video?: string
   tags: string[]
   likeCount: number
+  /** Other people's published scenes made from it (lib/forks); absent from an
+   *  older cached page. */
+  forkCount?: number
   poster: string | null
   createdAt: string
   /** Only ever your own rows carry one; everyone else's read as public. The card
@@ -1303,6 +1306,7 @@ function PreviewLayer({
               className="h-8 rounded-interior border border-foreground/50 px-4 text-xs font-medium text-foreground hover:bg-white/10"
             >
               {t.share.fork}
+              {!!s.forkCount && <span className="ml-1.5 font-mono tabular-nums">{s.forkCount}</span>}
             </Button>
           )}
           <LibraryLike likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
@@ -1490,6 +1494,7 @@ function Spotlight({
           {!s.displayOnly && !phone && (
             <Button variant="bare" onClick={() => onFork(s)} className="h-9 rounded-interior border border-foreground/50 px-5 text-xs font-medium text-foreground hover:bg-white/10">
               {t.share.fork}
+              {!!s.forkCount && <span className="ml-1.5 font-mono tabular-nums">{s.forkCount}</span>}
             </Button>
           )}
           <LibraryLike large likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />

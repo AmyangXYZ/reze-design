@@ -18,7 +18,7 @@ import { alias } from "drizzle-orm/pg-core"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { LIBRARY_TAG } from "@/lib/public-pages"
 import { publicJson } from "@/lib/cdn"
-import { isDefaultLook, trendScore } from "@/lib/trend"
+import { TREND_HALF_LIFE, isDefaultLook, trendScore } from "@/lib/trend"
 
 /** Everyone's counts for an item. Whether you liked it is /api/library/mine. */
 export type SharedStats = { likeCount: number; scenes: number; trend: number }
@@ -38,7 +38,9 @@ const sharedStats = unstable_cache(
   async () => {
     // The scene side of scene_uses, so one table can be joined to itself.
     const scenes = alias(schema.libraryItems, "scenes")
-    const [items, usage, likes, picks] = await Promise.all([
+    // The forking side, aliased for the same reason.
+    const forks = alias(schema.libraryItems, "forks")
+    const [items, usage, likes, picks, forked, sceneLikes] = await Promise.all([
       db
         .select({
           id: schema.libraryItems.id,
@@ -82,15 +84,57 @@ const sharedStats = unstable_cache(
           ),
         )
         .groupBy(schema.sceneUses.itemId, scenes.ownerId),
+      // Someone else publishing their own version of it: the strongest vote a
+      // look gets short of a scene, so a whole event.
+      db
+        .select({ itemId: schema.libraryItems.id, at: forks.createdAt })
+        .from(forks)
+        .innerJoin(schema.libraryItems, eq(schema.libraryItems.id, forks.forkedFromId))
+        .where(
+          and(
+            eq(forks.visibility, "public"),
+            isNull(forks.deletedAt),
+            sql`${forks.ownerId} is distinct from ${schema.libraryItems.ownerId}`,
+          ),
+        ),
+      // A like on someone else's public scene that wears it: attention the look
+      // earned second-hand, so HALF an event (see below). Only likes, which are
+      // already public; nothing about who opened or exported what.
+      db
+        .select({ itemId: schema.sceneUses.itemId, at: schema.likes.createdAt })
+        .from(schema.likes)
+        .innerJoin(schema.sceneUses, eq(schema.sceneUses.sceneId, schema.likes.itemId))
+        .innerJoin(scenes, eq(scenes.id, schema.sceneUses.sceneId))
+        .innerJoin(schema.libraryItems, eq(schema.libraryItems.id, schema.sceneUses.itemId))
+        .where(
+          and(
+            eq(scenes.visibility, "public"),
+            isNull(scenes.deletedAt),
+            sql`${scenes.ownerId} is distinct from ${schema.libraryItems.ownerId}`,
+            // Nor the look's own maker liking a scene that wears it.
+            sql`${schema.likes.userId} is distinct from ${schema.libraryItems.ownerId}`,
+          ),
+        ),
     ])
     const scenesUsing = new Map(usage.map((u) => [u.itemId, u.n]))
     const events = new Map<string, number[]>()
-    const push = (id: string, at: Date | string) => events.set(id, [...(events.get(id) ?? []), new Date(at).getTime()])
+    const push = (id: string, at: Date | string) => {
+      const list = events.get(id)
+      if (list) list.push(new Date(at).getTime())
+      else events.set(id, [new Date(at).getTime()])
+    }
     for (const l of likes) push(l.itemId, l.at)
     const byId = new Map(items.map((i) => [i.id, i]))
     for (const p of picks) {
       const i = byId.get(p.itemId)
       if (i && !isDefaultLook(i.kind, i.name, i.tags)) push(p.itemId, p.at)
+    }
+    for (const f of forked) push(f.itemId, f.at)
+    // Half an event is a whole one a half-life earlier: the weights halve with
+    // time, so moving one back by TREND_HALF_LIFE halves it exactly.
+    for (const l of sceneLikes) {
+      const i = byId.get(l.itemId)
+      if (i && !isDefaultLook(i.kind, i.name, i.tags)) push(l.itemId, new Date(new Date(l.at).getTime() - TREND_HALF_LIFE))
     }
     const out: Record<string, SharedStats> = {}
     for (const i of items)

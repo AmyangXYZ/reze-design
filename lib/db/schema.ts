@@ -124,6 +124,9 @@ export const libraryItems = pgTable(
     // rides the same indexes rather than needing a stored score.
     index("library_items_new_idx").on(t.kind, t.createdAt),
     index("library_items_top_idx").on(t.kind, t.likeCount),
+    // A scene's forks (lib/forks), counted for every gallery card and summed
+    // into "hot".
+    index("library_items_forked_from_idx").on(t.forkedFromId),
   ],
 )
 

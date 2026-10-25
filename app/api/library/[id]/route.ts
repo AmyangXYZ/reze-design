@@ -118,6 +118,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       name: schema.libraryItems.name,
       visibility: schema.libraryItems.visibility,
       ownerId: schema.libraryItems.ownerId,
+      forkedFromId: schema.libraryItems.forkedFromId,
     })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))
@@ -211,7 +212,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     // The unique (owner, kind, name) index — the database's own last word.
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
-  refreshLibrary(id)
+  // Going public can make it count as a fork of its source (lib/forks).
+  refreshLibrary(id, ...(row.forkedFromId ? [row.forkedFromId] : []))
   if ((wantVisibility ?? row.visibility) === "public") {
     refreshMakerPages(await handleOf(row.ownerId))
   }
@@ -227,12 +229,17 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   // 404 rather than 403: a stranger probing ids learns nothing about what exists.
   if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 })
   const [owned] = await db
-    .select({ ownerId: schema.libraryItems.ownerId, visibility: schema.libraryItems.visibility })
+    .select({
+      ownerId: schema.libraryItems.ownerId,
+      visibility: schema.libraryItems.visibility,
+      forkedFromId: schema.libraryItems.forkedFromId,
+    })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
   await db.delete(schema.libraryItems).where(eq(schema.libraryItems.id, id))
-  refreshLibrary(id)
+  // Its source's fork count drops with it (lib/forks).
+  refreshLibrary(id, ...(owned?.forkedFromId ? [owned.forkedFromId] : []))
   if (owned?.visibility === "public") {
     refreshMakerPages(await handleOf(owned.ownerId))
   }

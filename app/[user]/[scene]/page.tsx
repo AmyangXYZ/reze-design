@@ -10,6 +10,7 @@ import { user } from "@/lib/db/auth-schema"
 import type { ScenePayload } from "@/lib/library"
 import { ITEMS_TAG, itemTag } from "@/lib/public-pages"
 import { stockRowsFor } from "@/lib/stock-rows"
+import { forkCount } from "@/lib/forks"
 import { SceneViewer } from "./viewer"
 
 // A published scene at reze.design/<handle>/<shortId> — the address the Share
@@ -33,6 +34,7 @@ const sceneRow = (id: string) =>
           video: schema.libraryItems.video,
           payload: schema.libraryItems.payload,
           likeCount: schema.libraryItems.likeCount,
+          forkCount: forkCount(),
           createdAt: schema.libraryItems.createdAt,
           visibility: schema.libraryItems.visibility,
           posterKey: schema.libraryItems.posterKey,
@@ -112,6 +114,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       credits={row.credits}
       video={row.video}
       likeCount={row.likeCount}
+      forkCount={row.forkCount}
       publishedAt={row.createdAt}
       displayOnly={row.displayOnly}
     />

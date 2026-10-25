@@ -57,6 +57,38 @@ export function clearForkTarget(): void {
   }
 }
 
+// WHERE A WORKING SCENE CAME FROM, kept past the handoff: a fork can be worked
+// on for days before it is published, and the publish is what records it
+// (lib/forks). Keyed by the working scene's id, in localStorage, newest last.
+const SOURCES = storageKey("fork-sources")
+const SOURCES_KEPT = 50
+
+/** Remember that the working scene `sceneId` was forked from `source`. */
+export function rememberForkSource(sceneId: string, source: string): void {
+  try {
+    const all = readSources().filter(([id]) => id !== sceneId)
+    all.push([sceneId, source])
+    window.localStorage.setItem(SOURCES, JSON.stringify(all.slice(-SOURCES_KEPT)))
+  } catch {
+    // Storage blocked: the publish simply carries no trail.
+  }
+}
+
+/** The published scene the working scene `sceneId` was forked from, if any. */
+export function forkSourceOf(sceneId: string): string | undefined {
+  return readSources().find(([id]) => id === sceneId)?.[1]
+}
+
+function readSources(): [string, string][] {
+  if (typeof window === "undefined") return []
+  try {
+    const all = JSON.parse(window.localStorage.getItem(SOURCES) ?? "[]") as unknown
+    return Array.isArray(all) ? all.filter((e): e is [string, string] => Array.isArray(e) && typeof e[0] === "string" && typeof e[1] === "string") : []
+  } catch {
+    return []
+  }
+}
+
 export function forkTarget(): ForkHandoff | null {
   if (typeof window === "undefined") return null
   try {
