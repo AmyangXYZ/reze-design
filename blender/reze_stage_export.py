@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # REZE DESIGN Stage Export — a Blender add-on that writes a scene as a stage reze-design loads.
 #
 # INSTALL (one file, nothing else needed):

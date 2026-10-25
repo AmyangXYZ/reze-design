@@ -12,7 +12,7 @@ type = "add-on"
 website = "https://github.com/AmyangXYZ/reze-design"
 tags = ["Import-Export", "Material"]
 blender_version_min = "4.2.0"
-license = ["SPDX:MIT"]
+license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]
 files = "Writes the stage .glb and a temporary copy of the open file"

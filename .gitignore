@@ -69,6 +69,3 @@ __pycache__/
 
 # db-seal-bundles.mjs: which old zips --delete-old may remove
 scripts/.sealed-bundles.json
-
-# Built Blender extension zips (python blender/build_extension.py)
-blender/dist/
