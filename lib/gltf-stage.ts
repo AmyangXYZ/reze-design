@@ -20,7 +20,7 @@
 // and the app's per-PMX-unit intensity is that x 12.5², by the inverse square.
 
 import { particleEffectWgsl, type ParticleClass } from "@/lib/unity-particles"
-import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH } from "reze-engine"
+import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH, VIEW_LUT_LOG2 } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
 import { relFilePath } from "@/lib/scene-files"
 import { LOOK_STATE, SURFACE_LOOKS, stageLookFor } from "@/lib/stage-style"
@@ -59,6 +59,7 @@ type GltfNode = {
 type GltfPrimitive = { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }
 type TextureRef = {
   index: number
+  texCoord?: number
   scale?: number
   strength?: number
   extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[] } }
@@ -173,7 +174,10 @@ export type SeaSpec = {
    *  it bends the caustics (_NormalTiling, _NormalSpeed, _CausticsDistortion). */
   ripple?: [number, number, number]
 }
-type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number }
+/** `near`: the bulb's radius in metres — inside it the inverse square holds
+ *  flat (SceneLight.near), which is what keeps a broad soft source (a Blender
+ *  area light, a glowing panel) from blowing up a wall it stands beside. */
+type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number; near?: number; specular?: boolean }
 type RezeSun = { color?: number[]; shadow?: boolean }
 type RezeScene = {
   version?: number
@@ -181,10 +185,15 @@ type RezeScene = {
   /** An environment image, or a flat colour, with the strength it is lit at. */
   world?: { format?: string; base64?: string; color?: number[]; strength?: number } | null
   /** What the scene was authored under: Blender's names for the transform. */
-  view?: { transform?: string; look?: string; exposure?: number; contrast?: number } | null
+  /** The .blend's compositor glare as the app's bloom (blender/): off when it had none. */
+  bloom?: { enabled?: boolean; threshold?: number; intensity?: number; scatter?: number; color?: number[] } | null
+  view?: { transform?: string; look?: string; exposure?: number; contrast?: number; lut?: { size?: number; format?: string; range?: number[]; base64?: string } } | null
   /** The game's colour grade as the cube its pipeline bakes: size³ texels,
    *  8-bit sRGB, red fastest — see tools/stages/unity_grading.py. */
   grading?: { size?: number; format?: string; base64?: string } | null
+  /** "world": the world picture was measured from inside the stage (blender/),
+   *  so the stage reflects it instead of the engine's own capture. */
+  reflections?: string
   /** The game's diffuse ambient, nine RGB SH coefficients in glTF axes — see
    *  tools/stages/unity_to_glb.game_ambient. */
   ambient?: { sh?: number[] } | null
@@ -439,7 +448,14 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         }
         const pos = readAccessor(g, bin, prim.attributes.POSITION)
         const nor = prim.attributes.NORMAL !== undefined ? readAccessor(g, bin, prim.attributes.NORMAL) : null
-        const uv = prim.attributes.TEXCOORD_0 !== undefined ? readAccessor(g, bin, prim.attributes.TEXCOORD_0) : null
+        // The UV set the material's maps name: one the Blender add-on baked onto
+        // its own layout reads TEXCOORD_1 while the mesh's other materials keep
+        // their TEXCOORD_0. Every map of a material shares it, so the first map
+        // it has decides (a baked colour can be a flat factor, its ORM not).
+        const gm = mat >= 0 ? g.materials?.[mat] : undefined
+        const named = [gm?.pbrMetallicRoughness?.baseColorTexture, gm?.pbrMetallicRoughness?.metallicRoughnessTexture, gm?.normalTexture, gm?.emissiveTexture, gm?.occlusionTexture].find((t) => t)
+        const uvSet = prim.attributes[`TEXCOORD_${named?.texCoord ?? 0}`] ?? prim.attributes.TEXCOORD_0
+        const uv = uvSet !== undefined ? readAccessor(g, bin, uvSet) : null
         // A TILED OR OFFSET TEXTURE GOES INTO THE UVs. Blender writes a Mapping
         // node on the base colour as KHR_texture_transform, and a PMX has one UV
         // and no per-slot transform — the same fold the Unity converter does
@@ -724,6 +740,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       intensity: Math.round(strength * perMetre * PMX_PER_METRE * PMX_PER_METRE * 1000) / 1000,
       radius: Math.round(range * PMX_PER_METRE * 1000) / 1000,
     }
+    if (typeof ex.near === "number" && Number.isFinite(ex.near) && ex.near > 0) lamp.near = Math.round(ex.near * PMX_PER_METRE * 1000) / 1000
+    // Diffuse only: a Blender light with glossy visibility off (SceneLight.specular).
+    if (ex.specular === false) lamp.specular = false
     if (light.type === "spot") {
       const outer = ex.angle ?? ((light.spot?.outerConeAngle ?? Math.PI / 4) * 2 * 180) / Math.PI
       const inner = ex.innerAngle ?? ((light.spot?.innerConeAngle ?? 0) * 2 * 180) / Math.PI
@@ -759,7 +778,24 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   const view = sceneExtras.view
   if (view?.transform && VIEW_TRANSFORM[view.transform]) {
     rig.view = { transform: VIEW_TRANSFORM[view.transform], exposure: view.exposure ?? 0, ...(typeof view.contrast === "number" ? { contrast: view.contrast } : {}) }
-    if (view.look && view.look !== "None" && !/^AgX - Base$|^Filmic - Medium High Contrast$/.test(view.look)) notes.push(`view look "${view.look}" is not one the app has; the transform is applied without it`)
+    // ITS RENDERER'S OWN CURVE, when the exporter baked one (blender/): the
+    // transform and look exactly as Blender shows them, over the engine's
+    // fixed log2 range — which is why a cube on another range is refused.
+    const lut = view.lut
+    const range = lut?.range
+    if (lut?.base64 && lut.size && lut.format === "rgb16-display" && range?.[0] === VIEW_LUT_LOG2[0] && range?.[1] === VIEW_LUT_LOG2[1]) {
+      rig.viewLut = { size: lut.size, lut: lut.base64 }
+    } else if (view.look && view.look !== "None" && !/^AgX - Base$|^Filmic - Medium High Contrast$/.test(view.look)) {
+      notes.push(`view look "${view.look}" is not one the app has; the transform is applied without it`)
+    }
+  }
+  // AND ITS GLARE: Blender blooms only through the compositor, so a stage
+  // without one is a stage without bloom.
+  const bloom = sceneExtras.bloom
+  if (bloom && typeof bloom.enabled === "boolean") {
+    rig.bloom = bloom.enabled
+      ? { threshold: bloom.threshold ?? 1, intensity: bloom.intensity ?? 1, scatter: bloom.scatter ?? 0.5, color: hex(bloom.color ?? [1, 1, 1]) }
+      : { threshold: 1, intensity: 0, scatter: 0.5, color: "#ffffff" }
   }
   // AND ITS GRADE, carried in the rig as the cube itself: it is small (12 KB
   // at 16³) and it belongs to the document the rig is read into.
@@ -771,6 +807,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       notes.push(`colour grade left out: a ${grading.format} cube the app does not read`)
     }
   }
+  // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it.
+  if (sceneExtras.reflections === "world" && rig.world) rig.reflections = "world"
   // AND THE AMBIENT ITS SURFACES WERE LIT BY, apart from the world picture
   // (which then answers reflections alone). glTF to PMX turns z over, and with
   // it the z-odd terms: c2 (z), c5 (yz), c7 (xz).
@@ -954,7 +992,11 @@ export function stageSheetGraph(strength: number): ShaderGraph {
  * what was behind, and X306's monitors drew as dark translucent panes with a
  * faint glow on them.
  */
-export function stageLightSheetGraph(strength: number): ShaderGraph {
+export function stageLightSheetGraph(strength: number, factor: [number, number, number] = [1, 1, 1]): ShaderGraph {
+  // glTF's emission is factor × picture × strength. Blender folds a strength
+  // of 1 or less, and any colour multiplied into the picture, into the factor;
+  // a white factor (the Unity converter's sheets) leaves the graph as it was.
+  const tinted = factor.some((c) => c !== 1)
   return {
     version: 1,
     name: `Stage Light Sheet ×${strength}`,
@@ -963,13 +1005,15 @@ export function stageLightSheetGraph(strength: number): ShaderGraph {
       { id: "glow", type: "tex_image/2" },
       { id: "light", type: "vector_math/scale", inputs: {} },
       { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
+      ...(tinted ? [{ id: "tint", type: "vector_math/multiply", inputs: { b: factor } }] : []),
     ],
     links: [
       { from: { node: "glow", socket: "color" }, to: { node: "light", socket: "a" } },
       { from: { node: "glow", socket: "alpha" }, to: { node: "light", socket: "scale" } },
       { from: { node: "light", socket: "vector" }, to: { node: "emit", socket: "a" } },
+      ...(tinted ? [{ from: { node: "emit", socket: "vector" }, to: { node: "tint", socket: "a" } }] : []),
     ],
-    output: { node: "emit", socket: "vector" },
+    output: tinted ? { node: "tint", socket: "vector" } : { node: "emit", socket: "vector" },
   }
 }
 
@@ -1524,13 +1568,15 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     }
     // A baked sheet the game adds is light, not cover — see stageLightSheetGraph.
     if (m.unlit && m.additive) {
+      const f = m.emissiveFactor.map((c) => Math.round(c * 1e5) / 1e5) as [number, number, number]
+      const tint = f.some((c) => c !== 1) ? `:${f.join(",")}` : ""
       add(
-        `light:${m.emissiveStrength}`,
+        `light:${m.emissiveStrength}${tint}`,
         () => ({
-          id: `stage-light-sheet-x${m.emissiveStrength}`,
+          id: `stage-light-sheet-x${m.emissiveStrength}${tint ? `-${f.map((c) => c.toFixed(4)).join("-")}` : ""}`,
           label: `Stage Light Sheet ×${m.emissiveStrength}`,
           materials: [],
-          graph: stageLightSheetGraph(m.emissiveStrength),
+          graph: stageLightSheetGraph(m.emissiveStrength, f),
           renderClass: "auto",
           blend: "additive" as const,
         }),

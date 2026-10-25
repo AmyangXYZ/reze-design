@@ -21,6 +21,11 @@ export const NO_FILL: FillLight = { color: "#ffffff", strength: 0 }
  *  texels of 8-bit sRGB RGB, red fastest, base64. Applied after the view and
  *  before the author's grade — see the engine's setStageGrade. */
 export type StageGrade = { size: number; lut: string }
+/** A stage's view transform as its own renderer baked it (the engine's
+ *  setViewLut): size³ RGB texels of 16-bit display values, little-endian,
+ *  base64; and the app transform it stands in for — chosen by hand, another
+ *  transform shows instead. */
+export type StageView = { size: number; lut: string; transform: string }
 
 /** One layer of a stage's fog: linear colour, amount, (slope, offset) on the
  *  view depth, (reference, range) on the height — PMX units. */
@@ -124,6 +129,9 @@ export type SceneSettings = {
    * Absent on every scene without a graded stage.
    */
   stageGrade?: StageGrade & { stage: string }
+  /** The view transform the stage was authored under, baked — and which stage;
+   *  it leaves with it. Absent on every scene without one. */
+  stageView?: StageView & { stage: string }
   /**
    * The ambient the stage's game lit its surfaces with — nine RGB SH
    * coefficients in the engine's axes (see the engine's setWorldAmbient) — and
@@ -134,6 +142,10 @@ export type SceneSettings = {
   /** The stage's own distance fog, PMX units (see the engine's setSceneFog),
    *  and which stage — it leaves with it. */
   stageFog?: { stage: string; fog: StageFog }
+  /** The stage reflects its world, not the engine's capture of it (see the
+   *  engine's setReflectionProbe), and which stage. Drawn only while that
+   *  stage's world claim stands, like stageAmbient. */
+  stageReflections?: { stage: string }
   /**
    * How loud the track plays, as amplitude 0–1.
    *

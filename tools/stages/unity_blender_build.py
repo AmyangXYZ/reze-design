@@ -302,7 +302,7 @@ scene["reze"] = {
         "world": {"format": "hdr", "base64": world_b64, "strength": scene_json["world"].get("strength", 1.0)} if world_b64 else None,
         # The view the .blend below is set to, stated so the stage arrives
         # looking as the .blend renders it rather than under whatever the scene
-        # was already on — the same field export_stage.py writes for a .blend
+        # was already on — the same field blender/reze_stage_export.py writes for a .blend
         # built by hand.
         # the game's own final curve (unity_to_glb.game_view): "AG" is the app's
         # soft curve at the scene's contrast, exposure in stops from its 2.5

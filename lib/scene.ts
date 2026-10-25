@@ -18,6 +18,7 @@ import {
   viewTransformFrom,
   type SceneSettings,
   type StageGrade,
+  type StageView,
   type StageFog,
   type StageFogLayer,
 } from "@/lib/scene-settings"
@@ -329,6 +330,9 @@ export type SceneLight = {
   layers?: number
   /** A spot's gobo: one of the built-in patterns (lib/light-cookies). */
   cookie?: LightCookie
+  /** false: diffuse only, no highlight — a Blender light with glossy
+   *  visibility off. Absent lights both. There is no control for it. */
+  specular?: false
   /** The lamp over the scene, as the game animated it. See SceneLightTrack. */
   track?: SceneLightTrack
 }
@@ -981,8 +985,10 @@ export function parseSceneDoc(
         grade: gradeWithSpec(settings.grade, resolveRef),
         // A cube that is not whole is not drawn — the engine refuses one.
         stageGrade: stageGradeFromDoc(settings.stageGrade),
+        stageView: stageViewFromDoc(settings.stageView),
         stageAmbient: stageAmbientFromDoc(settings.stageAmbient),
         stageFog: stageFogFromDoc(settings.stageFog),
+        stageReflections: stageReflectionsFromDoc(settings.stageReflections),
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
@@ -1020,8 +1026,9 @@ function lightsFromDoc(lights: SceneLight[] | null | undefined): SceneLight[] {
       // The optional parts pass the same door: a bulb or mask that is not a
       // number is dropped, and so is any key that would put a NaN on screen —
       // a track is sampled every frame, so one bad key is a bad frame forever.
-      const { near, layers, track, cookie, ...rest } = l
+      const { near, layers, track, cookie, specular, ...rest } = l
       const out: SceneLight = rest
+      if (specular === false) out.specular = false
       if (typeof near === "number" && Number.isFinite(near) && near > 0) out.near = near
       if (isLightCookie(cookie)) out.cookie = cookie
       if (typeof layers === "number" && Number.isInteger(layers)) out.layers = layers >>> 0
@@ -1079,10 +1086,16 @@ export function stageLightsFromFile(
   view: SceneSettings["view"] | null
   /** The stage's own colour grade, as a cube. */
   grade: StageGrade | null
+  /** The view transform it was authored under, as its renderer baked it. */
+  viewLut: StageView | null
+  /** Its renderer's glare as the scene's bloom; intensity 0 is none. */
+  bloom: { threshold: number; intensity: number; scatter: number; color: string } | null
   /** The stage's diffuse ambient, 27 SH floats. */
   ambient: number[] | null
   /** The stage's distance fog. */
   fog: StageFog | null
+  /** It reflects its world rather than the engine's capture. */
+  reflectsWorld: boolean
   /** The game's particle systems, as effects generated at conversion. */
   particles: { name: string; wgsl: string }[]
 } {
@@ -1094,8 +1107,11 @@ export function stageLightsFromFile(
     world?: Record<string, unknown>
     view?: Record<string, unknown>
     grade?: Record<string, unknown>
+    viewLut?: Record<string, unknown>
+    bloom?: Record<string, unknown>
     ambient?: unknown
     fog?: unknown
+    reflections?: unknown
     particles?: unknown[]
   }
   const lamps = lightsFromDoc(
@@ -1143,13 +1159,16 @@ export function stageLightsFromFile(
   const view = v && vt && num(v.exposure) ? { transform: vt, exposure: v.exposure as number } : null
   const gr = raw.grade
   const grade = gr && isStageGrade(gr) ? { size: gr.size, lut: gr.lut } : null
+  const vl = raw.viewLut
+  const viewLut = vl && view && isStageView({ ...vl, transform: view.transform }) ? { size: vl.size as number, lut: vl.lut as string, transform: view.transform } : null
   const ambient = isAmbientSH(raw.ambient) ? raw.ambient : null
   const particles = (raw.particles ?? []).flatMap((p) => {
     const e = p as { name?: unknown; wgsl?: unknown }
     return typeof e?.name === "string" && typeof e.wgsl === "string" ? [{ name: e.name, wgsl: e.wgsl }] : []
   })
   return {
-    particles, lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog) }
+    particles, lamps, sun, effects, fill, world, view, grade, viewLut, bloom: stageBloomFrom(raw.bloom), ambient, fog: stageFogFrom(raw.fog),
+    reflectsWorld: raw.reflections === "world" }
 }
 
 function fogLayerFrom(v: unknown): StageFogLayer | null {
@@ -1173,6 +1192,11 @@ function stageFogFromDoc(v: unknown): SceneSettings["stageFog"] {
   return fog ? { stage: s!.stage as string, fog } : undefined
 }
 
+function stageReflectionsFromDoc(v: unknown): SceneSettings["stageReflections"] {
+  const r = v as { stage?: unknown } | null
+  return r && typeof r.stage === "string" ? { stage: r.stage } : undefined
+}
+
 const isAmbientSH = (v: unknown): v is number[] =>
   Array.isArray(v) && v.length === 27 && v.every((n) => typeof n === "number" && Number.isFinite(n))
 
@@ -1184,6 +1208,31 @@ function stageAmbientFromDoc(v: unknown): SceneSettings["stageAmbient"] {
 function stageGradeFromDoc(g: unknown): SceneSettings["stageGrade"] {
   return isStageGrade(g) && typeof (g as { stage?: unknown }).stage === "string"
     ? (g as NonNullable<SceneSettings["stageGrade"]>)
+    : undefined
+}
+
+function stageBloomFrom(b: unknown): { threshold: number; intensity: number; scatter: number; color: string } | null {
+  const o = b as Record<string, unknown> | null
+  if (!o) return null
+  const n = (v: unknown) => typeof v === "number" && Number.isFinite(v)
+  if (!n(o.threshold) || !n(o.intensity) || !n(o.scatter) || typeof o.color !== "string") return null
+  return { threshold: o.threshold as number, intensity: Math.max(0, o.intensity as number), scatter: Math.min(1, Math.max(0, o.scatter as number)), color: o.color }
+}
+
+/** A stage view whose cube is whole: size³ RGB texels of 16 bits, base64. */
+export function isStageView(g: unknown): g is StageView {
+  const s = g as StageView | null
+  if (!s || typeof s.lut !== "string" || typeof s.transform !== "string" || !Number.isInteger(s.size) || s.size < 2 || s.size > 65) return false
+  try {
+    return atob(s.lut).length === s.size ** 3 * 6
+  } catch {
+    return false
+  }
+}
+
+function stageViewFromDoc(g: unknown): SceneSettings["stageView"] {
+  return isStageView(g) && typeof (g as { stage?: unknown }).stage === "string"
+    ? (g as NonNullable<SceneSettings["stageView"]>)
     : undefined
 }
 
@@ -1638,8 +1687,10 @@ function restored(base: Scene): Scene {
         eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
         jelly: { ...base.state.settings.jelly, ...settingsBase.jelly },
         stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
+        stageView: stageViewFromDoc(settingsBase.stageView ?? base.state.settings.stageView),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),
         stageFog: stageFogFromDoc(settingsBase.stageFog ?? base.state.settings.stageFog),
+        stageReflections: stageReflectionsFromDoc(settingsBase.stageReflections ?? base.state.settings.stageReflections),
       },
       groups: groupsUsable ? usableGroups : base.state.groups,
       // Same per-model gate as groups

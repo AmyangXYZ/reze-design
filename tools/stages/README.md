@@ -3,15 +3,8 @@
 A stage is a `.glb`: what Blender's glTF exporter writes, from a scene built by
 hand there or from a game's export read by the scripts here. Entry points:
 
-- **`reze_stage_export.py`** — the one to share: a single-file Blender add-on
-  (4.2+). Preferences → Add-ons → Install from Disk → this file, then
-  **File → Export → reze Stage (.glb)**. It does what `export_stage.py` does,
-  with WebP textures from Blender's own exporter (nothing else to install), on
-  a copy in a background Blender, so the open file is never changed. Also runs
-  without installing: `blender -b Stage.blend --python reze_stage_export.py --
-  Stage.glb [--quality 90] [--png]`.
-- **`export_stage.py`** — any `.blend` to a stage, with what the stock export
-  leaves behind (see "Exporting from Blender" below).
+- **The Blender add-on** — any `.blend` to a stage, and the one to share — lives
+  in [`blender/`](../../blender/README.md) at the repo root.
 - **`unity_to_glb.py`** — a Unity scene from an AssetRipper export, through
   Blender, to the same file.
 - **`stage_audit.py`** — after a conversion, everything the Unity scene draws
@@ -19,33 +12,6 @@ hand there or from a game's export read by the scripts here. Entry points:
   switches the app may not draw, every particle system and what became of it,
   and the converter's notes. `python3 tools/stages/stage_audit.py <project>
   <scene.unity> <stage.glb> [report.md]`.
-
-## Exporting from Blender
-
-```sh
-/Applications/Blender.app/Contents/MacOS/Blender -b "Stage.blend" \
-  --python tools/stages/export_stage.py -- "stages/Stage/Stage.glb"
-```
-
-Blender's own exporter writes the file; the script sets it up so the stage
-arrives as the `.blend` renders it: modifiers applied (a ring from a Bezier
-circle and geometry nodes exports as nothing otherwise), only what is visible
-and renders, lights with area lights as points of the same power, the world
-(its colour or its environment image, packed or on disk) and the view under
-`extras.reze`, node-driven emission colours folded to constants or baked to an
-image at the current frame, and fog volumes left out. A plain export from the
-dialog also loads, when "Punctual Lights" is ticked; it brings no world and no
-view, and a fog cube comes through as a solid box.
-
-### Candle flames
-
-glTF has no particles, so a flame travels as its ANCHOR: an empty named
-`flame.01`, `flame.02`, … at the wick, its local Z running from the flame's
-base to its tip and scaled to the flame's length — an unrotated empty scaled
-to the length is the hand-built form. The loader reads each as a bone and the
-app stands the *Candle Flames (wick bones)* effect on every bone with that
-prefix. The Unity pre-pass writes them from the game's flame particle systems
-(x340: 53 of them); a stage built in Blender needs only the empties.
 
 ## Unity stage → Blender → glTF
 
@@ -107,9 +73,13 @@ seat wore the atlas's ribbed strip.
 
 **The rig.** Lamps carry the game's own numbers: `(colour × intensity).linear`
 as radiance, `range` as reach, the cone as it is; a cookie is folded in as its
-mean colour × coverage. The sun's radiance is its strength in W/m², which is
-also how the engine lights (`strength·albedo·N·L/π`, Blender's law), so the
-number carries as it is through the `.blend` and the app. The game's directional
+mean colour × coverage. The engine lights in Unity's units — `albedo · radiance
+· N·L`, no π — which is what the game's numbers already are, so they travel as
+they are under each light's `extras.reze` and the app reads those. The
+`.blend`'s own lights hold the same light in Blender's units, whose lit term
+carries 1/π (the sun's strength × π, a lamp's × 4π²), for a person opening the
+file; a stage built in Blender has only those, and the loader divides them
+back. The game's directional
 light lights only the stage — its character shaders never read it — so the app
 gives the stage its own sun and leaves the scene's to the cast, sharing only
 the direction and the shadow. The cast's fill is `_probeLightingBase`.

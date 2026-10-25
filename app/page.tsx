@@ -5166,8 +5166,10 @@ function Lab() {
       world: s2.world.stage && ids.has(s2.world.stage.id) ? s2.world.stage.before : s2.world,
       fill: s2.fill?.stage && ids.has(s2.fill.stage.id) ? s2.fill.stage.before : s2.fill,
       stageGrade: s2.stageGrade && ids.has(s2.stageGrade.stage) ? undefined : s2.stageGrade,
+      stageView: s2.stageView && ids.has(s2.stageView.stage) ? undefined : s2.stageView,
       stageAmbient: s2.stageAmbient && ids.has(s2.stageAmbient.stage) ? undefined : s2.stageAmbient,
       stageFog: s2.stageFog && ids.has(s2.stageFog.stage) ? undefined : s2.stageFog,
+      stageReflections: s2.stageReflections && ids.has(s2.stageReflections.stage) ? undefined : s2.stageReflections,
     }))
     swapHdri((prev) => {
       if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
@@ -5218,12 +5220,21 @@ function Lab() {
     // AND THE GRADE IT WAS GRADED WITH, which leaves with it.
     const stageGrade = rig?.grade
     setSettings((s2) => ({ ...s2, stageGrade: stageGrade ? { ...stageGrade, stage: id } : undefined }))
+    // AND ITS GLARE: a scene setting like the view — the bloom its renderer
+    // drew it with, none when it drew none.
+    const stageBloom = rig?.bloom
+    if (stageBloom) setSettings((s2) => ({ ...s2, bloom: { ...s2.bloom, ...stageBloom, enabled: stageBloom.intensity > 0 } }))
+    // AND THE CURVE IT WAS SEEN THROUGH, as its renderer baked it.
+    const stageView = rig?.viewLut
+    setSettings((s2) => ({ ...s2, stageView: stageView ? { ...stageView, stage: id } : undefined }))
     // AND THE AMBIENT ITS SURFACES WERE LIT BY — drawn while its world stands.
     const stageAmbient = rig?.ambient
     setSettings((s2) => ({ ...s2, stageAmbient: stageAmbient ? { stage: id, sh: stageAmbient } : undefined }))
     // AND ITS FOG, which leaves with it.
     const stageFog = rig?.fog
     setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
+    // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it.
+    setSettings((s2) => ({ ...s2, stageReflections: rig?.reflectsWorld ? { stage: id } : undefined }))
   }
 
   /** The next stage takes the lighting, from the rig and sky its files carry. */
@@ -5352,7 +5363,10 @@ function Lab() {
         // CLAIMED: it remembers the scene's own, so deleting this stage puts
         // that back — until someone touches the sun.
         const sun = rig?.sun
-        setStageSun(id, sun && sun.color !== undefined && sun.strength !== undefined ? { color: sun.color, strength: sun.strength } : null)
+        // A stage lit by its lamps alone says so with a sun of strength 0 and
+        // no colour — which still claims the stage's layer, so the scene's sun
+        // stops lighting it (lib/gltf-stage).
+        setStageSun(id, sun && sun.strength !== undefined ? { color: sun.color ?? "#000000", strength: sun.strength } : null)
         // THE SCENE-WIDE HALF — the sun's direction, the world, the view, the
         // grade, the ambient and the fog — only when this stage is the scene's
         // first: a stage added beside it brings its geometry, its lamps and its

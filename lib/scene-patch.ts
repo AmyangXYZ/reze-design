@@ -164,7 +164,7 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
     rows = rows.filter((r) => !r.doc.stage)
     for (const id of gone) tags.add(id)
     const s = merged.settings as unknown as Record<string, { stage?: string } | undefined>
-    for (const k of ["stageGrade", "stageAmbient", "stageFog"])
+    for (const k of ["stageGrade", "stageView", "stageAmbient", "stageFog", "stageReflections"])
       if (s[k] && typeof s[k]!.stage === "string" && gone.includes(s[k]!.stage!) && !(settingsP && k in settingsP)) delete s[k]
   }
   if (assetsP && Array.isArray(assetsP.models)) {

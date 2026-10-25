@@ -6,7 +6,7 @@
 // can reach with the slider. Ranges are the editor's sliders' — the agent gets
 // no knob a person does not have.
 //
-// Stage-owned blocks (stageGrade, stageAmbient, stageFog) and the claims inside
+// Stage-owned blocks (stageGrade, stageAmbient, stageFog, stageReflections) and the claims inside
 // lights are not here: they belong to the stage that set them, not to an edit.
 
 import type { SceneSettings } from "@/lib/scene-settings"

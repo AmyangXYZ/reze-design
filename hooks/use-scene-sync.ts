@@ -188,7 +188,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain, stageGrade } = settings
+    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain, stageGrade, stageView } = settings
     // A different engine is a first run, whatever the settings say.
     const p = prev.current?.engine === engine ? prev.current : null
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground
@@ -250,6 +250,11 @@ export function useSceneSync({
     if (!p || (p.settings.stageAmbient !== settings.stageAmbient || p.settings.world !== world)) {
       engine.setWorldAmbient(ambientSH)
     }
+    // Its own world as what it reflects, while that world is the world.
+    const reflectsWorld = !!settings.stageReflections && world.stage?.id === settings.stageReflections.stage
+    if (!p || (p.settings.stageReflections !== settings.stageReflections || p.settings.world !== world)) {
+      engine.setReflectionProbe(!reflectsWorld)
+    }
     if (!p || p.settings.stageFog !== settings.stageFog) {
       const f = settings.stageFog?.fog
       const layer = (l: NonNullable<typeof f>) => ({
@@ -259,6 +264,17 @@ export function useSceneSync({
         height: [l.height[0], l.height[1]] as [number, number],
       })
       engine.setSceneFog(f ? { ...layer(f), dyn: f.dyn ? layer(f.dyn) : null } : null)
+    }
+    // The stage's baked curve stands in for the transform it was assigned;
+    // another transform picked by hand shows instead.
+    const viewLut = stageView && view.transform === stageView.transform ? stageView : null
+    const viewLutWas = p?.settings.stageView && p.settings.view.transform === p.settings.stageView.transform ? p.settings.stageView : null
+    if (!p || viewLut !== viewLutWas) {
+      engine.setViewLut(
+        viewLut
+          ? { size: viewLut.size, data: new Uint16Array(Uint8Array.from(atob(viewLut.lut), (ch) => ch.charCodeAt(0)).buffer) }
+          : null,
+      )
     }
     if (!p || p.settings.stageGrade !== stageGrade) {
       engine.setStageGrade(
@@ -663,7 +679,9 @@ export function useSceneSync({
     // the stage's layer, along the scene sun's direction — one sun casts — and
     // the scene's sun then keys the cast alone. The two are apart by LAYER, as
     // the game lights its rooms and its characters.
-    const stageSun = stageSuns.find((s) => s.sun && s.sun.strength > 0)?.sun ?? null
+    // Strength 0 counts: it is a stage lit by its lamps alone, which takes the
+    // scene's sun off its layer as surely as a sun of its own does.
+    const stageSun = stageSuns.find((s) => s.sun)?.sun ?? null
     const s = settings.sun
     engine.setSun({ layers: stageSun ? RENDERING_LAYER_CHARACTER : ALL_LAYERS })
     const daylight = stageSun
@@ -697,6 +715,7 @@ export function useSceneSync({
           ...(l.layers !== undefined ? { layers: l.layers } : {}),
           ...(l.near !== undefined ? { near: l.near } : {}),
           ...(l.cookie && l.aim ? { cookie: l.cookie } : {}),
+          ...(l.specular === false ? { specular: false } : {}),
         }
         return lamp
       },
