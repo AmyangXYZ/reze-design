@@ -233,7 +233,7 @@ import type { ExportProgress } from "@/lib/video-export"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { DEFAULT_LOOK, loadLookPref, saveLookPref } from "@/lib/look-pref"
-import { clearForkTarget, forkSourceOf, forkTarget, rememberForkSource } from "@/lib/fork"
+import { clearForkTarget, forkTarget } from "@/lib/fork"
 import {
   activeLookPack,
   graphRole,
@@ -2288,9 +2288,6 @@ function Lab() {
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
   const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(defaultScene())))
   const [sceneName, setSceneName] = useState(scene.state.name)
-  /** The published scene this working one was forked from (lib/fork), sent
-   *  with its publish so the fork is counted for the original. */
-  const forkedFromId = useMemo(() => forkSourceOf(scene.state.id), [scene.state.id])
   const {
     canvasRef,
     engineRef,
@@ -6634,8 +6631,6 @@ function Lab() {
         // under, because that is what `loadLocalBundle` matches on.
         const parked = handoff.bundle ? await loadLocalBundle(handoff.bundle) : null
         const id = parked && handoff.bundle ? handoff.bundle : newSceneId()
-        // Someone else's scene: remembered until this copy is published.
-        if (!handoff.edit) rememberForkSource(id, handoff.scene)
         const assets =
           parked && handoff.bundle ? { ...scene.assets, bundle: idbBundleOf(handoff.bundle) } : scene.assets
         await applyLabScene({
@@ -8204,7 +8199,6 @@ function Lab() {
           sceneName={sceneName}
           onRename={setSceneName}
           updatesId={updatesSceneId}
-          forkedFromId={forkedFromId}
           updatesPoster={updatesPoster}
           updatesMeta={updatesMeta}
           onPublished={(id, meta) => {

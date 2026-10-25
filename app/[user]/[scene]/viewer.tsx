@@ -60,8 +60,6 @@ type ViewerProps = {
   /** The video its maker posted, or empty. */
   video?: string
   likeCount: number
-  /** Other people's published scenes made from this one (lib/forks). */
-  forkCount: number
   /** When it was published, ISO. Printed under the author. */
   publishedAt: string
   /** The author asked that it be watched, not forked: no Open in editor. */
@@ -262,7 +260,6 @@ export function SceneViewer(props: ViewerProps) {
                     className="h-7 rounded-chip border border-foreground/60 px-4 text-xs font-medium text-foreground hover:bg-white/10"
                   >
                     {t.share.fork}
-                    {props.forkCount > 0 && <span className="ml-1.5 font-mono tabular-nums">{props.forkCount}</span>}
                   </Button>
                 )}
                 <Button
@@ -401,7 +398,7 @@ export function SceneViewer(props: ViewerProps) {
             <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-white">
               <GitFork className="size-3.5" />
             </span>
-            {props.forkCount > 0 ? props.forkCount : t.share.fork}
+            {t.share.fork}
           </Button>
         )}
         {video && (

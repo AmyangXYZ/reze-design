@@ -11,7 +11,6 @@ import { hasDatabase, db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
 import { TREND_EPOCH, TREND_HALF_LIFE } from "@/lib/trend"
-import { forkCount, forkScenes } from "@/lib/forks"
 import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
@@ -219,19 +218,6 @@ const publicGalleryPage = unstable_cache(
   { tags: [LIBRARY_TAG] },
 )
 
-/** The source a publish names, when it is a real item of the same kind; null
- *  otherwise. The column is a foreign key, so an id that is gone (or never
- *  was) would fail the whole publish rather than just lose the trail. */
-async function forkSource(id: unknown, kind: LibraryKind): Promise<string | null> {
-  if (typeof id !== "string" || !id) return null
-  const [row] = await db
-    .select({ id: schema.libraryItems.id })
-    .from(schema.libraryItems)
-    .where(and(eq(schema.libraryItems.id, id), eq(schema.libraryItems.kind, kind)))
-    .limit(1)
-  return row?.id ?? null
-}
-
 /** A page of the gallery: the public scenes, or one person's shelf of them. */
 async function galleryPage(
   sort: string,
@@ -244,13 +230,10 @@ async function galleryPage(
   // every TREND_HALF_LIFE — summed in SQL so the gallery pages by it. On the
   // fixed epoch the value is a constant between events, which is what lets it
   // be the cursor and sit in the cache.
-  // A FORK counts like a like: someone else publishing their own take on the
-  // scene (forkScenes), at the moment they published it.
   const units = (at: SQL) => sql`(extract(epoch from ${at}) * 1000 - ${TREND_EPOCH}) / ${TREND_HALF_LIFE}`
   const hot = sql<number>`ln(
     power(2::float8, ${units(sql`${schema.libraryItems.createdAt}`)})
     + coalesce((select sum(power(2::float8, ${units(sql`l.created_at`)})) from likes l where l.item_id = ${schema.libraryItems.id}), 0)
-    + coalesce((select sum(power(2::float8, ${units(sql`f.created_at`)})) from ${forkScenes}), 0)
   ) / ln(2)`
   const order = sort === "new" ? desc(schema.libraryItems.createdAt) : sort === "top" ? desc(schema.libraryItems.likeCount) : desc(hot)
 
@@ -266,7 +249,6 @@ async function galleryPage(
       video: schema.libraryItems.video,
       tags: schema.libraryItems.tags,
       likeCount: schema.libraryItems.likeCount,
-      forkCount: forkCount(),
       posterKey: schema.libraryItems.posterKey,
       createdAt: schema.libraryItems.createdAt,
       visibility: schema.libraryItems.visibility,
@@ -511,8 +493,8 @@ export async function POST(request: Request) {
             ...values,
             id: await freeShortId(),
             // Recorded automatically when the session began from someone else's
-            // scene — opening it is not the fork, publishing is.
-            forkedFromId: await forkSource(forkedFromId, "scene"),
+            // scene — there is no fork button, publishing IS the fork.
+            forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
           })
           .returning()
 
@@ -553,9 +535,7 @@ export async function POST(request: Request) {
         }
       })
     }
-    // The source's page shows its fork count, and this publish may be what
-    // changes it (lib/forks).
-    refreshLibrary(scene.id, ...added, ...removed, ...(scene.forkedFromId ? [scene.forkedFromId] : []))
+    refreshLibrary(scene.id, ...added, ...removed)
     if (nextVisibility === "public") refreshMakerPages(author)
     // The scene now serves the new bundle, so the one it replaced has no reader.
     if (replacing?.bundleKey && hasBundle && replacing.bundleKey !== bundleKey) {
@@ -636,7 +616,7 @@ export async function POST(request: Request) {
               visibility: wantVisibility,
               // Derived from someone else's preset — their item is untouched, this
               // is yours, and the trail back to them is kept.
-              forkedFromId: await forkSource(forkedFromId, kind as LibraryKind),
+              forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
             })
             .returning()
         )[0]

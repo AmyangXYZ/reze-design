@@ -38,9 +38,7 @@ const sharedStats = unstable_cache(
   async () => {
     // The scene side of scene_uses, so one table can be joined to itself.
     const scenes = alias(schema.libraryItems, "scenes")
-    // The forking side, aliased for the same reason.
-    const forks = alias(schema.libraryItems, "forks")
-    const [items, usage, likes, picks, forked, sceneLikes] = await Promise.all([
+    const [items, usage, likes, picks, sceneLikes] = await Promise.all([
       db
         .select({
           id: schema.libraryItems.id,
@@ -84,19 +82,6 @@ const sharedStats = unstable_cache(
           ),
         )
         .groupBy(schema.sceneUses.itemId, scenes.ownerId),
-      // Someone else publishing their own version of it: the strongest vote a
-      // look gets short of a scene, so a whole event.
-      db
-        .select({ itemId: schema.libraryItems.id, at: forks.createdAt })
-        .from(forks)
-        .innerJoin(schema.libraryItems, eq(schema.libraryItems.id, forks.forkedFromId))
-        .where(
-          and(
-            eq(forks.visibility, "public"),
-            isNull(forks.deletedAt),
-            sql`${forks.ownerId} is distinct from ${schema.libraryItems.ownerId}`,
-          ),
-        ),
       // A like on someone else's public scene that wears it: attention the look
       // earned second-hand, so HALF an event (see below). Only likes, which are
       // already public; nothing about who opened or exported what.
@@ -129,7 +114,6 @@ const sharedStats = unstable_cache(
       const i = byId.get(p.itemId)
       if (i && !isDefaultLook(i.kind, i.name, i.tags)) push(p.itemId, p.at)
     }
-    for (const f of forked) push(f.itemId, f.at)
     // Half an event is a whole one a half-life earlier: the weights halve with
     // time, so moving one back by TREND_HALF_LIFE halves it exactly.
     for (const l of sceneLikes) {

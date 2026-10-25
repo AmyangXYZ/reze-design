@@ -1,6 +1,6 @@
-// Trending: recent attention. Every event — the publish itself, a like,
-// another person publishing a fork of it, and for a preset, another person
-// publishing a scene that wears it — starts at weight 1 and halves every
+// Trending: recent attention. Every event — the publish itself, a like, and
+// for a preset, another person publishing a scene that wears it — starts at
+// weight 1 and halves every
 // TREND_HALF_LIFE; a like on someone else's scene that wears a preset counts
 // half for that preset. An item's score is the sum.
 //
