@@ -858,7 +858,10 @@ export function withSpecialGroups(list: StyleGroup[], opts?: { character?: boole
     )
     return named([...list, ...seeds])
   }
-  const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
+  // Only where the slot's graph is on the shelf, as above: a scene page holds
+  // just the stock its document names, so a stage there has no hair or eye
+  // graph to seed from.
+  const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass) && slotGraphs()[s.preset]).map(
     (s): StyleGroup => {
       const base = slotGraphs()[s.preset]!
       return {
