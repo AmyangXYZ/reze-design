@@ -700,7 +700,7 @@ const en = {
       goto: "Go to",
       setting: "Settings",
     },
-    groups: { cast: "Cast", clips: "Clips", music: "Music", scene: "Scene" },
+    groups: { cast: "Cast", clips: "Motion", music: "Music", scene: "Scene" },
     // Dock rows — also the breadcrumb hint on every control inside them.
     rows: {
       camera: "Camera",
@@ -734,8 +734,6 @@ const en = {
       tone: "Tone",
       bloom: "Bloom",
       outline: "Outline",
-      lens: "Lens",
-      focus: "Focus",
     },
     // A collapsed row's value when it names a decision rather than an asset.
     summary: { follow: "Follow", orbit: "Orbit" },
@@ -743,7 +741,7 @@ const en = {
     facts: { noCast: "No cast" },
     /** The console's index of panes. */
     index: "Sections",
-    /** The last line of the Clips and Music panes: opens what can be added. */
+    /** The last line of the Motion and Music panes: opens what can be added. */
     attach: "Add…",
     gallery: "Gallery",
     // What a row acts on, spoken mid-sentence by the aria templates below.
@@ -1829,7 +1827,7 @@ const zh: Dictionary = {
       goto: "跳转",
       setting: "设置",
     },
-    groups: { cast: "角色", clips: "片段", music: "音乐", scene: "场景" },
+    groups: { cast: "角色", clips: "动作", music: "音乐", scene: "场景" },
     rows: {
       camera: "相机",
       materials: "材质",
@@ -1856,8 +1854,6 @@ const zh: Dictionary = {
       tone: "色调",
       bloom: "泛光",
       outline: "描边",
-      lens: "镜头",
-      focus: "对焦",
     },
     summary: { follow: "跟随", orbit: "环绕" },
     facts: { noCast: "无角色" },

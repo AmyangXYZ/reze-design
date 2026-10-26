@@ -155,7 +155,9 @@ export function AgentTabs({
         aria-label={text.newChat}
         onClick={onNew}
         disabled={!canAdd}
-        className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
+        // On the cover the tab line keeps pb-1 under its words for the
+        // underline; the same under the + centres it on the tabs' ×.
+        className={cn("size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground", cover && "mb-1")}
       >
         <Plus className="size-3.5" />
       </Button>

@@ -712,7 +712,6 @@ const DOCK_CONTROLS: {
   row: string
   stageTab?: "stage" | "ground"
   lightTab?: "world" | "sun"
-  cameraTab?: "lens" | "focus"
   postTab?: "grade" | "tone" | "bloom" | "outline"
   objectTab?: "plane" | "prop"
   keywords?: string[]
@@ -722,14 +721,14 @@ const DOCK_CONTROLS: {
    *  thing dynamically: a stage transform with no stage loaded. */
   value?: (v: PaletteValues) => string
 }[] = [
-  { id: "camera-fov", en: "Camera FOV", zh: "相机视场角", row: "camera", cameraTab: "lens", keywords: ["fov", "field of view", "视野"], value: (v) => deg(rad2deg(v.camera.fov ?? CAMERA_DEFAULT_FOV)) },
-  { id: "camera-follow", en: "Follow character", zh: "跟随角色", row: "camera", cameraTab: "lens", keywords: ["follow", "center", "センター"], value: (v) => sw(!!v.camera.follow, v.t) },
-  { id: "camera-distance", en: "Camera distance", zh: "相机距离", row: "camera", cameraTab: "lens", keywords: ["zoom", "距离"], value: (v) => dec1(v.camera.distance) },
-  { id: "camera-azimuth", en: "Camera azimuth", zh: "相机方位角", row: "camera", cameraTab: "lens", keywords: ["orbit", "angle", "方位"], value: (v) => deg(rad2deg(v.camera.alpha)) },
-  { id: "camera-elevation", en: "Camera elevation", zh: "相机仰角", row: "camera", cameraTab: "lens", keywords: ["orbit", "height", "俯仰"], value: (v) => deg(90 - rad2deg(v.camera.beta)) },
-  { id: "camera-roll", en: "Camera roll", zh: "相机倾斜", row: "camera", cameraTab: "lens", keywords: ["tilt", "dutch", "level", "倾斜"], value: (v) => deg(rad2deg(v.camera.roll ?? 0)) },
-  { id: "camera-target", en: "Camera target", zh: "相机目标", row: "camera", cameraTab: "lens", keywords: ["offset", "look at", "偏移"], value: (v) => xyz(v.camera.target) },
-  { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", cameraTab: "focus", keywords: ["dof", "bokeh", "blur", "focus", "虚化"], value: (v) => sw(v.settings.dof.enabled, v.t) },
+  { id: "camera-fov", en: "Camera FOV", zh: "相机视场角", row: "camera", keywords: ["fov", "field of view", "视野"], value: (v) => deg(rad2deg(v.camera.fov ?? CAMERA_DEFAULT_FOV)) },
+  { id: "camera-follow", en: "Follow character", zh: "跟随角色", row: "camera", keywords: ["follow", "center", "センター"], value: (v) => sw(!!v.camera.follow, v.t) },
+  { id: "camera-distance", en: "Camera distance", zh: "相机距离", row: "camera", keywords: ["zoom", "距离"], value: (v) => dec1(v.camera.distance) },
+  { id: "camera-azimuth", en: "Camera azimuth", zh: "相机方位角", row: "camera", keywords: ["orbit", "angle", "方位"], value: (v) => deg(rad2deg(v.camera.alpha)) },
+  { id: "camera-elevation", en: "Camera elevation", zh: "相机仰角", row: "camera", keywords: ["orbit", "height", "俯仰"], value: (v) => deg(90 - rad2deg(v.camera.beta)) },
+  { id: "camera-roll", en: "Camera roll", zh: "相机倾斜", row: "camera", keywords: ["tilt", "dutch", "level", "倾斜"], value: (v) => deg(rad2deg(v.camera.roll ?? 0)) },
+  { id: "camera-target", en: "Camera target", zh: "相机目标", row: "camera", keywords: ["offset", "look at", "偏移"], value: (v) => xyz(v.camera.target) },
+  { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", keywords: ["dof", "bokeh", "blur", "focus", "虚化"], value: (v) => (v.settings.dof.enabled ? v.settings.dof.aperture : 0).toFixed(2) },
   { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage", value: (v) => (v.stage ? `${dec2(v.stage.scale)}×` : "") },
   { id: "stage-position", en: "Stage position", zh: "舞台位置", row: "stage", stageTab: "stage", value: (v) => (v.stage ? xyz(v.stage.position) : "") },
   { id: "stage-rotation", en: "Stage rotation", zh: "舞台旋转", row: "stage", stageTab: "stage", keywords: ["turn", "rotate", "yaw", "旋转", "转动"], value: (v) => (v.stage ? v.stage.rotation.map((d) => `${Math.round(d)}°`).join(" ") : "") },
@@ -3194,7 +3193,6 @@ function Lab() {
   // "Ground" opens this row on its ground tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
   const [stageTab, setStageTab] = useState<"stage" | "ground">("ground")
-  const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
   const [objectTab, setObjectTab] = useState<"plane" | "prop">("plane")
@@ -5850,7 +5848,6 @@ function Lab() {
       tabs?: {
         stage?: "stage" | "ground"
         light?: "world" | "sun"
-        camera?: "lens" | "focus"
         post?: "grade" | "tone" | "bloom" | "outline"
         object?: "plane" | "prop"
       },
@@ -5865,7 +5862,6 @@ function Lab() {
       }
       if (tabs?.stage) setStageTab(tabs.stage)
       if (tabs?.light) setLightTab(tabs.light)
-      if (tabs?.camera) setCameraTab(tabs.camera)
       if (tabs?.post) setPostTab(tabs.post)
       if (tabs?.object) setObjectTab(tabs.object)
       const domId = isRow ? `layer-${target}` : target
@@ -7125,7 +7121,6 @@ function Lab() {
           gotoSection(c.row, {
             stage: c.stageTab,
             light: c.lightTab,
-            camera: c.cameraTab,
             post: c.postTab,
             object: c.objectTab,
           })
@@ -8314,14 +8309,13 @@ function Lab() {
                   {[
                     { id: "cast", label: t.lab.groups.cast },
                     { id: "clips", label: t.lab.groups.clips },
+                    // The camera beside the motion: its own motion heads its pane.
+                    ...layers.filter((l) => l.id === "camera").map((l) => ({ id: l.id as string, label: l.name })),
                     { id: "music", label: t.lab.groups.music },
-                    ...layers.flatMap((l) =>
-                      // The cast's materials, dressed after the shot is framed
-                      // and before the place they stand in.
-                      l.id === "camera"
-                        ? [{ id: l.id as string, label: l.name }, { id: "materials", label: t.lab.rows.materials }]
-                        : [{ id: l.id as string, label: l.name }],
-                    ),
+                    // The cast's materials, dressed after the shot is framed
+                    // and before the place they stand in.
+                    { id: "materials", label: t.lab.rows.materials },
+                    ...layers.filter((l) => l.id !== "camera").map((l) => ({ id: l.id as string, label: l.name })),
                   ].map((entry, i) => {
                     const on = pane === entry.id
                     return (
@@ -8471,9 +8465,8 @@ function Lab() {
                 and morph belong to that character, so they sit behind a
                 tab per cast member — the dock is one column and N models of
                 two rows each would run it off the bottom of the page. The
-                camera belongs to no one, so it sits below the tabs, in the
-                same group: it is still a clip, and hiding it inside whichever
-                model happened to be selected would be a lie about who owns it.
+                camera belongs to no one: the scene has one, and it heads the
+                Camera pane, over the shot it drives.
                 The timeline lanes show WHEN these play; this is where they load. */}
             <StackGroup
               domId="group-clips"
@@ -8511,8 +8504,7 @@ function Lab() {
                   chip is as wide as the name it carries and wraps to the next
                   line, where equal-width tabs would squeeze every name to fit
                   the longest one. */}
-              {/* The cast heads the pane as its tabs, the way Camera's Lens and
-                  Focus do — one model is still a tab. */}
+              {/* The cast heads the pane as its tabs — one model is still a tab. */}
               {cast.length > 0 && (
                 <Tabs value={clipModel?.id} onValueChange={setClipTab} className="mt-1 px-4">
                   <TabsList className="mb-2 w-full">
@@ -8569,27 +8561,6 @@ function Lab() {
                   onRemove={() => {}}
                 />
               ) : null}
-              <ClipRow
-                icon={Video}
-                clip={cameraClip}
-                empty={t.lab.uploadCameraMotion}
-                kind={t.lab.kinds.cameraMotion}
-                onPick={() => cameraInput.current?.click()}
-                onRemove={removeCamera}
-                // sceneFiles first: boot resolves the document's camera to a
-                // File there, and the timeline re-encodes into the same slot,
-                // so it holds the current bytes whether or not they were ever
-                // uploaded. The document's URL is the fallback for a served
-                // camera whose bundle was never packed.
-                onDownload={() =>
-                  downloadClip(sceneFiles.camera ?? scene.assets.cameraAnimation?.url, cameraClip ?? "camera.vmd")
-                }
-                // The camera belongs to the SCENE, not to a character — the VMD
-                // format keeps them in separate files for the same reason — but
-                // the editor still needs a model to hang a clock off, so it
-                // rides whichever cast member is already being edited.
-                onEdit={timelineRoom ? () => editClip(editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? "", "camera") : undefined}
-              />
             </StackGroup>
 
             {/* The track and the two files that are only meaningful beside it.
@@ -10189,18 +10160,35 @@ function Lab() {
                       />
                     </>
                   ) : (
-                    // Camera: Lens (the shot) | Focus (depth of field), the
-                    // Environment row's own tab pattern.
-                    <Tabs value={cameraTab} onValueChange={(v) => setCameraTab(v as typeof cameraTab)}>
-                      <TabsList className="-mt-1 mb-2 w-full">
-                        <TabsTrigger value="lens" className="flex-1">
-                          {t.lab.tabs.lens}
-                        </TabsTrigger>
-                        <TabsTrigger value="focus" className="flex-1">
-                          {t.lab.tabs.focus}
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="lens">
+                    // Camera, one page: the scene's camera motion, then the
+                    // shot, then its focus.
+                    <>
+                      {/* The camera motion heads it: one per scene, and it
+                          drives the shot below. ClipRow brings its own px-4. */}
+                      <div className="-mx-4 mb-2">
+                    <ClipRow
+                      icon={Video}
+                      clip={cameraClip}
+                      empty={t.lab.uploadCameraMotion}
+                      kind={t.lab.kinds.cameraMotion}
+                      onPick={() => cameraInput.current?.click()}
+                      onRemove={removeCamera}
+                      // sceneFiles first: boot resolves the document's camera to a
+                      // File there, and the timeline re-encodes into the same slot,
+                      // so it holds the current bytes whether or not they were ever
+                      // uploaded. The document's URL is the fallback for a served
+                      // camera whose bundle was never packed.
+                      onDownload={() =>
+                        downloadClip(sceneFiles.camera ?? scene.assets.cameraAnimation?.url, cameraClip ?? "camera.vmd")
+                      }
+                      // The camera belongs to the SCENE, not to a character — the VMD
+                      // format keeps them in separate files for the same reason — but
+                      // the editor still needs a model to hang a clock off, so it
+                      // rides whichever cast member is already being edited.
+                      onEdit={timelineRoom ? () => editClip(editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? "", "camera") : undefined}
+                    />
+                      </div>
+
                         {/* Same shape as the ground-under-stage pane: a loaded
                             camera VMD owns the shot, so the orbit controls grey
                             out under a one-line note instead of fighting it. */}
@@ -10421,37 +10409,19 @@ function Lab() {
                             ),
                           )}
                         </div>
-                      </TabsContent>
-                      <TabsContent value="focus">
                         {/* Focus is automatic — the engine tracks the character's
-                            depth span every frame. Strength is the whole dial. */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs">{t.lab.ctl.dof}</span>
-                          <Switch
-                            size="sm"
-                            checked={dof.enabled}
-                            onCheckedChange={(v) => patch("dof", { enabled: v })}
-                          />
-                        </div>
-                        {/* mt-2.5 on the fieldset, not the row: SliderRow zeroes
-                            its own top margin as a first child, which pinned
-                            Strength against the switch. */}
-                        <fieldset
-                          disabled={!dof.enabled}
-                          className={cn("mt-2.5", !dof.enabled && "pointer-events-none opacity-40")}
-                        >
-                          <SliderRow
-                            label={t.lab.ctl.strength}
-                            value={dof.aperture}
-                            min={0.2}
-                            max={3}
-                            step={0.05}
-                            onChange={(v) => patch("dof", { aperture: v })}
-                            fmt={(v) => v.toFixed(2)}
-                          />
-                        </fieldset>
-                      </TabsContent>
-                    </Tabs>
+                            depth span every frame. Strength is the whole dial,
+                            and 0 is off. */}
+                        <SliderRow
+                          label={t.lab.ctl.dof}
+                          value={dof.enabled ? dof.aperture : 0}
+                          min={0}
+                          max={3}
+                          step={0.05}
+                          onChange={(v) => patch("dof", v > 0 ? { enabled: true, aperture: v } : { enabled: false })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                    </>
                   )}
                 </LayerRow>
               ))}
