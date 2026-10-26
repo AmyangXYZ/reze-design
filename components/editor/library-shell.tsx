@@ -28,6 +28,7 @@ import Link from "next/link"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { storageKey } from "@/lib/storage"
+import { Stamp } from "@/components/stamp"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { failingVersion, isFailing, retryNow, watchFailing } from "@/lib/net"
@@ -677,6 +678,7 @@ export function LibraryDock<T extends BrowseItem>({
 export function LibraryDetail({
   name,
   author,
+  createdAt,
   draft,
   description,
   actions,
@@ -685,6 +687,8 @@ export function LibraryDetail({
 }: {
   name: string
   author: string
+  /** When it was published, beside its maker. */
+  createdAt?: string
   draft: boolean
   description?: string
   actions: React.ReactNode
@@ -736,11 +740,12 @@ export function LibraryDetail({
         // written about it yet. Its Publish stands in the middle of that
         // room, which keeps the byline's and the description's height: as far
         // from the name's type above as from the actions' below.
-        <div className="flex h-[3.25rem] min-w-0 items-center justify-center pt-1">{aside}</div>
+        <div className="flex h-14 min-w-0 items-center justify-center pt-1">{aside}</div>
       ) : (
         <>
           <div className="flex h-5 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
             {!draft && <AuthorLink name={author} at className="truncate select-text" />}
+            {!draft && createdAt && <Stamp iso={createdAt} show="day" className="ml-auto shrink-0" />}
           </div>
           {/* Two lines, and the rest on a click: the one place the dock may move. */}
           <p
@@ -896,7 +901,8 @@ export function LibraryCards<T extends BrowseItem>({
                   className={cn(
                     "relative overflow-hidden rounded-interior bg-white/5 outline-2 outline-offset-2 transition-[outline-color]",
                     "aspect-video",
-                    m.applied ? "outline-foreground" : "outline-transparent",
+                    // On the scene, a solid line; chosen, its detail showing, a dashed one.
+                    m.applied ? "outline-foreground" : picked ? "outline-dashed outline-foreground" : "outline-transparent",
                   )}
                 >
                   {m.preview}
@@ -929,16 +935,7 @@ export function LibraryCards<T extends BrowseItem>({
               ) : (
                 <>
                   <div className="flex min-w-0 items-center gap-1.5 text-xs leading-tight">
-                    {/* On the scene: the outline above. Chosen, its detail
-                        showing: the name underlined in the accent, as the
-                        chosen group is in Materials. */}
-                    <span
-                      className={cn(
-                        "min-w-0 pb-0.5",
-                        !m.nameNode && "truncate",
-                        picked && "underline decoration-blue-400 decoration-[1.5px] underline-offset-3",
-                      )}
-                    >
+                    <span className={cn("min-w-0 pb-0.5", !m.nameNode && "truncate")}>
                       {m.nameNode ?? displayName?.(item) ?? item.name}
                     </span>
                   </div>

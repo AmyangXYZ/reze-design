@@ -5,7 +5,7 @@
 // before anyone reads it.
 
 import { useSyncExternalStore } from "react"
-import { localMinute, wordedMinute } from "@/lib/time"
+import { localMinute, wordedDay, wordedMinute } from "@/lib/time"
 
 const never = () => () => {}
 
@@ -16,18 +16,21 @@ export function Stamp({
   className,
 }: {
   iso: string | null | undefined
-  /** `minute` for a column or a fact; `words` for a line of prose. */
-  show?: "minute" | "words"
+  /** `minute` for a column or a fact; `words` for a line of prose; `day`
+   *  for the date alone. */
+  show?: "minute" | "words" | "day"
   locale?: string
   className?: string
 }) {
   const inBrowser = useSyncExternalStore(never, () => true, () => false)
   if (!iso) return <span className={className}>—</span>
   const text = !inBrowser
-    ? iso.slice(0, 16).replace("T", " ")
+    ? iso.slice(0, show === "day" ? 10 : 16).replace("T", " ")
     : show === "minute"
       ? localMinute(iso)
-      : wordedMinute(iso, locale)
+      : show === "day"
+        ? wordedDay(iso, locale)
+        : wordedMinute(iso, locale)
   return (
     <time dateTime={iso} className={className}>
       {text}

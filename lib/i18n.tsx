@@ -445,7 +445,7 @@ const en = {
     applyTo: (name: string) => `Apply to ${name}`,
     /** Before the chosen group's name, which follows underlined. */
     onGroup: "On",
-    chooseGroupLeft: "Choose a material group on the left first",
+    chooseGroupLeft: "Pick a material group on the left",
     nameTaken: "That name is taken. Pick another.",
     nameTakenBy: (name: string) => `“${name}” already exists. Pick another name.`,
     deletePublished: "Delete",

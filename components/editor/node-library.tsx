@@ -319,6 +319,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
           <LibraryDetail
             name={displayName(selected)}
             author={selected.author}
+            createdAt={selected.createdAt}
             draft={itemState(selected) === "draft"}
             like={
               itemState(selected) === "draft"

@@ -306,6 +306,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           <LibraryDetail
             name={displayName(selected)}
             author={selected.author}
+            createdAt={selected.createdAt}
             draft={itemState(selected) === "draft"}
             like={
               itemState(selected) === "draft"

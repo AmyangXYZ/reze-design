@@ -24,3 +24,9 @@ export function wordedMinute(iso: string, locale?: string): string {
   const d = parse(iso)
   return d ? d.toLocaleString(locale, { dateStyle: "medium", timeStyle: "short", hourCycle: "h23" }) : "—"
 }
+
+/** `Oct 9, 2026`, in the reader's language. */
+export function wordedDay(iso: string, locale?: string): string {
+  const d = parse(iso)
+  return d ? d.toLocaleDateString(locale, { dateStyle: "medium" }) : "—"
+}
