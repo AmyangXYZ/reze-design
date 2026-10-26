@@ -83,6 +83,7 @@ import {
   Eye,
   Minimize2,
   Search,
+  CircleHelp,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -129,7 +130,7 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { LoadError, LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
@@ -538,6 +539,8 @@ const GALLERY_SEEN_KEY = storageKey("gallerySeen")
  *  so the app carries ONE outbound link rather than a help menu that has to be
  *  kept in step with the docs. */
 const REPO_URL = "https://github.com/AmyangXYZ/reze-design"
+// the Blender add-on that exports a stage .glb (blender/, built into blender/dist)
+const GLB_ADDON_URL = `${REPO_URL}/raw/main/blender/dist/reze_stage_export-1.0.0.zip`
 
 /** How long edits settle before the working scene is written to localStorage. */
 const SAVE_SETTLE_MS = 1000
@@ -8849,11 +8852,11 @@ function Lab() {
                       {/* Full-width and pulled up under the title: it is a badge
                           that switches panes, not a control in the pane. */}
                       <TabsList className="-mt-1 mb-2 w-full">
-                        <TabsTrigger value="stage" className="flex-1">
-                          {t.lab.tabs.stage}
-                        </TabsTrigger>
                         <TabsTrigger value="ground" className="flex-1">
                           {t.lab.tabs.ground}
+                        </TabsTrigger>
+                        <TabsTrigger value="stage" className="flex-1">
+                          {t.lab.tabs.stage}
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
@@ -9019,14 +9022,45 @@ function Lab() {
                             <Plus className="size-3.5" />
                             {t.lab.uploadStageFolder}
                           </Button>
-                          <Button
-                            variant="bare"
-                            onClick={pickStageGlb}
-                            className={LINE_ACTION}
-                          >
-                            <Plus className="size-3.5" />
-                            {t.lab.uploadStageGlb}
-                          </Button>
+                          <div className="flex items-center justify-between gap-2">
+                            <Button
+                              variant="bare"
+                              onClick={pickStageGlb}
+                              className={LINE_ACTION}
+                            >
+                              <Plus className="size-3.5" />
+                              {t.lab.uploadStageGlb}
+                            </Button>
+                            {/* where a .glb stage comes from: our Blender add-on,
+                                opened under the button that asks */}
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="bare" className={LINE_ACTION}>
+                                  {t.lab.stageGlbHelp.open}
+                                  <CircleHelp className="size-3.5" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                align="end"
+                                onOpenAutoFocus={(e) => e.preventDefault()}
+                                className="w-80 border-line-strong bg-surface-raised p-0 backdrop-blur-xs"
+                              >
+                                <div className="flex h-8 items-center px-3.5 font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">
+                                  {t.lab.stageGlbHelp.title}
+                                </div>
+                                <ol className="list-decimal space-y-1.5 border-t border-line py-3 pr-3.5 pl-8 text-xs">
+                                  {t.lab.stageGlbHelp.steps.map((step) => (
+                                    <li key={step}>{step}</li>
+                                  ))}
+                                </ol>
+                                <div className="flex justify-end border-t border-line px-3.5 py-2">
+                                  <a href={GLB_ADDON_URL} className="text-xs text-foreground underline underline-offset-2">
+                                    {t.lab.stageGlbHelp.download}
+                                  </a>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                         </div>
                       </TabsContent>
                       <TabsContent value="ground">
