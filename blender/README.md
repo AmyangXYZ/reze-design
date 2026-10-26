@@ -2,6 +2,8 @@
 
 Turns a Blender scene into a `.glb` stage for REZE DESIGN.
 
+![File → Export → REZE DESIGN Stage (.glb)](screenshot.png)
+
 ## Install
 
 1. Download [`dist/reze_stage_export-1.0.0.zip`](dist/reze_stage_export-1.0.0.zip).

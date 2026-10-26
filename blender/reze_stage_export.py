@@ -1502,7 +1502,11 @@ def _haze(scene, notes, probe=None):
     measured = None
     if box is not None:
         try:
-            measured = _scattered_seen(scene, box, sigma, lo, hi)
+            # the haze's own glow, without the lamps' and glows' — the cards
+            # draw those where they are; in the fog's one colour they lit the
+            # whole room, the seats and side walls as bright as the stage
+            with _CardedOff(scene):
+                measured = _scattered_seen(scene, box, sigma, lo, hi)
         except Exception as e:  # noqa: BLE001
             note(notes, f"haze: could not be measured from the camera ({e})")
     if measured is not None:
@@ -1538,6 +1542,14 @@ GLOW_TEX = 128
 # point glow sum to 3.82 L(b), the three planes through a spot's axis to 1.91.
 POINT_PLANE_SUM = 3.82
 SPOT_PLANE_SUM = 1.91
+# Added cards (a glow inside the haze the cast stands in) are drawn as much as
+# they face the eye, |N·V| (stageLightSheetGraph's haze sheet), which took
+# the edge-on stripes away: across a beam its three planes 60° apart then sum
+# to Σcos², exactly 3/2 from every side (against Σ|cos|, 1.91 on average). The
+# point's six scaled the same way, Σcos² = 2 against Σ|cos| ≈ 3 on average
+# (not yet checked against Cycles).
+POINT_FACING_SUM = POINT_PLANE_SUM * 2.0 / 3.0
+SPOT_FACING_SUM = 1.5
 
 
 def _haze_boxes(scene):
@@ -1686,7 +1698,9 @@ def _glow_material(name, colour, strength, image, cover=False):
         m.surface_render_method = "BLENDED"
     nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
     m.use_backface_culling = False
-    m["reze"] = {"unlit": True, "cover": True, "castShadow": False} if cover else {"unlit": True, "additive": True, "castShadow": False}
+    # fogged: light in the haze, dimmed by the haze between it and the eye as
+    # a surface there would be (the app's fog leaves an emission-only sheet alone)
+    m["reze"] = {"unlit": True, "cover": True, "castShadow": False} if cover else {"unlit": True, "additive": True, "castShadow": False, "fogged": True}
     return m
 
 
@@ -1753,7 +1767,15 @@ def _glow_cards(scene, notes, only=None):
         # directions (the shape fades to nothing there).
         # the bulb: a Blender light's soft size, or a glowing surface lamp's
         # own (the panel's √(A/π), a strip cell's half length — its "near")
-        r0 = max(getattr(L, "shadow_soft_size", 0.1), (ob.get("reze") or {}).get("near", 0.0), 0.15)
+        # an area light's is its panel's √(A/π) — its shadow_soft_size (0.25 by
+        # default) squeezed a 4 m panel's glow into a hot 25 cm blob
+        if L.type == "AREA":
+            sx = L.size * ob.matrix_world.to_scale().x
+            sy = (L.size_y if L.shape in ("RECTANGLE", "ELLIPSE") else L.size) * ob.matrix_world.to_scale().y
+            bulb = math.sqrt(abs(sx * sy) / math.pi) if L.shape in ("RECTANGLE", "SQUARE") else math.sqrt(abs(sx * sy)) / 2
+        else:
+            bulb = getattr(L, "shadow_soft_size", 0.1)
+        r0 = max(bulb, (ob.get("reze") or {}).get("near", 0.0), 0.15)
         if bvh is False:
             bvh = _surfaces_bvh(scene)
         span = _mean_exit(bvh, at, box[3], box[4], skip=r0)
@@ -1779,24 +1801,36 @@ def _glow_cards(scene, notes, only=None):
             tan_t = math.tan(theta)
             I = power / (4 * math.pi)
             k = col * I * tan_t / (2 * math.pi)             # L = k * sqrt(1 - u^2) / r
-            reach = float(min(25.0, span, max(0.5, k.max() / GLOW_FLOOR)))
+            # A BEAM RUNS TO WHAT IT LIGHTS: down its axis to the first surface
+            # (the floor it pools on) or out of the box, a little past so no
+            # gap shows where it meets the floor, which hides the rest. Along
+            # it the light is only dimmed by the haze, e^(-sigma d); fitted to
+            # the mean reach over all directions and faded by (1 - r)^2 it
+            # died out half way down.
+            axis = (mw.to_3x3() @ Vector((0, 0, -1))).normalized()
+            ax = np.array(axis)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t = np.where(ax > 0, (box[4] - at) / ax, np.where(ax < 0, (box[3] - at) / ax, np.inf))
+            out = float(t.min())
+            hit = bvh.ray_cast(Vector(at) + axis * r0, axis, out) if bvh else (None, None, None, None)
+            to = (hit[3] + r0) if hit[0] is not None else out
+            reach = float(min(25.0, out, to * 1.05 + 0.05, max(0.5, k.max() / GLOW_FLOOR)))
             peak = k / r0
             strength = float(peak.max())
             blend = max(L.spot_blend, 0.05)
             ratio = r0 / reach
+            dim = sigma * reach
 
-            def envelope(u, v, blend=blend):
+            def envelope(u, v, blend=blend, dim=dim):
                 r = (v + 1) / 2                              # 0 at the lamp, 1 at the reach
                 across = np.abs(u) / np.maximum(r, 1e-4)    # across the cone's width there
                 edge = np.clip((1 - across) / blend, 0, 1)
                 edge = edge * edge * (3 - 2 * edge)
-                fade = np.clip(1 - r, 0, 1) ** 2
-                return np.sqrt(np.clip(1 - across ** 2, 0, 1)) * edge * fade
+                return np.sqrt(np.clip(1 - across ** 2, 0, 1)) * edge * np.exp(-dim * r)
 
             def shape(u, v, ratio=ratio):
                 return ratio / np.maximum((v + 1) / 2, ratio) * envelope(u, v)
-            mat = card(shape, envelope, SPOT_PLANE_SUM, (peak / strength).tolist(), strength)
-            axis = (mw.to_3x3() @ Vector((0, 0, -1))).normalized()
+            mat = card(shape, envelope, SPOT_PLANE_SUM if veil else SPOT_FACING_SUM, (peak / strength).tolist(), strength)
             side = axis.orthogonal().normalized()
             quads = []
             for j in range(3):
@@ -1811,6 +1845,12 @@ def _glow_cards(scene, notes, only=None):
             if L.type == "SPOT":
                 power *= 0.25
             k = col * power / (16 * math.pi)                 # L = k / b
+            # an area light sends all of it forward, none behind its panel: the
+            # glow in front is twice a bulb's, its cards centred a bulb out
+            front = mw.translation.copy()
+            if L.type == "AREA":
+                k = k * 2
+                front = mw.translation + (mw.to_3x3() @ Vector((0, 0, -1))).normalized() * r0
             reach = float(min(20.0, span, max(0.3, k.max() / GLOW_FLOOR)))
             peak = k / r0
             strength = float(peak.max())
@@ -1821,14 +1861,14 @@ def _glow_cards(scene, notes, only=None):
 
             def shape(u, v, ratio=ratio):
                 return ratio / np.maximum(np.sqrt(u * u + v * v), ratio) * envelope(u, v)
-            mat = card(shape, envelope, POINT_PLANE_SUM, (peak / strength).tolist(), strength)
+            mat = card(shape, envelope, POINT_PLANE_SUM if veil else POINT_FACING_SUM, (peak / strength).tolist(), strength)
             phi = (1 + 5 ** 0.5) / 2
             dirs = [Vector(d).normalized() for d in ((0, 1, phi), (0, -1, phi), (1, phi, 0), (-1, phi, 0), (phi, 0, 1), (-phi, 0, 1))]
             quads = []
             for n in dirs:
                 a = n.orthogonal().normalized()
                 b = n.cross(a).normalized()
-                quads.append((mw.translation.copy(), a * reach, b * reach))
+                quads.append((front.copy(), a * reach, b * reach))
             _glow_planes(f"{ob.name} haze glow", quads, mat, scene)
         made += 1
         veiled += bool(veil)
@@ -1987,6 +2027,43 @@ def _has_haze(scene):
     return any(_holds_cast(b[3], b[4]) for b in _haze_boxes(scene))
 
 
+class _CardedOff:
+    """Inside it, the light the haze's glow cards stand for is off: every light
+    but a sun inside a haze box hidden, and every glowing surface's emission
+    (a plain strength, which _glow_lamps turns into lamps with cards of their
+    own) at zero. What Cycles then shows of the haze is what the cards do not
+    draw. Yields how many lights it hid."""
+
+    def __init__(self, scene):
+        self.scene = scene
+
+    def __enter__(self):
+        import numpy as np
+        boxes = _haze_boxes(self.scene)
+        self.lights = [ob for ob in self.scene.objects if ob.type == "LIGHT" and ob.data.type != "SUN" and ob.visible_get() and not ob.hide_render
+                       and any(np.all(np.array(ob.matrix_world.translation) >= b[3] - 0.01)
+                               and np.all(np.array(ob.matrix_world.translation) <= b[4] + 0.01) for b in boxes)]
+        self.glows = []
+        if boxes:
+            for m in bpy.data.materials:
+                src = _surface(m) if m.users and m.node_tree else None
+                if src is not None and src.type == "BSDF_PRINCIPLED":
+                    i = src.inputs["Emission Strength"]
+                    if not i.links and i.default_value > 0:
+                        self.glows.append((i, i.default_value))
+                        i.default_value = 0.0
+        for ob in self.lights:
+            ob.hide_render = True
+        return len(self.lights)
+
+    def __exit__(self, *exc):
+        for ob in self.lights:
+            ob.hide_render = False
+        for i, v in self.glows:
+            i.default_value = v
+        return False
+
+
 def _haze_world(scene, notes, width=512):
     """THE SKY THROUGH THE HAZE. Where a room's haze glows, Cycles shows that
     glow wherever there is nothing behind it — lamp light scattered toward the
@@ -2020,14 +2097,62 @@ def _haze_world(scene, notes, width=512):
             finally:
                 for ob in volumes:
                     ob.hide_render = False
+        # THE SKY ITSELF without the lights the haze's glow cards stand for
+        # (_glow_cards: every light but a sun inside a haze box). Their light in
+        # the air is drawn by the cards where it is; left in this picture as
+        # well it came twice, and as a backdrop at infinity it is seen from
+        # where the cast stands — beside a beam, the whole sky glowed its colour
+        # in the gaps where the camera looks through dark air.
+        with _CardedOff(scene) as carded:
+            sky = _probe_render(scene, (0.0, 0.0, PROBE_HEIGHT), width) if carded else pano
     finally:
         for ob in hidden:
             ob.visible_camera = True
-    note(notes, "world: rendered by Cycles through the haze, so the haze glows where nothing stands behind it")
-    return _hdr_bytes_image(np.ascontiguousarray(pano[::-1])), (pano, bare)
+    note(notes, "world: rendered by Cycles through the haze, so the haze glows where nothing stands behind it"
+                + (f" (without the {carded} light(s) and the glows its cards draw)" if carded else ""))
+    return _hdr_bytes_image(np.ascontiguousarray(sky[::-1])), (pano, bare)
+
+
+def _world_turned(data):
+    """A panorama in Blender's layout (centre +X, +Y a quarter to the left)
+    in the app's: it reads the centre column as Blender's +Y, a quarter turn
+    on (u = 0.5 + atan2(x, z)/2π in its axes, which are Blender's x, z, y).
+    Left as it was, a camera looking down Blender's +Y saw the +X sky — the
+    sun's glow on the horizon off to one side."""
+    import numpy as np
+    tmp = tempfile.mkdtemp(prefix="reze_turn_")
+    try:
+        src = os.path.join(tmp, "in.hdr")
+        with open(src, "wb") as f:
+            f.write(data)
+        img = bpy.data.images.load(src)
+        w, h = img.size
+        px = np.empty(w * h * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        bpy.data.images.remove(img)
+        px = np.roll(px.reshape(h, w, 4), w // 4, axis=1)
+        out = bpy.data.images.new("reze_world_turned", w, h, float_buffer=True)
+        out.pixels.foreach_set(px.ravel())
+        dst = os.path.join(tmp, "out.hdr")
+        out.filepath_raw = dst
+        out.file_format = "HDR"
+        out.save()
+        bpy.data.images.remove(out)
+        with open(dst, "rb") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _world(scene, notes, haze=None):
+    w = _world_blender(scene, notes, haze)
+    if w and w.get("format") == "hdr" and not w.pop("flat", False):
+        w["base64"] = base64.b64encode(_world_turned(base64.b64decode(w["base64"]))).decode("ascii")
+    return w
+
+
+def _world_blender(scene, notes, haze=None):
+    """The world as an .hdr in Blender's own panorama layout (see _world_turned)."""
     if haze is not None:
         return {"format": "hdr", "base64": base64.b64encode(haze).decode("ascii"), "strength": 1.0}
     w = scene.world
@@ -2043,7 +2168,7 @@ def _world(scene, notes, haze=None):
         if src is None:
             c = tuple(bg.inputs["Color"].default_value)[:3]
             data = _hdr_bytes(c)
-            return {"format": "hdr", "base64": base64.b64encode(data).decode("ascii"), "strength": strength}
+            return {"format": "hdr", "base64": base64.b64encode(data).decode("ascii"), "strength": strength, "flat": True}
         if src.type == "TEX_ENVIRONMENT" and src.image and not src.inputs["Vector"].links:
             image = src.image
             path = bpy.path.abspath(image.filepath) if image.filepath else ""
@@ -2368,6 +2493,7 @@ def _baked_colours(scene, notes):
 OCC_TEXELS_PER_M = 16    # texels per metre across the atlas, before the size cap
 OCC_MAX = 1024           # the atlas' side at most
 OCC_SAMPLES = 16
+OCC_DISTANCE = 1.0      # m: the bake's reach, a contact shadow (see _occlusion)
 
 
 def _plain_material(mat):
@@ -2385,22 +2511,17 @@ def _plain_material(mat):
     return not (src.inputs["Roughness"].links or src.inputs["Metallic"].links)
 
 
-def _occlusion(scene, notes):
-    """AMBIENT OCCLUSION, LIGHT ONLY, into glTF's occlusion channel.
+_ATLAS = {}
 
-    The app's ambient and its reflection probe light every point of a surface
-    alike: nothing darkens a corner, the floor under a chair or a stage's lip.
-    Cycles bakes how much of the room each point sees (AO, out to the world's
-    own AO distance) and it goes out as the R of each plain material's
-    occlusion-roughness-metal map; the colours are not touched. Only
-    materials without pictures (their UVs are free, so the add-on lays them out
-    afresh, one atlas for the scene). The app scales only the ambient and the
-    reflections by it, as glTF and Unity do: a lamp's direct light is not
-    shadowed by it.
 
-    Returns {material name: (atlas (H, W) floats, roughness, metal)} for
-    _write_occlusion, which adds the maps to the written .glb."""
-    import numpy as np
+def _atlas(scene, texels_per_m=OCC_TEXELS_PER_M, most=OCC_MAX):
+    """The objects whose materials are all plain, each with its own mesh and
+    one fresh UV layer laid out as one atlas for the scene (smart project),
+    and those materials' names. Laid out once, its islands spaced for a
+    picture at `texels_per_m` (_ATLAS["size"]): the light bake and the
+    occlusion share it."""
+    if "obs" in _ATLAS:
+        return _ATLAS["obs"], _ATLAS["plain"]
     plain = {m.name for m in bpy.data.materials if _plain_material(m)}
     meshes = [ob for ob in scene.objects if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.data.polygons]
     # a material also worn by an object that cannot be laid out is left as it is
@@ -2411,10 +2532,10 @@ def _occlusion(scene, notes):
         if not drop:
             break
         plain -= drop
+    _ATLAS.update(obs=obs, plain=plain)
     if not obs:
-        return {}
+        return obs, plain
     dg = bpy.context.evaluated_depsgraph_get()
-    area = 0.0
     for ob in obs:
         # its own mesh, modifiers applied, one UV layer: the atlas
         if ob.modifiers:
@@ -2426,9 +2547,8 @@ def _occlusion(scene, notes):
         for uv in list(me.uv_layers):
             me.uv_layers.remove(uv)
         me.uv_layers.new(name="UVMap")
-        s = ob.matrix_world.to_scale()
-        area += sum(p.area for p in me.polygons) * abs(s.x * s.y)
-    size = int(min(OCC_MAX, max(64, 2 ** math.ceil(math.log2(max(1.0, math.sqrt(area) * OCC_TEXELS_PER_M))))))
+        _face_the_cast(ob)
+    size = _ATLAS["size"] = _atlas_size(obs, texels_per_m, most)
     vl = bpy.context.view_layer
     for ob in scene.objects:
         ob.select_set(False)
@@ -2439,7 +2559,46 @@ def _occlusion(scene, notes):
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=2.0 / size, area_weight=0.0, scale_to_bounds=False)
     bpy.ops.object.mode_set(mode="OBJECT")
-    img = bpy.data.images.new("reze_occlusion", size, size, float_buffer=True)
+    return obs, plain
+
+
+def _face_the_cast(ob):
+    """An OPEN surface (a plane, a wall of one sheet) has two sides and Cycles
+    shades whichever one it sees, but a bake reads only the side its normal is
+    on. Faces of an open mesh turned away from where the cast stands are
+    flipped, so the bake and the app's lamps both work on the side the room
+    sees. A closed mesh's normals already point out of it."""
+    import bmesh
+    from mathutils import Vector
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    if not any(e.is_boundary for e in bm.edges):
+        bm.free()
+        return
+    mw = ob.matrix_world
+    nm = mw.to_3x3().inverted_safe().transposed()
+    cast = Vector((0.0, 0.0, PROBE_HEIGHT))
+    away = [f for f in bm.faces if (nm @ f.normal).dot(cast - mw @ f.calc_center_median()) < 0]
+    if away:
+        bmesh.ops.reverse_faces(bm, faces=away)
+        bm.to_mesh(ob.data)
+    bm.free()
+
+
+def _atlas_size(obs, texels_per_m, most):
+    area = 0.0
+    for ob in obs:
+        s = ob.matrix_world.to_scale()
+        area += sum(p.area for p in ob.data.polygons) * abs(s.x * s.y)
+    return int(min(most, max(64, 2 ** math.ceil(math.log2(max(1.0, math.sqrt(area) * texels_per_m))))))
+
+
+def _bake_atlas(scene, obs, plain, size, samples, uv=None, **bake):
+    """Cycles bakes the atlas objects into one float picture of `size`, on
+    their active UV layer or the one named `uv`, returned as an (H, W, 3)
+    array smoothed over 3x3 texels."""
+    import numpy as np
+    img = bpy.data.images.new("reze_atlas_bake", size, size, float_buffer=True)
     img.colorspace_settings.name = "Non-Color"
     added = []
     for name in plain:
@@ -2456,10 +2615,13 @@ def _occlusion(scene, notes):
     # BAKED AS ONE OBJECT: Cycles bakes the selected objects one by one, each
     # a whole scene sync, so two thousand props took minutes. A joined copy
     # stands in for them (the originals hidden meanwhile), one sync, one pass.
+    vl = bpy.context.view_layer
     copies = []
     for ob in obs:
         cp = bpy.data.objects.new("reze_occ_part", ob.data.copy())
         cp.matrix_world = ob.matrix_world
+        if uv:
+            cp.data.uv_layers.active = cp.data.uv_layers[uv]
         scene.collection.objects.link(cp)
         copies.append(cp)
         ob.hide_render = True
@@ -2472,11 +2634,10 @@ def _occlusion(scene, notes):
     joined = vl.objects.active
     c = scene.cycles
     keep = (scene.render.engine, c.samples, c.use_denoising)
-    distance = scene.world.light_settings.distance if scene.world else 10.0
     try:
         scene.render.engine = "CYCLES"
-        c.samples = OCC_SAMPLES
-        bpy.ops.object.bake(type="AO", margin=2, use_clear=True)
+        c.samples = samples
+        bpy.ops.object.bake(margin=2, use_clear=True, **bake)
     finally:
         scene.render.engine, c.samples, c.use_denoising = keep
         me = joined.data
@@ -2490,11 +2651,204 @@ def _occlusion(scene, notes):
             nt.nodes.remove(n)
     px = np.empty(size * size * 4, dtype=np.float32)
     img.pixels.foreach_get(px)
-    ao = px.reshape(size, size, 4)[..., 0].astype(np.float64)
-    # the bake's grain, smoothed over 3x3 texels
-    pad = np.pad(ao, 1, mode="edge")
-    ao = sum(pad[1 + dy:1 + dy + size, 1 + dx:1 + dx + size] for dy in (-1, 0, 1) for dx in (-1, 0, 1)) / 9.0
     bpy.data.images.remove(img)
+    rgb = px.reshape(size, size, 4)[..., :3].astype(np.float64)
+    # the bake's grain, smoothed over 3x3 texels
+    pad = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    return sum(pad[1 + dy:1 + dy + size, 1 + dx:1 + dx + size] for dy in (-1, 0, 1) for dx in (-1, 0, 1)) / 9.0
+
+
+# ── Baked light: Cycles' diffuse (lamps, sky, bounce, shadows) as the surface's glow ──
+
+LIGHT_TEXELS_PER_M = 48   # texels per metre across the atlas, before the size cap
+LIGHT_MAX = 2048
+LIGHT_SAMPLES = 256
+
+
+def _light_bake(scene, notes):
+    """BAKED LIGHT, opt-in: the stage's dielectric surfaces leave as Cycles
+    lights them — lamps, glows, sky, bounce and shadows — and the app adds
+    only their highlights and reflections, which stay live. Run with
+    Blender's own rig, before any light is converted. The cast's shadows do
+    not fall on these surfaces, and the app's lights do not change them.
+
+      a PLAIN surface (no pictures): its diffuse, times its colour, baked
+        into the shared atlas on its own fresh UVs, out as its glow over a
+        black base colour (_write_occlusion).
+      a TEXTURED surface: the light alone on a second UV layer, LightUV, one
+        atlas for all of them; out as its emissive picture on TEXCOORD_1,
+        flagged `lightmap`, which the app multiplies by the surface's own
+        colour at full resolution (stageLightmapGraph).
+
+    Returns {"plain": {material: (H, W, 3) radiance},
+             "maps": {material: (H, W, 3) irradiance/π}}."""
+    import numpy as np
+    from mathutils import Vector
+    out = {"plain": {}, "maps": {}}
+    obs, plain = _atlas(scene, LIGHT_TEXELS_PER_M, LIGHT_MAX)
+
+    def takes_light(name):
+        # a metal has no diffuse to bake; a glowing surface is its own light
+        i = _surface(bpy.data.materials[name]).inputs
+        glows = i["Emission Strength"].default_value > 0 and any(c > 0 for c in i["Emission Color"].default_value[:3])
+        return i["Metallic"].default_value < 0.5 and not glows
+    lit = {n for n in plain if takes_light(n)} if obs else set()
+    mapped, maps = _lightmap_objects(scene, set(plain))
+    if not lit and not maps:
+        return out
+    # A BAKE DOES NOT KNOW IT STARTS IN THE HAZE: its rays leave the surface
+    # with no volume around them, so a lamp's light reached the floor
+    # undimmed (a stage's pools 1.3x Cycles' own). For the bake the haze is
+    # taken away and each light inside it dimmed by e^(-sigma d) over its own
+    # way to what it lights: a spot down its axis to what it hits, any other
+    # light the mean way to the surfaces round it.
+    boxes = _haze_boxes(scene)
+    dimmed, gone = [], []
+    if boxes:
+        bvh = _surfaces_bvh(scene)
+        for ob in scene.objects:
+            if ob.type != "LIGHT" or ob.data.type == "SUN" or not ob.visible_get() or ob.hide_render:
+                continue
+            at = np.array(ob.matrix_world.translation)
+            box = next((b for b in boxes if np.all(at >= b[3] - 0.01) and np.all(at <= b[4] + 0.01)), None)
+            if box is None:
+                continue
+            d = _mean_exit(bvh, at, box[3], box[4]) if bvh else 0.0
+            if ob.data.type == "SPOT" and bvh:
+                axis = (ob.matrix_world.to_3x3() @ Vector((0, 0, -1))).normalized()
+                hit = bvh.ray_cast(Vector(at), axis, 1e4)
+                if hit[0] is not None:
+                    d = hit[3]
+            dimmed.append((ob.data, ob.data.energy))
+            ob.data.energy *= math.exp(-box[1] * d)
+        gone = [b[0] for b in boxes]
+        for ob in gone:
+            ob.hide_render = True
+    try:
+        if lit:
+            size = _ATLAS["size"]
+            rad = _bake_atlas(scene, obs, plain, size, LIGHT_SAMPLES, type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT", "COLOR"})
+            out["plain"] = {n: rad for n in lit}
+            note(notes, f"baked light: {len(lit)} plain material(s) leave as Cycles lights them ({size}x{size} atlas, "
+                        f"{LIGHT_SAMPLES} samples); the app adds only their highlights, and the cast's shadows do not fall on them")
+        if maps:
+            size = _atlas_size(mapped, LIGHTMAP_TEXELS_PER_M, LIGHTMAP_MAX)
+            every = {sl.material.name for ob in mapped for sl in ob.material_slots if sl.material and sl.material.node_tree}
+            light = _bake_atlas(scene, mapped, every, size, LIGHT_SAMPLES, uv="LightUV", type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"})
+            out["maps"] = {n: light for n in maps}
+            note(notes, f"baked light: {len(maps)} textured material(s) on {len(mapped)} object(s) carry Cycles' light as a light map "
+                        f"({size}x{size}, second UVs); the app multiplies it by their own colour")
+    finally:
+        for data, energy in dimmed:
+            data.energy = energy
+        for ob in gone:
+            ob.hide_render = False
+    return out
+
+
+LIGHTMAP_TEXELS_PER_M = 24
+LIGHTMAP_MAX = 4096
+
+
+def _lightmap_material(mat):
+    """A lit dielectric with pictures: the light-map bake's (the plain bake
+    takes the ones without)."""
+    if not mat or not mat.use_nodes or not mat.node_tree or _volume_only(mat) or _plain_material(mat):
+        return False
+    r = mat.get("reze") or {}
+    if r.get("unlit") or r.get("additive") or r.get("cover"):
+        return False
+    src = _surface(mat)
+    if src is None or src.type != "BSDF_PRINCIPLED":
+        return False
+    i = src.inputs
+    if i["Metallic"].links or i["Metallic"].default_value >= 0.5:
+        return False
+    if "Transmission Weight" in i and (i["Transmission Weight"].links or i["Transmission Weight"].default_value > 0.5):
+        return False
+    glows = i["Emission Strength"].links or (i["Emission Strength"].default_value > 0 and (
+        i["Emission Color"].links or any(c > 0 for c in i["Emission Color"].default_value[:3])))
+    return not glows
+
+
+def _lightmap_objects(scene, plain):
+    """The objects wearing a light-mapped material, each with its own mesh and a
+    second UV layer, LightUV, laid out as one atlas for them all (smart
+    project; their first UVs are their pictures'), and those materials."""
+    maps = {m.name for m in bpy.data.materials if _lightmap_material(m)}
+    def own_uvs(ob):
+        # LightUV must be the second layer (TEXCOORD_1), so the others go:
+        # not on an object whose materials name a layer other than its first
+        first = ob.data.uv_layers[0].name
+        return all(n.uv_map in ("", first) for sl in ob.material_slots if sl.material and sl.material.node_tree
+                   for n in _all_nodes(sl.material.node_tree) if n.type == "UVMAP")
+    obs = [ob for ob in scene.objects if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.data.polygons
+           and ob.data.uv_layers and any(sl.material and sl.material.name in maps for sl in ob.material_slots) and own_uvs(ob)]
+    if not obs:
+        return [], set()
+    dg = bpy.context.evaluated_depsgraph_get()
+    for ob in obs:
+        if ob.modifiers:
+            ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+            ob.modifiers.clear()
+        elif ob.data.users > 1:
+            ob.data = ob.data.copy()
+        me = ob.data
+        while len(me.uv_layers) > 1:
+            me.uv_layers.remove(me.uv_layers[-1])
+        me.uv_layers.new(name="LightUV")
+        me.uv_layers.active = me.uv_layers["LightUV"]
+        me.uv_layers[0].active_render = True
+        _face_the_cast(ob)
+    size = _atlas_size(obs, LIGHTMAP_TEXELS_PER_M, LIGHTMAP_MAX)
+    vl = bpy.context.view_layer
+    for ob in scene.objects:
+        ob.select_set(False)
+    for ob in obs:
+        ob.select_set(True)
+    vl.objects.active = obs[0]
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=2.0 / size, area_weight=0.0, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for ob in obs:
+        ob.data.uv_layers.active = ob.data.uv_layers[0]
+    return obs, {n for n in maps if any(sl.material and sl.material.name == n for ob in obs for sl in ob.material_slots)}
+
+
+def _occlusion(scene, notes):
+    """AMBIENT OCCLUSION, LIGHT ONLY, into glTF's occlusion channel.
+
+    The app's ambient and its reflection probe light every point of a surface
+    alike: nothing darkens a corner, the floor under a chair or a stage's lip.
+    Cycles bakes how much of the room each point sees (AO, out to the world's
+    own AO distance) and it goes out as the R of each plain material's
+    occlusion-roughness-metal map; the colours are not touched. Only
+    materials without pictures (their UVs are free, so the add-on lays them out
+    afresh, one atlas for the scene). The app scales only the ambient and the
+    reflections by it, as glTF and Unity do: a lamp's direct light is not
+    shadowed by it.
+
+    Returns {material name: (atlas (H, W) floats, roughness, metal)} for
+    _write_occlusion, which adds the maps to the written .glb."""
+    obs, plain = _atlas(scene)
+    if not obs:
+        return {}
+    # at the size the atlas was spaced for: smaller, its islands bleed together
+    size = _ATLAS["size"]
+    # CONTACT SHADOW ONLY: the ambient is measured by Cycles inside the room,
+    # so how much of the room a point sees is in it already; out to the
+    # world's AO distance (10 m by default) a closed room baked black
+    ls = scene.world.light_settings if scene.world else None
+    keep_dist = ls.distance if ls else None
+    distance = min(keep_dist or OCC_DISTANCE, OCC_DISTANCE)
+    if ls:
+        ls.distance = distance
+    try:
+        ao = _bake_atlas(scene, obs, plain, size, OCC_SAMPLES, type="AO")[..., 0]
+    finally:
+        if ls:
+            ls.distance = keep_dist
     out = {}
     for name in plain:
         src = _surface(bpy.data.materials[name])
@@ -2504,13 +2858,19 @@ def _occlusion(scene, notes):
     return out
 
 
-def _write_occlusion(path, occ, webp=True, quality=90):
+def _write_occlusion(path, occ, webp=True, quality=90, light=None, lightmaps=None):
     """Add each plain material's occlusion-roughness-metal map to the written
     .glb: R the baked occlusion, G its roughness, B its metal, as glTF packs
-    them, on TEXCOORD_0 (the atlas)."""
+    them, on TEXCOORD_0 (the atlas). A material in `light` (_light_bake) also
+    gets its baked light as its emissive picture, at the emissive strength of
+    its brightest texel, over a black base colour. A material in `lightmaps`
+    gets its light map as its emissive picture on TEXCOORD_1, flagged
+    extras.reze.lightmap; its own colour stays."""
+    light = light or {}
+    lightmaps = lightmaps or {}
     import struct
     import numpy as np
-    if not occ:
+    if not occ and not light and not lightmaps:
         return
     with open(path, "rb") as f:
         data = f.read()
@@ -2526,7 +2886,58 @@ def _write_occlusion(path, occ, webp=True, quality=90):
         settings.file_format = "WEBP" if webp else "PNG"
         settings.quality = quality
         settings.color_mode = "RGB"
+        def add_texture(px, name):
+            h, w = px.shape[:2]
+            img = bpy.data.images.new(name, w, h)
+            img.colorspace_settings.name = "Non-Color"
+            img.pixels.foreach_set(px.astype(np.float32).ravel())
+            file = os.path.join(tmp, f"{name}.{ext}")
+            img.filepath_raw = file
+            img.file_format = settings.file_format
+            img.save()
+            bpy.data.images.remove(img)
+            with open(file, "rb") as f:
+                blob = f.read()
+            while len(binary) % 4:
+                binary.append(0)
+            g.setdefault("bufferViews", []).append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(blob)})
+            binary.extend(blob)
+            g.setdefault("images", []).append({"bufferView": len(g["bufferViews"]) - 1, "mimeType": f"image/{ext}"})
+            image = len(g["images"]) - 1
+            g.setdefault("textures", []).append({"extensions": {"EXT_texture_webp": {"source": image}}} if webp else {"source": image})
+            return len(g["textures"]) - 1
+
+        light_tex = {}
         for m in g.get("materials", []):
+            if m["name"] in light:
+                rad = light[m["name"]]
+                if id(rad) not in light_tex:
+                    top = float(rad.max())
+                    v = np.clip(rad / max(top, 1e-9), 0, 1)
+                    enc = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
+                    light_tex[id(rad)] = (add_texture(np.concatenate([enc, np.ones(enc.shape[:2] + (1,))], axis=-1), "light"), top)
+                t, top = light_tex[id(rad)]
+                pbr = m.setdefault("pbrMetallicRoughness", {})
+                pbr["baseColorFactor"] = [0.0, 0.0, 0.0, (pbr.get("baseColorFactor") or [1, 1, 1, 1])[3]]
+                m["emissiveTexture"] = {"index": t}
+                m["emissiveFactor"] = [1.0, 1.0, 1.0]
+                m.setdefault("extensions", {})["KHR_materials_emissive_strength"] = {"emissiveStrength": top}
+                if "KHR_materials_emissive_strength" not in g.setdefault("extensionsUsed", []):
+                    g["extensionsUsed"].append("KHR_materials_emissive_strength")
+            if m["name"] in lightmaps:
+                irr = lightmaps[m["name"]]
+                if id(irr) not in light_tex:
+                    top = float(irr.max())
+                    v = np.clip(irr / max(top, 1e-9), 0, 1)
+                    enc = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
+                    light_tex[id(irr)] = (add_texture(np.concatenate([enc, np.ones(enc.shape[:2] + (1,))], axis=-1), "lightmap"), top)
+                t, top = light_tex[id(irr)]
+                m["emissiveTexture"] = {"index": t, "texCoord": 1}
+                m["emissiveFactor"] = [1.0, 1.0, 1.0]
+                m.setdefault("extensions", {})["KHR_materials_emissive_strength"] = {"emissiveStrength": top}
+                m.setdefault("extras", {}).setdefault("reze", {})["lightmap"] = True
+                if "KHR_materials_emissive_strength" not in g.setdefault("extensionsUsed", []):
+                    g["extensionsUsed"].append("KHR_materials_emissive_strength")
             if m["name"] not in occ:
                 continue
             ao, rough, metal = occ[m["name"]]
@@ -2575,9 +2986,10 @@ def _write_occlusion(path, occ, webp=True, quality=90):
         f.write(out)
 
 
-def export_stage(out_path, webp=True, quality=90):
+def export_stage(out_path, webp=True, quality=90, bake_light=False):
     """Write the current scene as a stage .glb. Returns the notes it made."""
     scene = bpy.context.scene
+    _ATLAS.clear()
     notes = []
     if bpy.context.object and bpy.context.object.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -2608,6 +3020,13 @@ def export_stage(out_path, webp=True, quality=90):
             ambient = {"sh": _ambient(scene, notes)}
         except Exception as e:  # noqa: BLE001 — the stage still exports without it
             note(notes, f"ambient: could not be measured ({e})")
+    light = {"plain": {}, "maps": {}}
+    if bake_light:
+        step(0.4, f"Baking the light (Cycles on {device})")
+        try:
+            light = _light_bake(scene, notes)
+        except Exception as e:  # noqa: BLE001 — the stage still exports, lit live
+            note(notes, f"baked light: could not be baked ({e})")
     haze_world = None
     haze_probe = None
     if _has_haze(scene):
@@ -2679,7 +3098,9 @@ def export_stage(out_path, webp=True, quality=90):
                      # comes out too bright on a shiny floor).
                      # Unless the cast stands in a roofed room of its own, which
                      # then reflects itself (_room_probe).
-                     **({"probe": probe} if probe else {"reflections": "world"} if world and world.get("format") == "hdr" else {}),
+                     # With the light baked the app's own capture of the stage is
+                     # Cycles' picture of it, shadows and all, and reflects that.
+                     **({"probe": probe} if probe else {"reflections": "world"} if world and world.get("format") == "hdr" and not (light["plain"] or light["maps"]) else {}),
                      **{k: v for k, v in carried.items() if v},
                      **({"particlesJson": json.dumps(particles)} if particles else {})}
 
@@ -2702,7 +3123,7 @@ def export_stage(out_path, webp=True, quality=90):
         export_texcoords=True,
         export_materials="EXPORT",
     )
-    _write_occlusion(out_path, occ, webp, quality)
+    _write_occlusion(out_path, occ, webp, quality, light["plain"], light["maps"])
     lights = sum(1 for ob in scene.objects if ob.type == "LIGHT" and ob.visible_get())
     sky = "image" if world and "base64" in world else ("colour" if world else "none")
     notes.insert(0, f"wrote {os.path.basename(out_path)} ({os.path.getsize(out_path) / 1e6:.1f} MB): "
@@ -2841,7 +3262,7 @@ if __name__ == "__main__":
         def opt(name, default):
             return type(default)(args[args.index(name) + 1]) if name in args else default
         out = args[0]
-        for line in export_stage(out, webp="--png" not in args, quality=opt("--quality", 90)):
+        for line in export_stage(out, webp="--png" not in args, quality=opt("--quality", 90), bake_light="--bake-light" in args):
             print("[reze]", line, flush=True)
     else:
         register()  # run from the Text Editor: adds the menu entry for this session

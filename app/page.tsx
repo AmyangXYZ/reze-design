@@ -539,8 +539,8 @@ const GALLERY_SEEN_KEY = storageKey("gallerySeen")
  *  so the app carries ONE outbound link rather than a help menu that has to be
  *  kept in step with the docs. */
 const REPO_URL = "https://github.com/AmyangXYZ/reze-design"
-// the Blender add-on that exports a stage .glb (blender/, built into blender/dist)
-const GLB_ADDON_URL = `${REPO_URL}/raw/main/blender/dist/reze_stage_export-1.0.0.zip`
+// the Blender add-on that exports a stage .glb: its folder, the README on top
+const GLB_ADDON_URL = `${REPO_URL}/tree/main/blender`
 
 /** How long edits settle before the working scene is written to localStorage. */
 const SAVE_SETTLE_MS = 1000
@@ -9048,16 +9048,13 @@ function Lab() {
                                 <div className="flex h-8 items-center px-3.5 font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">
                                   {t.lab.stageGlbHelp.title}
                                 </div>
-                                <ol className="list-decimal space-y-1.5 border-t border-line py-3 pr-3.5 pl-8 text-xs">
-                                  {t.lab.stageGlbHelp.steps.map((step) => (
-                                    <li key={step}>{step}</li>
-                                  ))}
-                                </ol>
-                                <div className="flex justify-end border-t border-line px-3.5 py-2">
-                                  <a href={GLB_ADDON_URL} className="text-xs text-foreground underline underline-offset-2">
-                                    {t.lab.stageGlbHelp.download}
+                                <p className="border-t border-line px-3.5 py-3 text-xs">
+                                  {t.lab.stageGlbHelp.before}
+                                  <a href={GLB_ADDON_URL} target="_blank" rel="noreferrer" className="text-foreground underline underline-offset-2">
+                                    {t.lab.stageGlbHelp.link}
                                   </a>
-                                </div>
+                                  {t.lab.stageGlbHelp.after}
+                                </p>
                               </PopoverContent>
                             </Popover>
                           </div>

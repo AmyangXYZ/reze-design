@@ -101,7 +101,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; cover?: boolean; inProbe?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; cover?: boolean; fogged?: boolean; lightmap?: boolean; inProbe?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -392,6 +392,13 @@ export type GlbMaterial = {
   /** An unlit sheet laid OVER what is behind it at its picture's alpha (a
    *  haze cloud's glow, which also dims what is seen through it). */
   cover: boolean
+  /** An added sheet of light inside the stage's haze (a Blender export's haze
+   *  glow), dimmed by the haze before it as a surface at its depth would be:
+   *  the stage fog's distance terms and amount, PMX units. */
+  fog: { distance: [number, number]; amount: number } | null
+  /** Its light baked by Cycles (the add-on's --bake-light): the emissive
+   *  picture, on the second UVs, is the light it receives — see stageLightmapGraph. */
+  lightmap: boolean
   sky: boolean
   look: string | null
   alphaMode: "OPAQUE" | "MASK" | "BLEND"
@@ -421,7 +428,7 @@ export type GlbStage = {
   notes: string[]
 }
 
-type Run = { material: number; positions: number[]; normals: number[]; uvs: number[]; indices: number[] }
+type Run = { material: number; positions: number[]; normals: number[]; uvs: number[]; uv2s: number[]; indices: number[] }
 
 /**
  * Read a .glb into the stage folder it becomes. Pure: no decoding, no DOM, so
@@ -464,7 +471,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         const mat = prim.material ?? -1
         let run = runs.get(mat)
         if (!run) {
-          run = { material: mat, positions: [], normals: [], uvs: [], indices: [] }
+          run = { material: mat, positions: [], normals: [], uvs: [], uv2s: [], indices: [] }
           runs.set(mat, run)
         }
         const pos = readAccessor(g, bin, prim.attributes.POSITION)
@@ -474,9 +481,13 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         // their TEXCOORD_0. Every map of a material shares it, so the first map
         // it has decides (a baked colour can be a flat factor, its ORM not).
         const gm = mat >= 0 ? g.materials?.[mat] : undefined
-        const named = [gm?.pbrMetallicRoughness?.baseColorTexture, gm?.pbrMetallicRoughness?.metallicRoughnessTexture, gm?.normalTexture, gm?.emissiveTexture, gm?.occlusionTexture].find((t) => t)
+        // A LIGHT MAP rides on TEXCOORD_1 (the add-on's LightUV) beside the
+        // surface's own pictures on theirs: it is not the one that decides.
+        const lightmapped = !!reze<RezeMaterial>(gm ?? {})?.lightmap
+        const named = [gm?.pbrMetallicRoughness?.baseColorTexture, gm?.pbrMetallicRoughness?.metallicRoughnessTexture, gm?.normalTexture, lightmapped ? undefined : gm?.emissiveTexture, gm?.occlusionTexture].find((t) => t)
         const uvSet = prim.attributes[`TEXCOORD_${named?.texCoord ?? 0}`] ?? prim.attributes.TEXCOORD_0
         const uv = uvSet !== undefined ? readAccessor(g, bin, uvSet) : null
+        const uv2 = lightmapped && prim.attributes.TEXCOORD_1 !== undefined ? readAccessor(g, bin, prim.attributes.TEXCOORD_1) : null
         // A TILED OR OFFSET TEXTURE GOES INTO THE UVs. Blender writes a Mapping
         // node on the base colour as KHR_texture_transform, and a PMX has one UV
         // and no per-slot transform — the same fold the Unity converter does
@@ -501,6 +512,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
             const u = uv[i * 2] * sx, v = uv[i * 2 + 1] * sy
             run.uvs.push(cr * u + sr * v + ox, -sr * u + cr * v + oy)
           } else run.uvs.push(uv ? uv[i * 2] : 0, uv ? uv[i * 2 + 1] : 0)
+          run.uv2s.push(uv2 ? uv2[i * 2] : 0, uv2 ? uv2[i * 2 + 1] : 0)
         }
         const idx = prim.indices !== undefined ? readAccessor(g, bin, prim.indices) : Uint32Array.from({ length: count }, (_, i) => i)
         // The Z mirror turned every triangle inside out; swap two corners back.
@@ -590,6 +602,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   }
   const taken = new Set<string>()
   const vertices: PmxVertex[] = []
+  const lightmaps = (g.materials ?? []).some((m) => !!reze<RezeMaterial>(m)?.lightmap)
   const indices: number[] = []
   const pmxMaterials: PmxMaterial[] = []
   const materials: GlbMaterial[] = []
@@ -615,7 +628,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         position: [run.positions[i * 3], run.positions[i * 3 + 1], run.positions[i * 3 + 2]],
         normal: [run.normals[i * 3], run.normals[i * 3 + 1], run.normals[i * 3 + 2]],
         uv: [run.uvs[i * 2], run.uvs[i * 2 + 1]],
-        additionalUv: [],
+        // the light map's UVs as the second additional UV (the engine's uv2),
+        // the first, the vertex colour, white — only when the stage has one
+        additionalUv: lightmaps ? [[1, 1, 1, 1], [run.uv2s[i * 2], run.uv2s[i * 2 + 1], 0, 0]] : [],
         weightType: 0,
         bones: [0],
         weights: [],
@@ -648,6 +663,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       unlit,
       additive: !!ex.additive,
       cover: !!ex.cover,
+      fog: ex.fogged ? { distance: [0, 1], amount: 0 } : null,
+      lightmap: !!ex.lightmap,
       principled: sceneExtras.shading === "principled",
       inProbe: ex.inProbe !== false,
       sky,
@@ -866,6 +883,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       : null
   const haze = fogLayer(sceneExtras.fog)
   if (haze) rig.fog = { ...haze, ...(fogLayer(sceneExtras.fog?.dyn) ? { dyn: fogLayer(sceneExtras.fog?.dyn) } : {}) }
+  // the haze's own glow takes that fog too (a stage without one: none)
+  for (const m of materials) if (m.fog) m.fog = haze ? { distance: [haze.distance[0], haze.distance[1]], amount: haze.amount } : null
   // THE GAME'S PARTICLE SYSTEMS, as effects generated here (lib/unity-particles.ts),
   // their pictures beside the stage under particles/ — the document keeps the
   // source, the stage's own files the pictures (lib/effect-textures.ts)
@@ -898,7 +917,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     version: 2,
     globals: {
       encoding: 0,
-      additionalUvCount: 0,
+      additionalUvCount: lightmaps ? 2 : 0,
       vertexIndexSize: vertices.length < 65536 ? 2 : 4,
       textureIndexSize: indexSize(textures.length),
       materialIndexSize: indexSize(pmxMaterials.length),
@@ -1006,6 +1025,36 @@ export function stagePbrGraph(strength: number, principled = false): ShaderGraph
 }
 
 /**
+ * Stage Baked: Stage PBR for a surface whose light Cycles baked (the add-on's
+ * --bake-light). Its emissive picture, on the second UVs, is the light it
+ * receives (irradiance/π, lamps, sky, bounce and shadows); it gives off its own
+ * colour times that, at `strength`, and takes no lamp or ambient light of its
+ * own (a black base colour), so only its highlights and reflections are live.
+ */
+export function stageLightmapGraph(strength: number, principled = false): ShaderGraph {
+  const g = stagePbrGraph(strength, principled)
+  return {
+    ...g,
+    name: `Stage Baked ×${strength}` + (principled ? " (Principled)" : ""),
+    tags: ["stage", "pbr", "baked"],
+    nodes: [
+      ...g.nodes.map((n) => (n.id === "lit" ? { ...n, inputs: { ...(n.inputs ?? {}), base_color: [0, 0, 0] as [number, number, number] } } : n)),
+      { id: "uv", type: "uv_map" },
+      { id: "lit_by", type: "vector_math/multiply" },
+    ],
+    links: [
+      ...g.links.filter(
+        (l) => !(l.to.node === "lit" && l.to.socket === "base_color") && !(l.from.node === "glow" && l.to.node === "emit"),
+      ),
+      { from: { node: "uv", socket: "uv2" }, to: { node: "glow", socket: "uv" } },
+      { from: { node: "base", socket: "color" }, to: { node: "lit_by", socket: "a" } },
+      { from: { node: "glow", socket: "color" }, to: { node: "lit_by", socket: "b" } },
+      { from: { node: "lit_by", socket: "vector" }, to: { node: "emit", socket: "a" } },
+    ],
+  }
+}
+
+/**
  * The Stage Sheet graph: a painted sheet — a sky layer, an effect decal, a
  * shadow projection — as the game draws it, its emissive picture (slot 2) given
  * off at `strength` and no light taken. Its coverage is its base picture's
@@ -1036,28 +1085,72 @@ export function stageSheetGraph(strength: number): ShaderGraph {
  * what was behind, and X306's monitors drew as dark translucent panes with a
  * faint glow on them.
  */
-export function stageLightSheetGraph(strength: number, factor: [number, number, number] = [1, 1, 1]): ShaderGraph {
+export function stageLightSheetGraph(
+  strength: number,
+  factor: [number, number, number] = [1, 1, 1],
+  fog: { distance: [number, number]; amount: number } | null = null,
+): ShaderGraph {
   // glTF's emission is factor × picture × strength. Blender folds a strength
   // of 1 or less, and any colour multiplied into the picture, into the factor;
   // a white factor (the Unity converter's sheets) leaves the graph as it was.
   const tinted = factor.some((c) => c !== 1)
+  const last = tinted ? "tint" : "emit"
   return {
     version: 1,
-    name: `Stage Light Sheet ×${strength}`,
+    name: `Stage Light Sheet ×${strength}${fog ? " (in haze)" : ""}`,
     tags: ["stage", "unlit", "effect"],
     nodes: [
       { id: "glow", type: "tex_image/2" },
       { id: "light", type: "vector_math/scale", inputs: {} },
       { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
       ...(tinted ? [{ id: "tint", type: "vector_math/multiply", inputs: { b: factor } }] : []),
+      // IN A HAZE, what of it reaches the eye: the stage fog's own transmittance
+      // at this depth, 1 − (1 − saturate(z·d₀ + d₁))·amount, as the engine lays
+      // the fog over a surface there (it leaves an emission-only graph alone).
+      // And as much as the card faces the eye, |N·V|: a card seen edge-on
+      // squeezed its bright middle into a solid stripe. The cards of one glow
+      // then sum to the same from every side (Σcos² of three planes 60° apart
+      // is 3/2 — the exporter's SPOT_FACING_SUM).
+      ...(fog
+        ? [
+            { id: "pos", type: "geometry" },
+            { id: "facing", type: "vector_math/dot" },
+            { id: "square", type: "math/absolute" },
+            { id: "share", type: "math/multiply" },
+            { id: "view", type: "vector_transform/point_world_to_camera" },
+            { id: "z", type: "separate_xyz" },
+            { id: "f", type: "math/multiply_add", inputs: { b: fog.distance[0], c: fog.distance[1] } },
+            { id: "f0", type: "math/maximum", inputs: { b: 0 } },
+            { id: "f1", type: "math/minimum", inputs: { b: 1 } },
+            { id: "through", type: "math/multiply_add", inputs: { b: fog.amount, c: 1 - fog.amount } },
+            { id: "seen", type: "vector_math/scale", inputs: {} },
+          ]
+        : []),
     ],
     links: [
       { from: { node: "glow", socket: "color" }, to: { node: "light", socket: "a" } },
       { from: { node: "glow", socket: "alpha" }, to: { node: "light", socket: "scale" } },
       { from: { node: "light", socket: "vector" }, to: { node: "emit", socket: "a" } },
       ...(tinted ? [{ from: { node: "emit", socket: "vector" }, to: { node: "tint", socket: "a" } }] : []),
+      ...(fog
+        ? [
+            { from: { node: "pos", socket: "world_pos" }, to: { node: "view", socket: "vector" } },
+            { from: { node: "view", socket: "vector" }, to: { node: "z", socket: "vector" } },
+            { from: { node: "z", socket: "z" }, to: { node: "f", socket: "a" } },
+            { from: { node: "f", socket: "value" }, to: { node: "f0", socket: "a" } },
+            { from: { node: "f0", socket: "value" }, to: { node: "f1", socket: "a" } },
+            { from: { node: "f1", socket: "value" }, to: { node: "through", socket: "a" } },
+            { from: { node: "pos", socket: "normal" }, to: { node: "facing", socket: "a" } },
+            { from: { node: "pos", socket: "view" }, to: { node: "facing", socket: "b" } },
+            { from: { node: "facing", socket: "value" }, to: { node: "square", socket: "a" } },
+            { from: { node: "square", socket: "value" }, to: { node: "share", socket: "a" } },
+            { from: { node: "through", socket: "value" }, to: { node: "share", socket: "b" } },
+            { from: { node: last, socket: "vector" }, to: { node: "seen", socket: "a" } },
+            { from: { node: "share", socket: "value" }, to: { node: "seen", socket: "scale" } },
+          ]
+        : []),
     ],
-    output: tinted ? { node: "tint", socket: "vector" } : { node: "emit", socket: "vector" },
+    output: { node: fog ? "seen" : last, socket: "vector" },
   }
 }
 
@@ -1660,13 +1753,14 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     if (m.unlit && m.additive) {
       const f = m.emissiveFactor.map((c) => Math.round(c * 1e5) / 1e5) as [number, number, number]
       const tint = f.some((c) => c !== 1) ? `:${f.join(",")}` : ""
+      const fog = m.fog
       add(
-        `light:${m.emissiveStrength}${tint}`,
+        `light:${m.emissiveStrength}${tint}${fog ? ":haze" : ""}`,
         () => ({
-          id: `stage-light-sheet-x${m.emissiveStrength}${tint ? `-${f.map((c) => c.toFixed(4)).join("-")}` : ""}`,
-          label: `Stage Light Sheet ×${m.emissiveStrength}`,
+          id: `stage-light-sheet-x${m.emissiveStrength}${tint ? `-${f.map((c) => c.toFixed(4)).join("-")}` : ""}${fog ? "-haze" : ""}`,
+          label: `Stage Light Sheet ×${m.emissiveStrength}${fog ? " (in haze)" : ""}`,
           materials: [],
-          graph: stageLightSheetGraph(m.emissiveStrength, f),
+          graph: stageLightSheetGraph(m.emissiveStrength, f, fog),
           renderClass: "auto",
           blend: "additive" as const,
         }),
@@ -1684,6 +1778,21 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
           label: `Stage Sheet ×${m.emissiveStrength}${hashed ? " (cutout)" : ""}`,
           materials: [],
           graph: stageSheetGraph(m.emissiveStrength),
+          renderClass: "auto",
+          ...(hashed ? { alphaMode: "hashed" as const } : {}),
+        }),
+        m.name,
+      )
+      continue
+    }
+    if (m.lightmap) {
+      add(
+        `lightmap:${m.emissiveStrength}:${hashed ? "cut" : ""}:${m.principled ? "principled" : ""}`,
+        () => ({
+          id: `stage-lightmap-x${m.emissiveStrength}${hashed ? "-cutout" : ""}${m.principled ? "-principled" : ""}`,
+          label: `Stage Baked ×${m.emissiveStrength}${hashed ? " (cutout)" : ""}${m.principled ? " (Principled)" : ""}`,
+          materials: [],
+          graph: stageLightmapGraph(m.emissiveStrength, m.principled),
           renderClass: "auto",
           ...(hashed ? { alphaMode: "hashed" as const } : {}),
         }),

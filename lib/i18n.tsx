@@ -659,13 +659,9 @@ const en = {
     stageGlbHelp: {
       open: "From Blender",
       title: "Export stage GLB from Blender",
-      steps: [
-        "Download the add-on below.",
-        "In Blender: Edit → Preferences → Add-ons → ▾ → Install from Disk… → the zip.",
-        "File → Export → REZE DESIGN Stage (.glb).",
-        "Here: Stage → GLB file → the .glb.",
-      ],
-      download: "Download the add-on (.zip)",
+      before: "Export a GLB stage with ",
+      link: "our extension",
+      after: "",
     },
     uploadStagePmx: "Upload stage (PMX / GLB)",
     uploadPropPmx: "Upload prop PMX",
@@ -1799,13 +1795,9 @@ const zh: Dictionary = {
     stageGlbHelp: {
       open: "从 Blender",
       title: "从 Blender 导出 GLB 场景",
-      steps: [
-        "下载下方的插件。",
-        "在 Blender 中：编辑 → 偏好设置 → 插件 → ▾ → 从磁盘安装… → 选这个 zip。",
-        "文件 → 导出 → REZE DESIGN Stage (.glb)。",
-        "在这里：舞台 → GLB 文件 → 选这个 .glb。",
-      ],
-      download: "下载插件（.zip）",
+      before: "用",
+      link: "我们的插件",
+      after: "导出 GLB 舞台",
     },
     uploadStagePmx: "上传舞台（PMX / GLB）",
     uploadPropPmx: "上传道具 PMX",

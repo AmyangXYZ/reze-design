@@ -10,7 +10,7 @@ import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
 import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
 import { sameGradeLook, type GradeSpec } from "@/lib/grade"
 import { sameGraphLook } from "@/lib/materials"
-import { stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
+import { stageLightmapGraph, stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
@@ -128,11 +128,20 @@ function isAppStageGraph(graph: ShaderGraph): boolean {
   const emit = graph.nodes.find((n) => n.id === "emit" && n.type === "vector_math/scale")
   const strength = Number(emit?.inputs?.scale ?? 1)
   if (!Number.isFinite(strength)) return false
+  // a haze glow's sheet carries its stage's fog terms
+  const f = graph.nodes.find((n) => n.id === "f" && n.type === "math/multiply_add")
+  const through = graph.nodes.find((n) => n.id === "through" && n.type === "math/multiply_add")
+  const fog = f && through
+    ? { distance: [Number(f.inputs?.b ?? 0), Number(f.inputs?.c ?? 0)] as [number, number], amount: Number(through.inputs?.b ?? 0) }
+    : null
   return (
     sameGraphLook(graph, stageSheetGraph(strength)) ||
     sameGraphLook(graph, stageLightSheetGraph(strength)) ||
+    (!!fog && sameGraphLook(graph, stageLightSheetGraph(strength, [1, 1, 1], fog))) ||
     sameGraphLook(graph, stagePbrGraph(strength)) ||
-    sameGraphLook(graph, stagePbrGraph(strength, true))
+    sameGraphLook(graph, stagePbrGraph(strength, true)) ||
+    sameGraphLook(graph, stageLightmapGraph(strength)) ||
+    sameGraphLook(graph, stageLightmapGraph(strength, true))
   )
 }
 
