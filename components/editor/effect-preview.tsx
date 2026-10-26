@@ -36,6 +36,14 @@ const particleCount = (wgsl: string) => {
 const additive = (wgsl: string) => /^[ \t]*#blend[ \t]+additive/m.test(wgsl)
 /** `#bloom` — the pool reaches the bloom pyramid in the scene. */
 const blooms = (wgsl: string) => /^[ \t]*#bloom\b/m.test(wgsl)
+/** A shade that casts its own rays from the lens draws a SOLID thing inside its
+ *  card (a sprite, a pumpkin), sized by the particle's size. A drop a pixel wide
+ *  needs the boost below; a solid thing needs less than the card factor, or a
+ *  few of them on their orbits grow into one another and read as a blob. */
+const solidParticles = (wgsl: string) => {
+  const i = wgsl.search(/\bfn\s+particleShade\s*\(/)
+  return i >= 0 && /\brzCamera(Pos|Right|Up)\s*\(/.test(wgsl.slice(i))
+}
 /** Both halves or neither, as the engine requires of a ribbon. */
 const definesTrails = (wgsl: string) =>
   /\bfn\s+trailWidth\s*\(/.test(wgsl) && /\bfn\s+trailShade\s*\(/.test(wgsl)
@@ -847,6 +855,7 @@ const PARTICLE_RENDER = (wgsl: string) =>
   // halo — drew as small dim dots and looked worse than an effect that never
   // wanted bloom at all. Floating Stars beside Ember Drift was exactly that.
   `\nconst PV_BLOOM: f32 = ${blooms(wgsl) ? "1.0" : "0.0"};\n` +
+  `const PV_SIZE_BOOST: f32 = ${solidParticles(wgsl) ? "0.5" : "PV_PARTICLE_BOOST"};\n` +
   /* wgsl */ `
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
 ${TEXTURE_API}
@@ -889,7 +898,7 @@ struct PVOut {
   //
   // A floor of 1, so a card larger than the reference is left alone rather than
   // having its particles shrunk.
-  let size = p.size * pvCardScale() * PV_PARTICLE_BOOST;
+  let size = p.size * pvCardScale() * PV_SIZE_BOOST;
   let along = dir * corner.y * size * max(p.stretch, 1.0);
   let across = vec2f(dir.y, -dir.x) * corner.x * size;
   let world = p.pos + right * (along.x + across.x) + up * (along.y + across.y);
@@ -902,7 +911,11 @@ struct PVOut {
 }
 
 @fragment fn fs(in: PVOut) -> @location(0) vec4f {
-  let c = particleShade(particles[in.id], in.uv);
+  // The shade is handed the size the card drew the quad at, so a shade that
+  // builds its picture from the quad's size fills the quad it was given.
+  var shown = particles[in.id];
+  shown.size = shown.size * pvCardScale() * PV_SIZE_BOOST;
+  let c = particleShade(shown, in.uv);
   // A STAND-IN FOR BLOOM, not bloom: the part of the colour above white is what
   // the pyramid would have spread, so it is added back here as a soft core
   // falling off across the quad. It cannot reach past the particle the way a
