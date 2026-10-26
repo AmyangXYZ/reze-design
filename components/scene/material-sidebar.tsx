@@ -18,7 +18,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { groupLabel, sameGraphLook } from "@/lib/materials"
-import { stockGraphs } from "@/lib/stock"
+import { stockGraphs, styleGraphs } from "@/lib/stock"
 import { type GraphItem } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import type { MaterialRow } from "@/hooks/use-engine"
@@ -460,7 +460,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       >
                         {g.graph.name === ENGINE_DEFAULT_GRAPH
                           ? t.materials.defaultGraph
-                          : stockGraphs().some((e) => e.name === g.graph.name)
+                          : [...stockGraphs(), ...styleGraphs()].some((e) => e.name === g.graph.name)
                             ? stockName("graph", g.graph, locale)
                             : g.graph.name}
                         {editedGroups.has(g.id) && ` · ${t.scene.edited}`}
