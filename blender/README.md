@@ -6,7 +6,7 @@ Turns a Blender scene into a `.glb` stage for REZE DESIGN.
 
 ## Install
 
-1. Download [`dist/reze_stage_export-1.0.0.zip`](dist/reze_stage_export-1.0.0.zip).
+1. Download [`dist/reze_stage_export-1.0.1.zip`](dist/reze_stage_export-1.0.1.zip).
 2. In Blender (4.2+): Edit → Preferences → Add-ons → ▾ (top right) → **Install from Disk…** → pick the zip.
 
 ## Use
@@ -34,7 +34,7 @@ Turns a Blender scene into a `.glb` stage for REZE DESIGN.
 
 ## 安装
 
-1. 下载 [`dist/reze_stage_export-1.0.0.zip`](dist/reze_stage_export-1.0.0.zip)。
+1. 下载 [`dist/reze_stage_export-1.0.1.zip`](dist/reze_stage_export-1.0.1.zip)。
 2. 在 Blender（4.2+）中：编辑 → 偏好设置 → 插件 → ▾（右上角）→ **从磁盘安装…** → 选这个 zip。
 
 ## 使用

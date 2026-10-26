@@ -56,7 +56,7 @@
 bl_info = {
     "name": "REZE DESIGN Stage Export",
     "author": "AmyangXYZ <amyang.xyz@gmail.com>",
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "blender": (4, 2, 0),
     "location": "File > Export > REZE DESIGN Stage (.glb)",
     "description": "Export the scene as a reze-design stage: lights, world, haze, glow, particles",
@@ -827,6 +827,17 @@ def _particles(scene, notes):
 
 RANGE_FLOOR = 0.002   # app light units: a lamp this dim is dark on any albedo
 LAMP_CAP = 256        # the app's lamps, all told
+# THE LAMPS A STAGE CAN CARRY AT A FRAME RATE. Every stage pixel walks each
+# lamp that reaches it, and a room's lamps reach all of it, so a frame costs
+# about the same per lamp: 破碎空间's 246 glow lamps drew a frame in 9× the
+# time its sun alone did, merged into 32 in 2.4×, its light the same.
+LAMP_BUDGET = 32
+# Two glows MERGE AS ONE PANEL only facing within this of each other (cos).
+# A merged lamp facing no one way is a point, which sends its light every way
+# evenly: two sides of a glowing shard as one point lit the floor they faced
+# a third dimmer. So panels merge with their own facing first, and across
+# facings only when the budget cannot be met without.
+SAME_FACING = 0.95
 
 
 def _blackbody(kelvin):
@@ -916,7 +927,8 @@ def _lights(scene, notes):
 #   - anything else (tubes, strips, bulbs, signs) emits every way: points along
 #     its length, together of intensity L·A/4 — a closed surface's mean over
 #     all directions — gathered into GLOW_CELL cells so a hundred LEDs on one
-#     bar are one lamp, and the strongest kept up to the app's lamp cap.
+#     bar are one lamp;
+#   - and the cells merged down to the stage's lamp budget (_merge_glow_lamps).
 #
 # Named "<object> glow" so they can be told apart. A surface whose glow comes
 # from nodes (a picture, a gradient) is left to bloom, with a note.
@@ -959,11 +971,132 @@ def _haze_card(mat):
     return bool(r.get("additive") or r.get("cover"))
 
 
+def _merge_glow_lamps(lamps, budget):
+    """The glow lamps merged down to `budget`, its light kept.
+
+    Each step merges the pair that moves the least light: the energy-weighted
+    distance between them, w_a·w_b/(w_a + w_b)·d² (Ward's), among glows that
+    face one way (SAME_FACING). A merged lamp carries the sum of their flux (a
+    panel's π·I, a point's 4π·I) and lights the cast's spot as they did; it
+    stays a panel while its members face one way (the mean of their normals
+    past 0.9), else it is a point. Its bulb is half the members' spread, so
+    a cluster has no hot point at its middle that its members never had."""
+    import numpy as np
+    if len(lamps) <= budget:
+        return sorted(lamps, key=lambda l: -l[0])
+    groups = []
+    for peak, kind, pos, normal, I, near, name, tube, mats in lamps:
+        I = np.asarray(I, dtype=np.float64)
+        flux = I * (math.pi if kind == "panel" else 4 * math.pi)
+        w = float(max(flux))
+        p = np.asarray(pos, dtype=np.float64)
+        own = np.zeros((3, 3))
+        if tube is not None:
+            own = np.outer(tube, tube) / 3          # an even run's spread along it
+        groups.append({
+            "flux": flux, "w": w, "wp": p * w, "wpp": (np.outer(p, p) + own) * w,
+            "wn": (np.asarray(normal) * w) if kind == "panel" else np.zeros(3),
+            "wd": w / max(float(p @ p), 1e-6),
+            "panel": kind == "panel", "near": float(near), "names": [name], "mats": set(mats),
+            "tube": tube, "kind": kind, "normal": normal, "I": I, "pos": p,
+        })
+
+    def centre(g):
+        return g["wp"] / g["w"]
+
+    def facing(g):
+        n = g["wn"] / g["w"]
+        length = float(np.linalg.norm(n))
+        return n / length if g["panel"] and length > 0.9 else None
+
+    n = len(groups)
+    W = np.array([g["w"] for g in groups])
+    P = np.array([centre(g) for g in groups])
+    F = np.array([facing(g) if facing(g) is not None else np.zeros(3) for g in groups])
+    panel = np.array([facing(g) is not None for g in groups])
+
+    def costs(i, strict):
+        """Group i's merge cost against every group; inf for a pair that
+        would no longer face one way, while `strict`."""
+        c = W * W[i] / (W + W[i]) * ((P - P[i]) ** 2).sum(-1)
+        if strict:
+            same = (panel & (F @ F[i] > SAME_FACING)) if panel[i] else ~panel
+            c = np.where(same, c, np.inf)
+        return c
+
+    live = list(range(n))
+    strict = True
+
+    def matrix():
+        C = np.full((n, n), np.inf)
+        for i in live:
+            row = costs(i, strict)
+            C[i, i + 1:] = row[i + 1:]
+        C[:, [k for k in range(n) if groups[k] is None]] = np.inf
+        return C
+    C = matrix()
+    while len(live) > budget:
+        i, j = np.unravel_index(np.argmin(C), C.shape)
+        if not np.isfinite(C[i, j]):
+            strict = False
+            C = matrix()
+            continue
+        a, b = groups[i], groups[j]
+        merged = {
+            "flux": a["flux"] + b["flux"], "w": a["w"] + b["w"], "wp": a["wp"] + b["wp"], "wpp": a["wpp"] + b["wpp"],
+            "wn": a["wn"] + b["wn"], "wd": a["wd"] + b["wd"], "panel": a["panel"] and b["panel"], "near": max(a["near"], b["near"]),
+            "names": a["names"] + b["names"], "mats": a["mats"] | b["mats"],
+        }
+        groups[i] = merged
+        groups[j] = None
+        live.remove(j)
+        W[i], P[i] = merged["w"], centre(merged)
+        f = facing(merged)
+        panel[i], F[i] = f is not None, (f if f is not None else 0)
+        row = costs(i, strict)
+        C[j, :] = np.inf
+        C[:, j] = np.inf
+        C[i, i + 1:] = row[i + 1:]
+        C[:i, i] = row[:i]
+        C[:i, i][[k for k in range(i) if groups[k] is None]] = np.inf
+        C[i, i + 1:][[k - i - 1 for k in range(i + 1, n) if groups[k] is None]] = np.inf
+
+    out = []
+    for k in live:
+        g = groups[k]
+        if len(g["names"]) == 1:
+            out.append((float(max(g["I"])) / math.pi, g["kind"], g["pos"], g["normal"], g["I"], g["near"], g["names"][0], g["tube"], g["mats"]))
+            continue
+        c = centre(g)
+        cov = g["wpp"] / g["w"] - np.outer(c, c)
+        # WHERE THE CAST STANDS (the origin) it is lit as its members lit it:
+        # along their mean direction, at the distance whose inverse square is
+        # theirs. Their centre alone sits inside a curve of them — a run of
+        # glows on a dome, merged, came down toward the floor and lit it double.
+        if float(np.linalg.norm(c)) > 1e-3:
+            c = c / float(np.linalg.norm(c)) * math.sqrt(g["w"] / g["wd"])
+        n = facing(g)
+        if n is not None:
+            flatten = np.eye(3) - np.outer(n, n)
+            cov = flatten @ cov @ flatten
+            I = g["flux"] / math.pi
+        else:
+            I = g["flux"] / (4 * math.pi)
+        # A bulb, never a tube: a tube lamp shades at several times a point's
+        # cost (破碎空间's 32 merged lamps: 296 ms a frame as tubes, 157 as bulbs)
+        spread = math.sqrt(max(float(np.trace(cov)), 0.0))
+        first = sorted(g["names"])[0].split(" +")[0]
+        name = f"{first} +{len(g['names']) - 1}"
+        near = max(g["near"], 0.5 * spread)
+        out.append((float(max(I)) / math.pi, "panel" if n is not None else "point", c, n, I, near, name, None, g["mats"]))
+    return sorted(out, key=lambda l: -l[0])
+
+
 def _glow_lamps(scene, notes):
     import numpy as np
     from mathutils import Vector
     existing = sum(1 for ob in scene.objects if ob.type == "LIGHT" and ob.visible_get() and not ob.hide_render)
-    budget = max(0, LAMP_CAP - existing - 8)
+    budget = max(8, min(LAMP_BUDGET, LAMP_CAP - 8) - existing)
     depsgraph = bpy.context.evaluated_depsgraph_get()
     cells = {}      # (ix, iy, iz, facing) → [intensity rgb (Cycles W/sr), Σ weight·position, Σ weight, names, Σ weight·normal, faces (centre, area, spread), materials]
     panels = []     # (position, normal, radiance, area, name)
@@ -1105,8 +1238,8 @@ def _glow_lamps(scene, notes):
             continue
         lamps.append((max(I) / math.pi, "point", pw / w, None, I, GLOW_CELL / 2, name, None, mats))
     lamps = [l for l in lamps if l[0] >= GLOW_MIN]
-    lamps.sort(key=lambda l: -l[0])
-    kept, dropped = lamps[:budget], lamps[budget:]
+    cells_n = len(lamps)
+    kept = _merge_glow_lamps(lamps, budget)
     for k, (peak, kind, pos, normal, I, near, name, tube, _mats) in enumerate(kept):
         top = float(max(I))
         data = bpy.data.lights.new(f"{name} glow {k + 1}", "SPOT" if kind == "panel" else "POINT")
@@ -1130,7 +1263,7 @@ def _glow_lamps(scene, notes):
     # lamps already draw its reflection in every glossy surface, and the
     # capture's picture of the strip put it there a second time (the tunnel's
     # walls a fifth too bright). Only where all of a material's glow was kept.
-    carried = set().union(*(l[8] for l in kept)) - set().union(*(l[8] for l in dropped)) if kept else set()
+    carried = set().union(*(l[8] for l in kept)) if kept else set()
     for mname in carried:
         m = bpy.data.materials.get(mname)
         if m is not None:
@@ -1144,9 +1277,8 @@ def _glow_lamps(scene, notes):
         note(notes, f"glowing surfaces: {len(kept)} lamp(s) throwing their light into the room "
                     f"({tubes} strip tube(s), {sum(1 for l in kept if l[1] == 'panel') - tubes} panel spot(s), "
                     f"{sum(1 for l in kept if l[1] == 'point')} point(s))")
-    if dropped:
-        share = sum(l[0] for l in dropped) / max(1e-9, sum(l[0] for l in lamps))
-        note(notes, f"glowing surfaces: {len(dropped)} weaker lamp(s) left out at the app's {LAMP_CAP}-lamp cap ({share:.0%} of the glow)")
+    if len(kept) < cells_n:
+        note(notes, f"glowing surfaces: {cells_n} glowing cells merged into {len(kept)} lamp(s), the stage's budget of {LAMP_BUDGET}")
 
 
 # ── The room's own light: ambient and haze ──

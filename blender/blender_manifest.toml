@@ -4,7 +4,7 @@ schema_version = "1.0.0"
 # build_extension.py, which packs reze_stage_export.py as its __init__.py —
 # the single file stays the source, installable either way.
 id = "reze_stage_export"
-version = "1.0.0"
+version = "1.0.1"
 name = "REZE DESIGN Stage Export"
 tagline = "Export a scene as a reze-design stage, lit as Blender lights it"
 maintainer = "AmyangXYZ <amyang.xyz@gmail.com>"
