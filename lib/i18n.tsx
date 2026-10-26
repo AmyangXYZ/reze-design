@@ -658,8 +658,7 @@ const en = {
     uploadStageGlb: "GLB file",
     stageGlbHelp: {
       open: "From Blender",
-      title: "Export stage GLB from Blender",
-      before: "Export a GLB stage with ",
+      before: "Export a GLB stage from Blender with ",
       link: "our extension",
       after: "",
     },
@@ -1794,10 +1793,9 @@ const zh: Dictionary = {
     uploadStageGlb: "GLB 文件",
     stageGlbHelp: {
       open: "从 Blender",
-      title: "从 Blender 导出 GLB 场景",
       before: "用",
       link: "我们的插件",
-      after: "导出 GLB 舞台",
+      after: "从 Blender 导出 GLB 舞台",
     },
     uploadStagePmx: "上传舞台（PMX / GLB）",
     uploadPropPmx: "上传道具 PMX",

@@ -9043,12 +9043,9 @@ function Lab() {
                               <PopoverContent
                                 align="end"
                                 onOpenAutoFocus={(e) => e.preventDefault()}
-                                className="w-80 border-line-strong bg-surface-raised p-0 backdrop-blur-xs"
+                                className="w-auto border-line-strong bg-surface-raised px-3 py-2 backdrop-blur-xs"
                               >
-                                <div className="flex h-8 items-center px-3.5 font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">
-                                  {t.lab.stageGlbHelp.title}
-                                </div>
-                                <p className="border-t border-line px-3.5 py-3 text-xs">
+                                <p className="text-xs whitespace-nowrap">
                                   {t.lab.stageGlbHelp.before}
                                   <a href={GLB_ADDON_URL} target="_blank" rel="noreferrer" className="text-foreground underline underline-offset-2">
                                     {t.lab.stageGlbHelp.link}
