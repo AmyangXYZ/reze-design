@@ -451,7 +451,7 @@ fn foreground (§2.3)，带有场景深度
 #param color tint #3b82f6  a colour dial, hex default
 #param vec3 offset 0 1 0   a vector dial
 #duration 3.0              one firing lasts 3 s — the effect is a HIT
-#dissolve                  takes subject 0 apart and back
+#dissolve                  takes its subjects apart and back
 #ground #202020 grain 0.3  replaces the floor while installed
 #mirror                    the effect is a mirror
 ```

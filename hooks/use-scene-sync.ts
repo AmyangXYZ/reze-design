@@ -125,8 +125,7 @@ export function useSceneSync({
    *  the hole, "alpha" leaves it empty. */
   exportBackground = "scene",
   /** Cast member ids, in order — stages excluded, the same list the engine's
-   *  own subjects are drawn from. Only used to decide WHO an effect that
-   *  declares a dissolve is about; the first of them is subject 0. */
+   *  own subjects are drawn from. */
   castIds = [],
   /** Each stage and the sun it carries for itself, or null: a directional
    *  light on the stage's layer, while the scene's sun keys the cast. */
