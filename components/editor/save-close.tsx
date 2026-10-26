@@ -6,6 +6,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Notice } from "@/components/ui/notice"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useT } from "@/lib/i18n"
@@ -64,16 +65,16 @@ export function SaveCloseDialog({
             />
           )}
           {error && (
-            <p className="max-h-16 overflow-y-auto font-mono text-2xs leading-relaxed break-all text-red-400">
-              {error}
-            </p>
+            <Notice tone="error" className="font-mono text-2xs leading-relaxed break-all select-text">
+              <p className="max-h-16 overflow-y-auto">{error}</p>
+            </Notice>
           )}
           <div className="flex gap-2">
             <Button
               type="button"
               variant="ghost"
               onClick={onDiscard}
-              className="h-8 flex-1 text-xs text-red-400 hover:bg-red-400/10 hover:text-red-400"
+              className="h-8 flex-1 text-xs text-foreground hover:bg-red-400/10 hover:text-red-400"
             >
               {t.library.discard}
             </Button>

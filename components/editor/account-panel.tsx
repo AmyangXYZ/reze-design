@@ -14,6 +14,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Notice } from "@/components/ui/notice"
 import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Cover } from "@/components/ui/cover"
 import { GithubMark, GoogleMark } from "@/components/icons"
@@ -183,7 +184,11 @@ function EmailCodeForm() {
           </Button>
         </>
       )}
-      {error && <p className="select-text text-2xs text-amber-400">{error}</p>}
+      {error && (
+        <Notice tone="warning" className="text-2xs select-text">
+          {error}
+        </Notice>
+      )}
     </form>
   )
 }
@@ -339,7 +344,9 @@ export function HandleDialog() {
         <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
           {t.account.handleHint}
         </DialogDescription>
-        <p className="mt-1.5 text-xs leading-snug text-amber-400">{t.account.handleOnce}</p>
+        <Notice tone="warning" className="mt-1.5 text-xs leading-snug">
+          {t.account.handleOnce}
+        </Notice>
         {session?.user.username && <HandleField current={session.user.username} />}
       </DialogContent>
     </Dialog>
@@ -417,9 +424,14 @@ function HandleField({ current }: { current: string }) {
           {t.account.handleSave}
         </Button>
       </form>
-      {message && (
-        <div className={cn("mt-1 text-2xs", state === "saved" ? "text-blue-400" : "text-red-400")}>{message}</div>
-      )}
+      {message &&
+        (state === "saved" ? (
+          <div className="mt-1 text-2xs">{message}</div>
+        ) : (
+          <Notice tone="error" className="mt-1 text-2xs select-text">
+            {message}
+          </Notice>
+        ))}
     </div>
   )
 }
@@ -541,12 +553,13 @@ export function AccountButton({
           </div>
         )}
         <Portfolio handle={session.user.username ?? null} onOpenLibrary={onOpenLibrary} />
-        {/* Leaving is a word in the destructive red, on a line of its own. */}
+        {/* Leaving is a word on a line of its own, in the ink, turning the
+            destructive red as the pointer reaches it. */}
         <div className="border-t border-line py-1">
           <Button
             variant="bare"
             onClick={() => void signOut()}
-            className="mx-1 flex h-7 w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-interior px-2.5 text-left text-xs text-red-400 hover:bg-foreground/[0.07] hover:text-red-400"
+            className="mx-1 flex h-7 w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-interior px-2.5 text-left text-xs text-foreground hover:bg-foreground/[0.07] hover:text-red-400"
           >
             <LogOut className="size-3.5" />
             {t.account.signOut}

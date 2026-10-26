@@ -85,11 +85,12 @@ export function LibraryLike({ likeCount, liked, canLike, onToggle, large }: Like
         // disabled:opacity-50 comes from the primitive and would dim the COUNT,
         // which is a fact about the item rather than about your ability to act.
         "disabled:pointer-events-auto disabled:cursor-default disabled:opacity-100",
-        liked ? "text-red-400" : "text-muted-foreground",
+        "text-muted-foreground",
         canLike && !liked && "hover:text-red-400",
       )}
     >
-      <Heart className={cn(large ? "size-4" : "size-3.5", liked && "fill-current")} />
+      {/* The heart is the mark; the count is a fact, in the ink. */}
+      <Heart className={cn(large ? "size-4" : "size-3.5", liked && "fill-current text-red-400")} />
       <span className="leading-none">{likeCount}</span>
     </Button>
   )

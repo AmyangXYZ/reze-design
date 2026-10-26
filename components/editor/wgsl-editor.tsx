@@ -8,6 +8,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Code, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Notice } from "@/components/ui/notice"
 import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { useUndoScope } from "@/hooks/use-undo-scope"
@@ -318,12 +319,11 @@ function EditorBody({
       {/* One status row: errors (or the ok note) sit left of the Compile button. */}
       <div className="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2">
         {result && !result.ok && (
-          <span
-            className="min-w-0 flex-1 truncate text-2xs text-red-400"
-            style={{ fontFamily: CODE_FONT }}
-          >
-            {result.diagnostics[0]}
-          </span>
+          <Notice tone="error" className="min-w-0 flex-1 text-2xs select-text">
+            <span className="block truncate" style={{ fontFamily: CODE_FONT }}>
+              {result.diagnostics[0]}
+            </span>
+          </Notice>
         )}
         {result?.ok && (
           <span className="min-w-0 truncate text-2xs text-muted-foreground" style={{ fontFamily: CODE_FONT }}>

@@ -668,7 +668,7 @@
 }
 /* A menu's rows on paper light in the sheet's accent, which reads on either
    side; the chrome's white tint vanishes on the light one. */
-[data-paper] [data-slot^="context-menu-"]:is(:focus, [data-state="open"]):not(.text-red-400) {
+[data-paper] [data-slot^="context-menu-"]:is(:focus, [data-state="open"]):not([data-variant="danger"]) {
   background-color: var(--accent);
 }
 [data-paper-at="pop"] {

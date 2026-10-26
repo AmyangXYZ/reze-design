@@ -8,6 +8,7 @@ import type { Engine } from "reze-engine"
 import { toast } from "sonner"
 import { Camera, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Notice } from "@/components/ui/notice"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -872,7 +873,11 @@ export const RenderPanel = memo(function RenderPanel({
               </SelectContent>
             </Select>
           </Row>
-          {upscaled && !compositing && <div className="mt-2 text-xs text-amber-400/90">{t.render.upscaleWarn}</div>}
+          {upscaled && !compositing && (
+            <Notice tone="warning" className="mt-2 text-xs">
+              {t.render.upscaleWarn}
+            </Notice>
+          )}
         </div>
 
         {/* No section title (the surface hosting this already says Export) and
@@ -939,16 +944,20 @@ export const RenderPanel = memo(function RenderPanel({
             </div>
           </div>
         ) : result ? (
-          <div className={`mt-2 text-center text-xs ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
-            {result.ok
-              ? result.frames
+          result.ok ? (
+            <div className="mt-2 text-center text-xs text-muted-foreground">
+              {result.frames
                 ? t.render.seqDone(result.frames, result.file ?? "", result.size ?? "")
                 : (result.script ? t.render.scriptDone : result.still ? t.render.stillDone : t.render.done)(
                     result.file ?? "",
                     result.size ?? "",
-                  )
-              : t.render.failed(result.message ?? "")}
-          </div>
+                  )}
+            </div>
+          ) : (
+            <Notice tone="error" className="mt-2 text-xs select-text">
+              {t.render.failed(result.message ?? "")}
+            </Notice>
+          )
         ) : null}
       </div>
     </ScrollArea>

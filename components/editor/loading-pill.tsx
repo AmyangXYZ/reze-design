@@ -9,6 +9,7 @@
 import { useMemo } from "react"
 import type { BundleProgress, DownloadFailure } from "@/hooks/use-engine"
 import { Button } from "@/components/ui/button"
+import { Notice } from "@/components/ui/notice"
 import { useT } from "@/lib/i18n"
 import type { Scene } from "@/lib/scene"
 
@@ -42,8 +43,10 @@ export function LoadError({ error, failure, onRetry }: { error: string; failure:
   const d = t.editor.download
   if (!failure) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-red-400">
-        {t.editor.engineError(error)}
+      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs">
+        <Notice tone="error" className="select-text">
+          {t.editor.engineError(error)}
+        </Notice>
       </div>
     )
   }

@@ -146,7 +146,7 @@ function Step({ summary, running }: { summary: StepSummary; running: boolean }) 
     >
       <div className="truncate">{summary.title}</div>
       {summary.detail && (
-        <div className={cn("break-words whitespace-pre-wrap", summary.failed ? "text-amber-400" : "text-muted-foreground")}>{summary.detail}</div>
+        <div className={cn("break-words whitespace-pre-wrap text-muted-foreground", summary.failed && "select-text")}>{summary.detail}</div>
       )}
     </Row>
   )
@@ -614,7 +614,7 @@ export function AgentPanel({
         )}
         {!busy && notice && !onSetup && (
           // How it ended, in words, and the one thing that helps. A fault is
-          // amber; a stop the person (or the step limit) chose is not.
+          // marked amber; a stop the person (or the step limit) chose is not.
           <Row
             mark={
               <span
@@ -625,7 +625,7 @@ export function AgentPanel({
               />
             }
           >
-            <p className={["stopped", "stoppedScene", "limit"].includes(notice.kind) ? "text-muted-foreground" : "text-amber-400"}>{text.notices[notice.kind]}</p>
+            <p className="text-muted-foreground">{text.notices[notice.kind]}</p>
             {notice.kept && <p className="text-muted-foreground">{text.kept}</p>}
             {notice.detail && <p className="line-clamp-2 break-words text-muted-foreground">{notice.detail}</p>}
             {notice.action && (

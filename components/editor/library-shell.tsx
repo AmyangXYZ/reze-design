@@ -726,11 +726,12 @@ export function LibraryDetail({
             onClick={like.onToggle}
             className={cn(
               "flex shrink-0 items-center gap-1 font-mono text-xs disabled:cursor-default disabled:text-muted-foreground",
-              like.liked ? "text-red-400" : "text-muted-foreground",
+              "text-muted-foreground",
               like.canLike && "hover:text-red-400",
             )}
           >
-            <Heart className={cn("size-3.5", like.liked && "fill-current")} />
+            {/* The heart is the mark; the count is a fact, in the ink. */}
+            <Heart className={cn("size-3.5", like.liked && "fill-current text-red-400")} />
             {like.count}
           </Button>
         )}

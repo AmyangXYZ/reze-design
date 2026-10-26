@@ -32,8 +32,12 @@ be on screen.
 
 **Three accents, one meaning each, always at -400.** `blue-400`
 selected/active, as a fill or an underline · `amber-400` warning (it still works, but read this) ·
-`red-400` destructive or error. A tinted box uses the accent at an alpha
-(`bg-amber-400/10 border-amber-400/30`), with text in the accent itself. No
+`red-400` destructive or error. Words are always in the ink: the accent is a
+mark beside them, never their colour. A warning or an error is a `<Notice>`
+(`components/ui/notice.tsx`): ink words after an amber or red dot (a toast's
+icon is the same mark). A destructive label (Delete, Sign out, a danger menu
+row) is ink, red only where the pointer is. A liked heart is red; its count is
+ink. No tinted boxes behind words. No
 lighter or darker shades, including on hover: a solid accent button hovers at
 `bg-blue-400/90`, and its text is `text-on-accent`, never `text-white`.
 Outlines are in the ink: a focus ring, a focused field's border, a picked

@@ -48,7 +48,9 @@ function ContextMenuItem({
   return (
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
-      className={cn(itemBase, variant === "danger" && "text-red-400 focus:bg-red-400/10 focus:text-red-400", className)}
+      data-variant={variant}
+      // A danger row is in the ink like the rest, and red where the pointer is.
+      className={cn(itemBase, variant === "danger" && "focus:bg-red-400/10 focus:text-red-400", className)}
       {...props}
     />
   )

@@ -268,11 +268,11 @@ export function SceneViewer(props: ViewerProps) {
                   aria-disabled={!like.canLike}
                   className={cn(
                     "flex h-8 items-center gap-1.5 font-mono text-xs",
-                    like.liked ? "text-red-400" : "text-foreground",
+                    "text-foreground",
                     like.canLike ? "hover:text-red-400" : "cursor-default",
                   )}
                 >
-                  <Heart className={cn("size-4", like.liked && "fill-current")} />
+                  <Heart className={cn("size-4", like.liked && "fill-current text-red-400")} />
                   {like.count}
                 </Button>
               </div>

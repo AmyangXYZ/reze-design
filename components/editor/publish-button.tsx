@@ -9,6 +9,7 @@ import { Check, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Notice } from "@/components/ui/notice"
 import { Textarea } from "@/components/ui/textarea"
 import { TagsInput } from "@/components/editor/tags-input"
 import { VisibilitySwitch, visibilityLocked, type Visibility } from "@/components/editor/library-shell"
@@ -160,7 +161,7 @@ export function PublishButton({
                 maxLength={60}
                 className={cn(PUBLISH_INPUT, clash && "border-red-400/60")}
               />
-              {clash && <p className="mt-1 text-2xs text-red-400">{t.library.nameTakenBy(clash)}</p>}
+              {clash && <Notice tone="error" className="mt-1 text-2xs select-text">{t.library.nameTakenBy(clash)}</Notice>}
             </label>
             <label className="block">
               <span className="text-xs text-muted-foreground">{t.library.publishDescription}</span>
@@ -192,8 +193,8 @@ export function PublishButton({
             </div>
           </div>
           <div className={PUBLISH_FOOT}>
-            {failed && <div className="text-2xs text-red-400">{t.gradeLibrary.publishFailed}</div>}
-            {nameTaken && <div className="text-2xs text-red-400">{t.library.nameTaken}</div>}
+            {failed && <Notice tone="error" className="text-2xs select-text">{t.gradeLibrary.publishFailed}</Notice>}
+            {nameTaken && <Notice tone="error" className="text-2xs select-text">{t.library.nameTaken}</Notice>}
             <Button
               type="submit"
               disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useCover } from "@/components/ui/cover"
 import { Input } from "@/components/ui/input"
+import { Mark, Notice } from "@/components/ui/notice"
 import { Textarea } from "@/components/ui/textarea"
 import { TagsInput } from "@/components/editor/tags-input"
 import {
@@ -547,21 +548,19 @@ function ShareSceneForm({
                 const rows = blocking.filter((u) => u.reason === reason)
                 if (rows.length === 0) return null
                 return (
-                  <div key={reason} className="rounded-interior border border-amber-400/30 bg-amber-400/10 p-2.5">
-                    <p className="text-xs font-medium text-amber-400">
+                  <Notice key={reason} tone="warning">
+                    <p className="text-xs font-medium">
                       {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
                     </p>
-                    <p className="mt-0.5 text-2xs leading-snug text-amber-400">
+                    <p className="mt-0.5 text-2xs leading-snug">
                       {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
                     </p>
                     {/* One grid for every row: the kind column is as wide as its
                         longest label, so the names start on one line. */}
-                    <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-2xs text-amber-400">
+                    <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-2xs">
                       {rows.map((u) => (
                         <li key={`${u.kind}:${u.name}`} className="col-span-3 grid min-h-5 grid-cols-subgrid items-center">
-                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-[18px]">
-                            {t.share.unpublishedKind[u.kind]}
-                          </span>
+                          <span className="justify-self-start text-muted-foreground">{t.share.unpublishedKind[u.kind]}</span>
                           <span className="truncate font-mono">{u.name}</span>
                           {reason === "missing" && (
                             // The look's own publish form, right here. React carries
@@ -576,7 +575,7 @@ function ShareSceneForm({
                                 payload={() => u.draft?.payload ?? u.payload}
                                 itemId={u.draft ? (draftOrigin(u.kind, u.draft.id).sourceId ?? u.draft.id) : undefined}
                                 forkedFromId={u.draft ? draftOrigin(u.kind, u.draft.id).forkedFromId : undefined}
-                                className="h-5 border border-amber-400/30 bg-transparent px-2 text-2xs text-amber-400 hover:bg-amber-400/10 [&_svg]:hidden"
+                                className="h-5 border border-line-strong bg-transparent px-2 text-2xs font-normal text-foreground hover:bg-foreground/10 [&_svg]:hidden"
                                 onPublished={(item) => {
                                   // The libraries' own promotion: the draft now lives on the server.
                                   addCommunityItem(item)
@@ -591,7 +590,7 @@ function ShareSceneForm({
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </Notice>
                 )
               })}
             {/* Name and description beside the image, with the description
@@ -693,7 +692,10 @@ function ShareSceneForm({
                 {/* What it read as, or why not, on the label's own row as the
                     credits' note is — so a warning appearing moves nothing. */}
                 {videoBad ? (
-                  <span className="min-w-0 truncate text-2xs text-red-400">{t.share.videoInvalid}</span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-2xs">
+                    <Mark tone="error" />
+                    <span className="truncate">{t.share.videoInvalid}</span>
+                  </span>
                 ) : (
                   videoLink && <span className="min-w-0 truncate text-2xs text-muted-foreground">{VIDEO_PLATFORM_NAMES[videoLink.platform]}</span>
                 )}
@@ -736,9 +738,9 @@ function ShareSceneForm({
             </div>
             <div data-publish-foot className={PUBLISH_FOOT}>
             {error && (
-              <div className="rounded-interior bg-red-400/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
+              <Notice tone="error" className="text-2xs leading-relaxed break-words select-text">
                 {error}
-              </div>
+              </Notice>
             )}
             <Button
               type="submit"

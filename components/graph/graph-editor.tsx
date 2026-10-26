@@ -25,6 +25,7 @@ import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
 import { Check, Download, Grip, Maximize2, Minimize2, RotateCcw, Upload, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Notice } from "@/components/ui/notice"
 import { RezeNode, RenameNodeProvider } from "@/components/graph/reze-node"
 import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
@@ -836,15 +837,13 @@ export function GraphEditor({
           )}
 
           {diagnostics.length > 0 && (
-            <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-line-strong bg-surface-raised px-3 py-2 text-xs">
-              {errors.length > 0 && (
-                <div className="font-medium text-red-400">{errors.length} error(s) — previous look kept</div>
-              )}
+            <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-line-strong bg-surface-raised px-3 py-2 text-xs select-text">
+              {errors.length > 0 && <div className="font-medium">{errors.length} error(s) — previous look kept</div>}
               {diagnostics.map((d, i) => (
-                <div key={i} className={d.severity === "error" ? "text-red-400" : "text-amber-400"}>
+                <Notice key={i} tone={d.severity === "error" ? "error" : "warning"}>
                   {d.nodeId && <span className="text-muted-foreground">[{d.nodeId}] </span>}
                   {d.message}
-                </div>
+                </Notice>
               ))}
             </div>
           )}

@@ -227,7 +227,7 @@ export function MobileStudio({
                 onClick={() => window.open(`/${session.user.username}`, "_blank", "noopener")}
               />
             )}
-            <Row label={<span className="text-red-400">{t.account.signOut}</span>} onClick={() => void signOut()} />
+            <Row label={t.account.signOut} onClick={() => void signOut()} />
           </Group>
         ) : (
           <Group>

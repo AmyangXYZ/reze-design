@@ -115,7 +115,8 @@ export function ConfirmDialog({
             </Button>
             {/* Destructive, and it is the one that carries the colour: red is
                 reserved for "this removes something", which is exactly what is
-                being asked about. */}
+                being asked about. On paper it is a word in the ink, taking the
+                accent as the pointer reaches it, as every label there does. */}
             <Button
               variant={tone === "destructive" ? "destructive" : "default"}
               size="sm"
@@ -124,7 +125,8 @@ export function ConfirmDialog({
                 tone === "accent" && "bg-blue-400 text-on-accent hover:bg-blue-400/90",
                 // The variant's own fill (dark: included) gives way on paper.
                 "in-data-[paper]:h-6 in-data-[paper]:bg-transparent! in-data-[paper]:px-0 in-data-[paper]:hover:bg-transparent! in-data-[paper]:hover:underline in-data-[paper]:underline-offset-4",
-                tone === "accent" ? "in-data-[paper]:text-blue-400!" : "in-data-[paper]:text-red-400!",
+                "in-data-[paper]:text-foreground! in-data-[paper]:font-medium",
+                tone === "accent" ? "in-data-[paper]:hover:text-blue-400!" : "in-data-[paper]:hover:text-red-400!",
               )}
               onClick={() => {
                 if (snoozeKey && snoozing) snooze(snoozeKey)

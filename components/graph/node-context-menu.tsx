@@ -86,7 +86,7 @@ export function NodeContextMenu({
               a.disabled
                 ? "cursor-default text-muted-foreground"
                 : a.danger
-                  ? "text-red-400 hover:bg-red-400/10"
+                  ? "text-foreground hover:bg-red-400/10 hover:text-red-400"
                   : "text-foreground hover:bg-accent",
             )}
           >

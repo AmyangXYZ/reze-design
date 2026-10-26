@@ -32,8 +32,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
-        warning: <TriangleAlertIcon className="size-4" />,
-        error: <OctagonXIcon className="size-4" />,
+        // A warning's and an error's icon is its mark, in the accent; the
+        // words stay in the toast's ink (components/ui/notice).
+        warning: <TriangleAlertIcon className="size-4 text-amber-400" />,
+        error: <OctagonXIcon className="size-4 text-red-400" />,
         loading: <Loader2Icon className="block size-4 animate-spin" />,
       }}
       // The loader box Sonner wraps a custom spinner in centres itself with

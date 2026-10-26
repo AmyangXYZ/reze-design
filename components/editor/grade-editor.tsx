@@ -11,6 +11,7 @@ import { GradePreview } from "@/components/editor/grade-preview"
 import { ColorWheel } from "@/components/editor/color-wheel"
 import { SliderRow } from "@/components/scene/scene-sidebar"
 import { Cover } from "@/components/ui/cover"
+import { Notice } from "@/components/ui/notice"
 import { applySplit, isGradeSpec, readSplit, resolveSpec, type GradeSpec, type Range } from "@/lib/grade"
 import { slug } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
@@ -155,9 +156,9 @@ function EditorBody({
         <Cover>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
           {importError && (
-            <div className="mb-2 rounded-chip border border-red-400/30 bg-red-400/10 px-2 py-1 text-2xs text-red-400">
+            <Notice tone="error" className="mb-2 text-2xs select-text">
               {importError}
-            </div>
+            </Notice>
           )}
           {/* Split tone first: the one move that covers most grading intent. */}
           <SliderRow

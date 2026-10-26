@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowLeft, Check, ExternalLink, Plus, RotateCw, Settings, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Mark, Notice } from "@/components/ui/notice"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
@@ -83,7 +84,12 @@ function Verdict({ entry, text }: { entry: ModelEntry; text: AgentSettingsText }
   if (entry.verdict === "checking") return <AstroidSpinner className="size-3 shrink-0 text-muted-foreground" />
   if (entry.verdict === "ready") return null
   // Text only still works — a note, not a warning.
-  return <span className={cn("shrink-0 text-2xs", entry.verdict === "textOnly" ? "text-muted-foreground" : "text-amber-400")}>{text.verdicts[entry.verdict]}</span>
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-2xs text-muted-foreground">
+      {entry.verdict !== "textOnly" && <Mark tone="warning" />}
+      {text.verdicts[entry.verdict]}
+    </span>
+  )
 }
 
 const iconButton = "size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -199,7 +205,8 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
               </Line>
               {/* What the service said, word for word — copyable, the way to debug it. */}
               {m.error && m.verdict !== "ready" && m.verdict !== "checking" && m.verdict !== "textOnly" && (
-                <p className="line-clamp-3 pr-2 pb-1 pl-7 text-2xs break-words text-amber-400 select-text">{m.error}</p>
+                // Marked by its verdict on the line above; this is the why.
+                <p className="line-clamp-3 pr-2 pb-1 pl-7 text-2xs break-words text-muted-foreground select-text">{m.error}</p>
               )}
             </div>
           ))}
@@ -301,7 +308,11 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
           placeholder={text.key}
           className={cn(FIELD, "font-mono [-webkit-text-security:disc]")}
         />
-        {error && <p className="line-clamp-3 px-2 text-2xs break-words text-amber-400 select-text">{error}</p>}
+        {error && (
+          <Notice tone="warning" className="px-2 text-2xs break-words select-text">
+            <p className="line-clamp-3">{error}</p>
+          </Notice>
+        )}
         {/* The link and the button on one 28px line, the link's text on the
             fields' left edge. */}
         <div className="flex items-center gap-2">
@@ -375,7 +386,9 @@ function AddModel({ connection, text, onBack }: { connection: Connection; text: 
       </div>
       <div className="max-h-72 overflow-y-auto">
         {error ? (
-          <p className="px-2 py-1 text-2xs break-words text-amber-400 select-text">{error}</p>
+          <Notice tone="warning" className="px-2 py-1 text-2xs break-words select-text">
+            {error}
+          </Notice>
         ) : models === null ? (
           <p className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
             <AstroidSpinner className="size-3" />

@@ -589,10 +589,9 @@ function OperationsSection({
   // operations chip look like it belongs to this panel, not a default.
   const row =
     "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-2xs text-muted-foreground hover:text-foreground"
-  // Delete / Cut / Clear remove something — the one accent AGENTS.md reserves
-  // for exactly that, so a destructive chip reads as different in kind from
-  // Insert/Copy/Paste/Simplify, not just a different label in the same gray.
-  const destructiveRow = cn(row, "text-red-400 hover:bg-red-400/10 hover:text-red-400")
+  // Delete / Cut / Clear remove something: in the ink like the rest, turning
+  // the destructive red (AGENTS.md) as the pointer reaches it.
+  const destructiveRow = cn(row, "hover:bg-red-400/10 hover:text-red-400")
   return (
     <Group title={t.lab.timeline.operations}>
       <div className="space-y-1.5">
