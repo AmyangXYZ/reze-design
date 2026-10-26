@@ -25,12 +25,18 @@ export type StageGrade = { size: number; lut: string }
  *  setViewLut): size³ RGB texels of 16-bit display values, little-endian,
  *  base64; and the app transform it stands in for — chosen by hand, another
  *  transform shows instead. */
-export type StageView = { size: number; lut: string; transform: string }
+export type StageView = { size: number; lut: string; transform: string; filter?: StagePixelFilter }
+/** A stage renderer's pixel filter (the engine's setPixelFilter): its width in
+ *  pixels and shape. It draws while that stage's view stands. */
+export type StagePixelFilter = { width: number; type: "blackman-harris" | "box" }
 
 /** One layer of a stage's fog: linear colour, amount, (slope, offset) on the
  *  view depth, (reference, range) on the height — PMX units. */
 export type StageFogLayer = { color: number[]; amount: number; distance: number[]; height: number[] }
 export type StageFog = StageFogLayer & { dyn?: StageFogLayer }
+/** A stage's room as a local reflection probe: where it is captured from and
+ *  the box it projects onto, world PMX units (lib/gltf-stage.ts). */
+export type StageReflectionProbe = { center: number[]; min: number[]; max: number[] }
 
 /** The sun's own dials, azimuth/elevation degrees — friendlier than a raw vector. */
 export type SunLight = {
@@ -144,8 +150,11 @@ export type SceneSettings = {
   stageFog?: { stage: string; fog: StageFog }
   /** The stage reflects its world, not the engine's capture of it (see the
    *  engine's setReflectionProbe), and which stage. Drawn only while that
-   *  stage's world claim stands, like stageAmbient. */
-  stageReflections?: { stage: string }
+   *  stage's world claim stands, like stageAmbient. With a probe, the stage
+   *  instead reflects itself inside the room the cast stands in, and the world
+   *  outside it (a local probe: the engine's setReflectionProbe region, PMX
+   *  units), while that stage stands. */
+  stageReflections?: { stage: string; probe?: StageReflectionProbe }
   /**
    * How loud the track plays, as amplitude 0–1.
    *

@@ -101,7 +101,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; cover?: boolean; inProbe?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -177,23 +177,36 @@ export type SeaSpec = {
 /** `near`: the bulb's radius in metres — inside it the inverse square holds
  *  flat (SceneLight.near), which is what keeps a broad soft source (a Blender
  *  area light, a glowing panel) from blowing up a wall it stands beside. */
-type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number; near?: number; specular?: boolean }
+type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number; near?: number; specular?: boolean; tube?: number[] }
 type RezeSun = { color?: number[]; shadow?: boolean }
 type RezeScene = {
   version?: number
+  /** "principled": a Blender export, its highlights Principled's (stagePbrGraph). */
+  shading?: string
   fill?: { color: number[]; strength: number } | null
   /** An environment image, or a flat colour, with the strength it is lit at. */
   world?: { format?: string; base64?: string; color?: number[]; strength?: number } | null
   /** What the scene was authored under: Blender's names for the transform. */
   /** The .blend's compositor glare as the app's bloom (blender/): off when it had none. */
   bloom?: { enabled?: boolean; threshold?: number; intensity?: number; scatter?: number; color?: number[] } | null
-  view?: { transform?: string; look?: string; exposure?: number; contrast?: number; lut?: { size?: number; format?: string; range?: number[]; base64?: string } } | null
+  view?: {
+    transform?: string
+    look?: string
+    exposure?: number
+    contrast?: number
+    lut?: { size?: number; format?: string; range?: number[]; base64?: string }
+    /** Its renderer's pixel filter (blender/_pixel_filter): width in pixels. */
+    filter?: { width?: number; type?: string }
+  } | null
   /** The game's colour grade as the cube its pipeline bakes: size³ texels,
    *  8-bit sRGB, red fastest — see tools/stages/unity_grading.py. */
   grading?: { size?: number; format?: string; base64?: string } | null
   /** "world": the world picture was measured from inside the stage (blender/),
    *  so the stage reflects it instead of the engine's own capture. */
   reflections?: string
+  /** The room the cast stands in, as a local reflection probe (blender/
+   *  _room_probe): where it is captured from and its box, glTF metres. */
+  probe?: { at?: number[]; min?: number[]; max?: number[] } | null
   /** The game's diffuse ambient, nine RGB SH coefficients in glTF axes — see
    *  tools/stages/unity_to_glb.game_ambient. */
   ambient?: { sh?: number[] } | null
@@ -371,6 +384,14 @@ export type GlbMaterial = {
   emissiveStrength: number
   unlit: boolean
   additive: boolean
+  /** Shaded as Blender's Principled: its lamps' highlights GGX with Fresnel (Lit's fresnel). */
+  principled: boolean
+  /** false: a glow whose light the stage's lamps carry, left out of the
+   *  reflection probe (Engine.setMaterialInProbe) so it is not reflected twice. */
+  inProbe: boolean
+  /** An unlit sheet laid OVER what is behind it at its picture's alpha (a
+   *  haze cloud's glow, which also dims what is seen through it). */
+  cover: boolean
   sky: boolean
   look: string | null
   alphaMode: "OPAQUE" | "MASK" | "BLEND"
@@ -626,6 +647,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       emissiveStrength: strength,
       unlit,
       additive: !!ex.additive,
+      cover: !!ex.cover,
+      principled: sceneExtras.shading === "principled",
+      inProbe: ex.inProbe !== false,
       sky,
       look: ex.look ?? null,
       alphaMode,
@@ -743,6 +767,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     if (typeof ex.near === "number" && Number.isFinite(ex.near) && ex.near > 0) lamp.near = Math.round(ex.near * PMX_PER_METRE * 1000) / 1000
     // Diffuse only: a Blender light with glossy visibility off (SceneLight.specular).
     if (ex.specular === false) lamp.specular = false
+    // A glowing strip: the segment position ± this half-axis (glTF metres)
+    if (Array.isArray(ex.tube) && ex.tube.length === 3 && ex.tube.every((v) => typeof v === "number" && Number.isFinite(v)))
+      lamp.tube = toPmx(ex.tube as [number, number, number]).map((v) => Math.round(v * 1000) / 1000)
     if (light.type === "spot") {
       const outer = ex.angle ?? ((light.spot?.outerConeAngle ?? Math.PI / 4) * 2 * 180) / Math.PI
       const inner = ex.innerAngle ?? ((light.spot?.innerConeAngle ?? 0) * 2 * 180) / Math.PI
@@ -784,7 +811,13 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     const lut = view.lut
     const range = lut?.range
     if (lut?.base64 && lut.size && lut.format === "rgb16-display" && range?.[0] === VIEW_LUT_LOG2[0] && range?.[1] === VIEW_LUT_LOG2[1]) {
-      rig.viewLut = { size: lut.size, lut: lut.base64 }
+      // with the renderer's pixel filter, the other half of how its film draws
+      const pf = view.filter
+      const filter =
+        pf && typeof pf.width === "number" && Number.isFinite(pf.width) && pf.width > 0 && (pf.type === "blackman-harris" || pf.type === "box")
+          ? { width: pf.width, type: pf.type }
+          : null
+      rig.viewLut = { size: lut.size, lut: lut.base64, ...(filter ? { filter } : {}) }
     } else if (view.look && view.look !== "None" && !/^AgX - Base$|^Filmic - Medium High Contrast$/.test(view.look)) {
       notes.push(`view look "${view.look}" is not one the app has; the transform is applied without it`)
     }
@@ -809,6 +842,15 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   }
   // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it.
   if (sceneExtras.reflections === "world" && rig.world) rig.reflections = "world"
+  // Or itself, when the cast stands in a room: the room's own probe, in PMX
+  // units. glTF to PMX turns z over, so the box's z bounds swap.
+  const probe = sceneExtras.probe
+  const v3 = (a: unknown): a is number[] => Array.isArray(a) && a.length >= 3 && a.slice(0, 3).every(Number.isFinite)
+  if (probe && v3(probe.at) && v3(probe.min) && v3(probe.max)) {
+    const lo = toPmx([probe.min[0], probe.min[1], probe.max[2]])
+    const hi = toPmx([probe.max[0], probe.max[1], probe.min[2]])
+    rig.reflectionProbe = { center: toPmx([probe.at[0], probe.at[1], probe.at[2]]), min: lo, max: hi }
+  }
   // AND THE AMBIENT ITS SURFACES WERE LIT BY, apart from the world picture
   // (which then answers reflections alone). glTF to PMX turns z over, and with
   // it the z-odd terms: c2 (z), c5 (yz), c7 (xz).
@@ -922,10 +964,10 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
  * Shaded by Lit, Unity's own PBR — the model the stage was authored under:
  * occlusion from the map's red channel, metal from blue, smoothness 1 − green.
  */
-export function stagePbrGraph(strength: number): ShaderGraph {
+export function stagePbrGraph(strength: number, principled = false): ShaderGraph {
   return {
     version: 1,
-    name: strength > 0 ? `Stage PBR ×${strength}` : "Stage PBR",
+    name: (strength > 0 ? `Stage PBR ×${strength}` : "Stage PBR") + (principled ? " (Principled)" : ""),
     tags: ["stage", "pbr"],
     nodes: [
       { id: "tex", type: "texture" },
@@ -940,7 +982,9 @@ export function stagePbrGraph(strength: number): ShaderGraph {
       { id: "normal", type: "normal_map" },
       { id: "glow", type: "tex_image/2" },
       { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
-      { id: "lit", type: "lit" },
+      // a Blender export's highlights rise toward white at grazing, as its
+      // Principled's do; a Unity stage's keep URP's fixed reflectance
+      principled ? { id: "lit", type: "lit", inputs: { fresnel: 1 } } : { id: "lit", type: "lit" },
     ],
     links: [
       { from: { node: "tex", socket: "color" }, to: { node: "base", socket: "a" } },
@@ -1014,6 +1058,35 @@ export function stageLightSheetGraph(strength: number, factor: [number, number, 
       ...(tinted ? [{ from: { node: "emit", socket: "vector" }, to: { node: "tint", socket: "a" } }] : []),
     ],
     output: tinted ? { node: "tint", socket: "vector" } : { node: "emit", socket: "vector" },
+  }
+}
+
+/**
+ * The Stage Haze Sheet graph: a glow in a haze cloud, laid OVER what is behind
+ * it. The picture's alpha is how much the cloud dims what is seen through it,
+ * and its colour · `strength` the light it sends at that alpha, so colour ·
+ * alpha · strength is the light added and the rest of the alpha a veil.
+ * Added (Stage Light Sheet), a glow claims full coverage: in front of the world
+ * sky every card drew a black quad, as the sky only shows where nothing
+ * covers it.
+ */
+export function stageHazeSheetGraph(strength: number, factor: [number, number, number] = [1, 1, 1]): ShaderGraph {
+  const tinted = factor.some((c) => c !== 1)
+  return {
+    version: 1,
+    name: `Stage Haze Sheet ×${strength}`,
+    tags: ["stage", "unlit", "effect"],
+    nodes: [
+      { id: "glow", type: "tex_image/2" },
+      { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
+      ...(tinted ? [{ id: "tint", type: "vector_math/multiply", inputs: { b: factor } }] : []),
+    ],
+    links: [
+      { from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "a" } },
+      ...(tinted ? [{ from: { node: "emit", socket: "vector" }, to: { node: "tint", socket: "a" } }] : []),
+    ],
+    output: tinted ? { node: "tint", socket: "vector" } : { node: "emit", socket: "vector" },
+    opacity: { node: "glow", socket: "alpha" },
   }
 }
 
@@ -1566,6 +1639,23 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
       add("unlit", () => ({ id: "stage-unlit", label: "Unlit", materials: [], graph: structuredClone(UNLIT_GRAPH), renderClass: "auto" }), m.name)
       continue
     }
+    // A haze cloud's glow is laid over, its alpha a veil — see stageHazeSheetGraph.
+    if (m.unlit && m.cover) {
+      const f = m.emissiveFactor.map((c) => Math.round(c * 1e5) / 1e5) as [number, number, number]
+      const tint = f.some((c) => c !== 1) ? `:${f.join(",")}` : ""
+      add(
+        `haze:${m.emissiveStrength}${tint}`,
+        () => ({
+          id: `stage-haze-sheet-x${m.emissiveStrength}${tint ? `-${f.map((c) => c.toFixed(4)).join("-")}` : ""}`,
+          label: `Stage Haze Sheet ×${m.emissiveStrength}`,
+          materials: [],
+          graph: stageHazeSheetGraph(m.emissiveStrength, f),
+          renderClass: "auto",
+        }),
+        m.name,
+      )
+      continue
+    }
     // A baked sheet the game adds is light, not cover — see stageLightSheetGraph.
     if (m.unlit && m.additive) {
       const f = m.emissiveFactor.map((c) => Math.round(c * 1e5) / 1e5) as [number, number, number]
@@ -1601,14 +1691,14 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
       )
       continue
     }
-    const key = `pbr:${m.emissiveStrength}:${hashed ? "cut" : ""}`
+    const key = `pbr:${m.emissiveStrength}:${hashed ? "cut" : ""}:${m.principled ? "principled" : ""}`
     add(
       key,
       () => ({
-        id: `stage-pbr${m.emissiveStrength > 0 ? `-x${m.emissiveStrength}` : ""}${hashed ? "-cutout" : ""}`,
-        label: `Stage PBR${m.emissiveStrength > 0 ? ` ×${m.emissiveStrength}` : ""}${hashed ? " (cutout)" : ""}`,
+        id: `stage-pbr${m.emissiveStrength > 0 ? `-x${m.emissiveStrength}` : ""}${hashed ? "-cutout" : ""}${m.principled ? "-principled" : ""}`,
+        label: `Stage PBR${m.emissiveStrength > 0 ? ` ×${m.emissiveStrength}` : ""}${hashed ? " (cutout)" : ""}${m.principled ? " (Principled)" : ""}`,
         materials: [],
-        graph: stagePbrGraph(m.emissiveStrength),
+        graph: stagePbrGraph(m.emissiveStrength, m.principled),
         renderClass: "auto",
         ...(hashed ? { alphaMode: "hashed" as const } : {}),
         // NOT blend: "additive" — see the note above the key. The engine can now

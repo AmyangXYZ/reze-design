@@ -131,7 +131,8 @@ function isAppStageGraph(graph: ShaderGraph): boolean {
   return (
     sameGraphLook(graph, stageSheetGraph(strength)) ||
     sameGraphLook(graph, stageLightSheetGraph(strength)) ||
-    sameGraphLook(graph, stagePbrGraph(strength))
+    sameGraphLook(graph, stagePbrGraph(strength)) ||
+    sameGraphLook(graph, stagePbrGraph(strength, true))
   )
 }
 

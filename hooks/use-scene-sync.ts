@@ -250,10 +250,12 @@ export function useSceneSync({
     if (!p || (p.settings.stageAmbient !== settings.stageAmbient || p.settings.world !== world)) {
       engine.setWorldAmbient(ambientSH)
     }
-    // Its own world as what it reflects, while that world is the world.
-    const reflectsWorld = !!settings.stageReflections && world.stage?.id === settings.stageReflections.stage
-    if (!p || (p.settings.stageReflections !== settings.stageReflections || p.settings.world !== world)) {
-      engine.setReflectionProbe(!reflectsWorld)
+    // Its own world as what it reflects, while that world is the world —
+    // or its room, captured as a local probe, while the stage stands.
+    const reflections = settings.stageReflections
+    const reflectsWorld = !!reflections && !reflections.probe && world.stage?.id === reflections.stage
+    if (!p || (p.settings.stageReflections !== reflections || p.settings.world !== world)) {
+      engine.setReflectionProbe(!reflectsWorld, reflections?.probe ?? null)
     }
     if (!p || p.settings.stageFog !== settings.stageFog) {
       const f = settings.stageFog?.fog
@@ -275,6 +277,11 @@ export function useSceneSync({
           ? { size: viewLut.size, data: new Uint16Array(Uint8Array.from(atob(viewLut.lut), (ch) => ch.charCodeAt(0)).buffer) }
           : null,
       )
+    }
+    // Its renderer's pixel filter, while its view stands, whichever transform
+    // is picked: it is the film's, not the curve's.
+    if (!p || p.settings.stageView?.filter !== stageView?.filter) {
+      engine.setPixelFilter(stageView?.filter?.width ?? 0, stageView?.filter?.type)
     }
     if (!p || p.settings.stageGrade !== stageGrade) {
       engine.setStageGrade(
@@ -716,6 +723,7 @@ export function useSceneSync({
           ...(l.near !== undefined ? { near: l.near } : {}),
           ...(l.cookie && l.aim ? { cookie: l.cookie } : {}),
           ...(l.specular === false ? { specular: false } : {}),
+          ...(l.tube ? { tube: { x: l.tube[0], y: l.tube[1], z: l.tube[2] } } : {}),
         }
         return lamp
       },

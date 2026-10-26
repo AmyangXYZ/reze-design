@@ -5096,6 +5096,8 @@ function Lab() {
       const glb = glbStageOf(pmx)
       if (glb) {
         stylingPending.current = applyGroups(id, glbStyleGroups(glb.materials))
+        // a glow its lamps carry is reflected by them, not by the probe too
+        for (const m of glb.materials) if (!m.inProbe) engineRef.current?.setMaterialInProbe(id, m.name, false)
         return id
       }
       if (!ray) {
@@ -5238,8 +5240,10 @@ function Lab() {
     // AND ITS FOG, which leaves with it.
     const stageFog = rig?.fog
     setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
-    // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it.
-    setSettings((s2) => ({ ...s2, stageReflections: rig?.reflectsWorld ? { stage: id } : undefined }))
+    // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it,
+    // or itself, inside the room its cast stands in.
+    const probe = rig?.reflectionProbe
+    setSettings((s2) => ({ ...s2, stageReflections: probe ? { stage: id, probe } : rig?.reflectsWorld ? { stage: id } : undefined }))
   }
 
   /** The next stage takes the lighting, from the rig and sky its files carry. */

@@ -24,8 +24,10 @@
 #   - PARTICLES: an emitter system (sparks, embers, snow, petals) becomes the
 #     app's particle effect — the one a Unity stage's systems draw through — so
 #     it keeps moving instead of standing frozen at the exported frame: its
-#     rate, life, speed, gravity, size and spin, its emitter's shape, and the
-#     instanced object's picture or colour, glowing when it is emissive.
+#     rate, life and emitter's shape, its flight and size over life as
+#     Blender simulated them, and the instanced object's picture or colour —
+#     or, for an instance made only of light (emission, Fresnel-mixed with
+#     transparency), the instance as Cycles draws it, added.
 #   - Lights: an area light becomes a spot of the same reach — a hemisphere
 #     cone at four times the power, which is what a panel throws straight out
 #     where a point of the same power would throw a quarter. A light's
@@ -36,7 +38,12 @@
 #     Texture, a gradient), the world itself rendered to an HDR panorama.
 #   - The VIEW under extras.reze.view: view transform, look and exposure, so
 #     the app shows it as you tuned it.
-#   - Fog left out: a volume-only object would export as a solid box.
+#   - HAZE: a volume the cast stands in becomes the app's distance fog; a
+#     cloud elsewhere (a box around a few lamps) is not fog, only the glow of
+#     the lights inside it. A volume-only object itself would export as a
+#     solid box, so it is left out.
+#   - Base and glow colours made by nodes (a Voronoi, a noise, a ramp) are
+#     baked by Cycles into pictures, which glTF can carry.
 #   - Textures as WebP (about five times smaller); --png / the option keeps PNG.
 #   - A grade, ambient, fog or ground shadow a Unity stage build stored on the
 #     scene (scene["reze"]) is carried through.
@@ -338,15 +345,21 @@ def _realize(scene, notes):
 # one metre long; metresPerUnit 1, so the effect's units are metres).
 #
 # What carries: count over the frame range as a rate, lifetime and its random,
-# normal velocity and its random, velocity along the object's axes, gravity (its
-# field weight), size and its random, random rotation and spin, an emitter
-# that started before the scene (prewarm). The emitter's shape is its mesh's
-# bounds: a flat mesh is a box across it that emits along its normal, a round
-# one a sphere that emits outward, anything else a box sending every way. The
-# picture is the instanced object's image texture, or a soft dot of its colour;
-# an emissive instance glows (added), any other is laid over. Not carried:
-# physics other than Newtonian, forces besides gravity, brownian motion,
-# children, and anything a particle does over its life in nodes.
+# size and its random, random rotation and spin, an emitter that started before
+# the scene (prewarm). THE FLIGHT is read off the simulation at the exported
+# frame (_measured_flight): the mean velocity and size of the live particles
+# at each age, so damping, drag, force fields and a size texture carry as
+# Blender ran them; with too few alive, normal velocity, velocity along the
+# object's axes and gravity stand in. Blender's speeds are per simulation
+# second (a frame is `timestep` of them), turned into real ones. The emitter's
+# shape is its mesh's bounds: a flat mesh is a box across it that emits along
+# its normal, a round one a sphere that emits outward, anything else a box
+# sending every way. A collection's members each get their share of the
+# particles. The picture is the instanced object's image texture, or a soft
+# dot of its colour, laid over (an emissive one added); an instance made only
+# of light is rendered by Cycles and added. Not carried: physics other than
+# Newtonian, each particle's own wander (brownian, turbulence), children, and
+# anything a particle does over its life in nodes.
 
 
 def _soft_dot(size=64):
@@ -378,13 +391,9 @@ def _png(img, max_size=512):
     return base64.b64encode(data).decode("ascii")
 
 
-def _instance_look(settings):
+def _instance_look(ob):
     """(picture image or None, linear colour, emission strength, size of the instance)
-    from what the system instances."""
-    ob = settings.instance_object if settings.render_type == "OBJECT" else next(
-        (o for o in (settings.instance_collection.all_objects if settings.instance_collection else []) if o.type == "MESH"), None)
-    if ob is None:
-        return None
+    from an instanced object."""
     extent = max(ob.dimensions) or 1.0
     mat = next((s.material for s in ob.material_slots if s.material), None) if ob.type == "MESH" else None
     image, colour, strength = None, (1.0, 1.0, 1.0), 0.0
@@ -414,6 +423,198 @@ def _instance_look(settings):
     elif mat is not None:
         colour = tuple(mat.diffuse_color)[:3]
     return image, colour, strength, extent
+
+
+def _instanced_meshes(settings):
+    """The mesh objects a system draws, each with its share of the particles:
+    one object, or a collection's members (Blender picks one per particle at
+    random, or draws the whole collection on each)."""
+    if settings.render_type == "OBJECT":
+        ob = settings.instance_object
+        return [(ob, 1.0)] if ob is not None and ob.type == "MESH" else []
+    meshes = [o for o in (settings.instance_collection.all_objects if settings.instance_collection else []) if o.type == "MESH"]
+    if not meshes:
+        return []
+    if settings.use_whole_collection:     # the first stands for the group (see _particles' note)
+        return [(meshes[0], 1.0)]
+    return [(o, 1.0 / len(meshes)) for o in meshes]
+
+
+SHADERS_THAT_ONLY_GLOW = {"EMISSION", "BSDF_TRANSPARENT", "MIX_SHADER", "ADD_SHADER", "HOLDOUT"}
+
+
+def _only_glows(mat):
+    """A material made of light and nothing that takes light: emission, seen
+    through or mixed with transparency (a neon edge, a spark). Drawn added."""
+    if not mat or not mat.node_tree:
+        return False
+    out = _output(mat)
+    if out is None or not out.inputs["Surface"].links:
+        return False
+    stack, emits = [_linked_from(out.inputs["Surface"])[0]], False
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        if n.type not in SHADERS_THAT_ONLY_GLOW:
+            return False
+        if n.type == "EMISSION":
+            emits = emits or n.inputs["Strength"].links or n.inputs["Strength"].default_value > 0
+        for i in n.inputs:
+            if i.type == "SHADER" and i.links:
+                stack.append(_linked_from(i)[0])
+    return bool(emits)
+
+
+def _instance_sprite(inst, scene, px=64):
+    """THE INSTANCE AS CYCLES DRAWS IT: the object alone, from a three-quarter
+    view, orthographic, over nothing — so a cube glowing only at its edges
+    (emission mixed with transparency by a Fresnel) is that, not a guess at it.
+    (premultiplied linear RGBA (px, px, 4), the picture's width in metres)."""
+    import numpy as np
+    from mathutils import Matrix, Vector
+    scale = inst.matrix_world.to_scale()
+    co = np.array([tuple(v.co) for v in inst.data.vertices]) * np.array(scale) if inst.data.vertices else np.zeros((1, 3))
+    radius = float(np.linalg.norm(co, axis=1).max()) or 0.5
+    width = 2.2 * radius
+    tmp = bpy.data.scenes.new("reze_sprite")
+    world = bpy.data.worlds.new("reze_sprite")
+    world.use_nodes = True
+    for n in world.node_tree.nodes:
+        if n.type == "BACKGROUND":
+            n.inputs["Strength"].default_value = 0.0
+    tmp.world = world
+    r = tmp.render
+    r.engine = "CYCLES"
+    tmp.cycles.samples = 64
+    tmp.cycles.use_denoising = False
+    tmp.cycles.device = scene.cycles.device
+    r.film_transparent = True
+    r.resolution_x = r.resolution_y = px
+    r.resolution_percentage = 100
+    r.image_settings.file_format = "OPEN_EXR"
+    r.image_settings.color_mode = "RGBA"
+    ob = bpy.data.objects.new("reze_sprite", inst.data)
+    ob.matrix_world = Matrix.Diagonal(Vector((scale.x, scale.y, scale.z, 1.0)))
+    tmp.collection.objects.link(ob)
+    cam_data = bpy.data.cameras.new("reze_sprite")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = width
+    cam = bpy.data.objects.new("reze_sprite_cam", cam_data)
+    view = Vector((1.0, -1.3, 0.9)).normalized()
+    cam.location = view * (radius * 4 + 1)
+    cam.rotation_euler = (-view).to_track_quat("-Z", "Y").to_euler()
+    tmp.collection.objects.link(cam)
+    tmp.camera = cam
+    path = os.path.join(tempfile.mkdtemp(prefix="reze_sprite_"), "sprite.exr")
+    r.filepath = path
+    try:
+        bpy.ops.render.render(write_still=True, scene=tmp.name)
+        img = bpy.data.images.load(path)
+        out = np.empty(px * px * 4, dtype=np.float32)
+        img.pixels.foreach_get(out)
+        bpy.data.images.remove(img)
+    finally:
+        bpy.data.objects.remove(ob)
+        bpy.data.objects.remove(cam)
+        bpy.data.cameras.remove(cam_data)
+        bpy.data.scenes.remove(tmp)
+        bpy.data.worlds.remove(world)
+        shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+    return out.reshape(px, px, 4).astype(np.float64), width
+
+
+SPRITE_TEXELS = 8
+
+
+def _sprite_png(premul, texels=SPRITE_TEXELS):
+    """An additive particle's picture from the instance's rendered light.
+
+    POOLED SMALL: a spark is a few pixels across on screen and the app samples
+    one texel per pixel, unfiltered — a 64-texel cube of one-texel edges came
+    out as whichever edge or gap each pixel hit. Averaged down to `texels`, a
+    texel holds what a pixel of Cycles' render holds.
+
+    COVERAGE FROM THE LIGHT: the app adds colour × alpha, then divides the sum
+    by the summed alpha before its view transform. A thin bright edge at low
+    coverage became a colour twenty times over range, clipped to white, then
+    faded — grey dots. So alpha is the light's brightest channel (up to 1) and
+    the colour the light over it: in range wherever the light is, white only
+    where Cycles' pixel would be white too. The picture is that colour over
+    its brightest, sRGB-encoded; the tint (returned) brings the light back.
+    (base64 PNG, tint)."""
+    import numpy as np
+    light = np.clip(premul[..., :3], 0, None)
+    n = light.shape[0]
+    if n > texels and n % texels == 0:
+        f = n // texels
+        light = light.reshape(texels, f, texels, f, 3).mean(axis=(1, 3))
+    a = np.clip(light.max(axis=-1), 0, 1)
+    straight = np.where(a[..., None] > 1e-4, light / np.maximum(a[..., None], 1e-4), 0.0)
+    top = float(straight.max()) or 1.0
+    s = np.clip(straight / top, 0, 1)
+    enc = np.where(s <= 0.0031308, s * 12.92, 1.055 * np.power(s, 1 / 2.4) - 0.055)
+    h, w = a.shape
+    img = bpy.data.images.new("reze_sprite_png", w, h, alpha=True)
+    px = np.concatenate([enc, a[..., None]], axis=-1).astype(np.float32)
+    img.pixels.foreach_set(px.ravel())
+    img.pack()      # a generated picture copies as its generator (black) unless packed
+    data = _png(img)
+    bpy.data.images.remove(img)
+    return data, top
+
+
+FLIGHT_BINS = 16
+FLIGHT_TOGETHER = 0.7   # |mean velocity| over mean speed at or past which they fly together
+
+
+def _measured_flight(ob, psys, scene, k):
+    """THE FLIGHT AS BLENDER SIMULATED IT, read off the particles alive at the
+    exported frame: their mean velocity and size at each age, as velocity over
+    lifetime (world axes, metres a second) and size over lifetime. That carries
+    whatever the simulation did — gravity held back by damping and drag to a
+    drift, a force field's push, a size texture over age — where the app's
+    module-by-module rules would fall a damped ember a hundred metres.
+    ONE VELOCITY FOR ALL: the app moves every particle by the table, so it is
+    only the flight when they fly together (a drift, a stream). Sent every way
+    (a burst, a fountain's spray) their mean is near nothing and would stand
+    them still — then the modules carry it.
+    k turns Blender's simulation seconds into real ones. None when too few live
+    or when they do not fly together."""
+    import numpy as np
+    scene.frame_set(scene.frame_current)
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = ob.evaluated_get(dg)
+    eps = next((p for p in ev.particle_systems if p.name == psys.name), None)
+    if eps is None:
+        return None
+    alive = [p for p in eps.particles if p.alive_state == "ALIVE" and p.lifetime > 0]
+    if len(alive) < 32:
+        return None
+    age = np.clip(np.array([(scene.frame_current - p.birth_time) / p.lifetime for p in alive]), 0, 0.9999)
+    vel = np.array([tuple(p.velocity) for p in alive]) * k
+    if np.linalg.norm(vel.mean(0)) < FLIGHT_TOGETHER * np.linalg.norm(vel, axis=1).mean():
+        return None
+    size = np.array([p.size for p in alive])
+    b = (age * FLIGHT_BINS).astype(int)
+    v_bins, s_bins = [None] * FLIGHT_BINS, [None] * FLIGHT_BINS
+    for i in range(FLIGHT_BINS):
+        m = b == i
+        if m.sum() >= 3:
+            v_bins[i], s_bins[i] = vel[m].mean(0), float(size[m].mean())
+    known = [i for i in range(FLIGHT_BINS) if v_bins[i] is not None]
+    if len(known) < FLIGHT_BINS // 2:
+        return None
+    for i in range(FLIGHT_BINS):     # ages no live particle has reached hold the nearest
+        if v_bins[i] is None:
+            j = min(known, key=lambda j: abs(j - i))
+            v_bins[i], s_bins[i] = v_bins[j], s_bins[j]
+    return np.array(v_bins), np.array(s_bins)
+
+
+def _table(values):
+    v = [round(float(x), 5) for x in values]
+    return {"mode": 1, "lo": min(v), "hi": max(v), "curve": v}
 
 
 def _emitter_frame(ob):
@@ -462,6 +663,7 @@ def _curve(lo, hi=None):
 
 def _particles(scene, notes):
     """Emitter systems as the app's particle effects: (classes, empties made)."""
+    import numpy as np
     from mathutils import Matrix
     fps = scene.render.fps / (scene.render.fps_base or 1.0)
     g = (abs(scene.gravity[2]) / 9.81) if scene.use_gravity else 0.0
@@ -480,79 +682,118 @@ def _particles(scene, notes):
             if st.physics_type not in ("NEWTON", "NO"):
                 note(notes, f"{ob.name} / {psys.name}: {st.physics_type.lower()} physics is not carried; left out")
                 continue
-            look = _instance_look(st)
-            if look is None:
+            meshes = _instanced_meshes(st)
+            if not meshes:
                 note(notes, f"{ob.name} / {psys.name}: instances nothing drawable; left out")
                 continue
-            image, colour, strength, extent = look
+            if st.render_type == "COLLECTION" and st.use_whole_collection:
+                note(notes, f"{ob.name} / {psys.name}: draws its whole collection on each particle; "
+                            f"only {meshes[0].name} is carried")
             span = max((st.frame_end - st.frame_start) / fps, 1.0 / fps)
             life = st.lifetime / fps
-            speed = st.normal_factor
-            rnd = st.factor_random
+            # A FRAME IS `timestep` OF THE SIMULATION'S SECONDS (0.04 by
+            # default, whatever the frame rate), so its speeds run k times
+            # faster in real seconds: 1.2 at 30 fps.
+            k = st.timestep * st.time_tweak * fps
+            speed = st.normal_factor * k
+            rnd = st.factor_random * k
             shape, origin, z, x, kind = _emitter_frame(ob)
             if rnd > 0:
                 shape["randomDirection"] = max(shape["randomDirection"], min(1.0, rnd / max(speed + rnd, 1e-6)))
                 speed = speed if speed > 0 else rnd
-            size = st.particle_size * extent
-            spin = st.angular_velocity_factor if (st.use_rotations and st.angular_velocity_mode != "NONE") else 0.0
+            spin = st.angular_velocity_factor * k if (st.use_rotations and st.angular_velocity_mode != "NONE") else 0.0
+            flight = None
+            try:
+                flight = _measured_flight(ob, psys, scene, k)
+            except Exception as e:  # noqa: BLE001 — the modules below stand in
+                note(notes, f"{ob.name} / {psys.name}: the flight could not be read off the simulation ({e})")
             # velocity along the object's axes, in Unity's world axes (Blender
             # (x, y, z) → glTF (x, z, −y) → Unity (−x, y, z) of glTF)
             av = st.object_align_factor
-            world_v = ob.matrix_world.to_3x3() @ av if any(abs(c) > 1e-6 for c in av) else None
-            spec = {
-                "duration": span, "looping": True, "prewarm": st.frame_start < scene.frame_start,
-                "scalingMode": 1, "simulationSpace": 1, "max": int(st.count),
-                "lifetime": _curve(life * (1 - st.lifetime_random), life),
-                "speed": _curve(speed),
-                "size3D": False,
-                "size": [_curve(size * (1 - st.size_random), size)] * 3,
-                "rotation3D": False,
-                "rotation": _curve(0.0, 2 * math.pi * st.rotation_factor_random) if st.use_rotations else _curve(0.0),
-                "rotationX": _curve(0.0), "rotationY": _curve(0.0),
-                "color": {"mode": 0, "lo": [1, 1, 1, 1], "hi": [1, 1, 1, 1]},
-                "gravity": _curve(g * st.effector_weights.gravity),
-                "emission": {"on": True, "rate": _curve(st.count / span), "bursts": []},
-                "shape": shape,
-                "sizeOverLife": None,
-                "rotationOverLife": {"on": True, "z": _curve(spin)} if spin else None,
-                "colorOverLife": None, "uv": None, "clamp": None, "noise": None, "custom": None,
-                "velocity": {
-                    "linear": [_curve(-world_v.x), _curve(world_v.z), _curve(-world_v.y)],
-                    "orbital": [_curve(0.0)] * 3, "offset": [_curve(0.0)] * 3, "radial": _curve(0.0),
-                    "speedModifier": _curve(1.0), "world": True,
-                } if world_v is not None else None,
-                "renderer": {"mode": 0, "pivot": [0.0, 0.0, 0.0], "lengthScale": 2.0, "velocityScale": 0.0,
-                             "linear": True, "alignment": 0},
-            }
-            glow = strength > 0
-            key = (st.name, image.name if image else None, tuple(round(c, 4) for c in colour), round(strength, 4))
-            if key not in keys:
-                dot = None if image else _soft_dot()
-                picture = _png(image or dot)
-                if dot:
-                    bpy.data.images.remove(dot)
-                layer = {"scale": [1.0, 1.0], "offset": [0.0, 0.0], "rotation": 0.0, "tiling": False, "speed": [0.0, 0.0], "srgb": True}
-                tint = [c * (strength if glow else 1.0) for c in colour]
-                material = {"layers": {"main": layer}, "mainPow": [1, 1, 1, 0], "color": tint + [1.0], "redAlphaMain": False,
-                            "plusPow": [1, 1, 1, 0], "plusColor": [1, 1, 1, 1], "redAlphaPlus": False, "plusStrength": 0,
-                            "plusColorOn": 0, "plusAlphaOn": 0, "plusMode": 0, "redAlphaMask": False, "maskStrength": 0,
-                            # Unity's blend factors: One adds (a glow), OneMinusSrcAlpha lays over
-                            "dstBlend": 1 if glow else 10}
-                keys[key] = len(classes)
-                classes.append({"name": f"{st.name} ({ob.name})", "prefix": f"ps{len(classes)}_", "emitters": 0,
-                                "metresPerUnit": 1.0, "spec": spec, "material": material,
-                                "textures": [{"png": picture, "srgb": True}], "_points": []})
-            c = classes[keys[key]]
-            c["emitters"] += 1
-            for axis in (z, x):
-                n = len(c["_points"]) + 1
-                e = bpy.data.objects.new(f"{c['prefix']}{n:03d}", None)
-                e.empty_display_type = "SINGLE_ARROW"
-                e.matrix_world = Matrix.Translation(origin) @ axis.to_track_quat("Z", "Y").to_matrix().to_4x4()
-                stage.objects.link(e)
-                c["_points"].append(e.name)
-            note(notes, f"{ob.name} / {psys.name}: {int(st.count)} particles over {span:.1f}s, {life:.1f}s each, "
-                        f"from {kind}, {'glowing' if glow else 'laid over'} — drawn as a particle effect")
+            world_v = ob.matrix_world.to_3x3() @ av * k if any(abs(c) > 1e-6 for c in av) else None
+            velocity = {
+                "linear": [_curve(-world_v.x), _curve(world_v.z), _curve(-world_v.y)],
+                "orbital": [_curve(0.0)] * 3, "offset": [_curve(0.0)] * 3, "radial": _curve(0.0),
+                "speedModifier": _curve(1.0), "world": True,
+            } if world_v is not None else None
+            gravity = _curve(g * st.effector_weights.gravity * k * k)
+            size_over_life = None
+            if flight is not None:
+                # the measured flight IS the motion: no start speed, no gravity
+                v, sz = flight
+                speed, gravity = 0.0, _curve(0.0)
+                velocity = {"linear": [_table(-v[:, 0]), _table(v[:, 2]), _table(-v[:, 1])],
+                            "orbital": [_curve(0.0)] * 3, "offset": [_curve(0.0)] * 3, "radial": _curve(0.0),
+                            "speedModifier": _curve(1.0), "world": True}
+                birth = st.particle_size * (1 - st.size_random / 2)
+                if birth > 0 and np.ptp(sz) > 0.05 * birth:
+                    size_over_life = {"separate": False, "x": _table(sz / birth), "y": _table(sz / birth)}
+            for inst, share in meshes:
+                mat = next((s.material for s in inst.material_slots if s.material), None)
+                sprite = None
+                if _only_glows(mat):
+                    premul, extent = _instance_sprite(inst, scene)
+                    picture, top = _sprite_png(premul)
+                    sprite, image, colour, strength = picture, None, (1.0, 1.0, 1.0), top
+                else:
+                    image, colour, strength, extent = _instance_look(inst)
+                size = st.particle_size * extent
+                spec = {
+                    "duration": span, "looping": True, "prewarm": st.frame_start < scene.frame_start,
+                    "scalingMode": 1, "simulationSpace": 1, "max": max(1, round(st.count * share)),
+                    "lifetime": _curve(life * (1 - st.lifetime_random), life),
+                    "speed": _curve(speed),
+                    "size3D": False,
+                    "size": [_curve(size * (1 - st.size_random), size)] * 3,
+                    "rotation3D": False,
+                    "rotation": _curve(0.0, 2 * math.pi * st.rotation_factor_random) if st.use_rotations else _curve(0.0),
+                    "rotationX": _curve(0.0), "rotationY": _curve(0.0),
+                    "color": {"mode": 0, "lo": [1, 1, 1, 1], "hi": [1, 1, 1, 1]},
+                    "gravity": gravity,
+                    "emission": {"on": True, "rate": _curve(st.count * share / span), "bursts": []},
+                    "shape": shape,
+                    "sizeOverLife": size_over_life,
+                    "rotationOverLife": {"on": True, "z": _curve(spin)} if spin else None,
+                    "colorOverLife": None, "uv": None, "clamp": None, "noise": None, "custom": None,
+                    "velocity": velocity,
+                    "renderer": {"mode": 0, "pivot": [0.0, 0.0, 0.0], "lengthScale": 2.0, "velocityScale": 0.0,
+                                 "linear": True, "alignment": 0},
+                }
+                glow = strength > 0
+                key = (st.name, ob.name, inst.name, image.name if image else None, tuple(round(c, 4) for c in colour), round(strength, 4))
+                if key not in keys:
+                    if sprite is not None:
+                        picture = sprite
+                    else:
+                        dot = None if image else _soft_dot()
+                        picture = _png(image or dot)
+                        if dot:
+                            bpy.data.images.remove(dot)
+                    layer = {"scale": [1.0, 1.0], "offset": [0.0, 0.0], "rotation": 0.0, "tiling": False, "speed": [0.0, 0.0], "srgb": True}
+                    tint = [c * (strength if glow else 1.0) for c in colour]
+                    material = {"layers": {"main": layer}, "mainPow": [1, 1, 1, 0], "color": tint + [1.0], "redAlphaMain": False,
+                                "plusPow": [1, 1, 1, 0], "plusColor": [1, 1, 1, 1], "redAlphaPlus": False, "plusStrength": 0,
+                                "plusColorOn": 0, "plusAlphaOn": 0, "plusMode": 0, "redAlphaMask": False, "maskStrength": 0,
+                                # Unity's blend factors: One adds (a glow), OneMinusSrcAlpha lays over
+                                "dstBlend": 1 if glow else 10}
+                    keys[key] = len(classes)
+                    label = f"{st.name} ({ob.name})" if len(meshes) == 1 else f"{st.name} ({ob.name}, {inst.name})"
+                    classes.append({"name": label, "prefix": f"ps{len(classes)}_", "emitters": 0,
+                                    "metresPerUnit": 1.0, "spec": spec, "material": material,
+                                    "textures": [{"png": picture, "srgb": True}], "_points": []})
+                c = classes[keys[key]]
+                c["emitters"] += 1
+                for axis in (z, x):
+                    n = len(c["_points"]) + 1
+                    e = bpy.data.objects.new(f"{c['prefix']}{n:03d}", None)
+                    e.empty_display_type = "SINGLE_ARROW"
+                    e.matrix_world = Matrix.Translation(origin) @ axis.to_track_quat("Z", "Y").to_matrix().to_4x4()
+                    stage.objects.link(e)
+                    c["_points"].append(e.name)
+                how = ("as Cycles draws it, added" if sprite is not None else "glowing") if glow else "laid over"
+                note(notes, f"{ob.name} / {psys.name}" + (f" / {inst.name}" if len(meshes) > 1 else "") +
+                            f": {round(st.count * share)} particles over {span:.1f}s, {life:.1f}s each, from {kind}, {how}"
+                            + (", its flight read off the simulation" if flight is not None else "") + " — drawn as a particle effect")
         # "Show Emitter" off: Blender renders the particles and not the mesh
         if not ob.show_instancer_for_render and any(ps.settings.type == "EMITTER" for ps in ob.particle_systems):
             ob.hide_render = True
@@ -712,20 +953,26 @@ def _emission_of(mat):
     return (tuple(v * s.default_value for v in col), False)
 
 
+def _haze_card(mat):
+    """One of the haze's glow cards (_glow_cards): air, not a surface."""
+    r = (mat.get("reze") or {}) if mat else {}
+    return bool(r.get("additive") or r.get("cover"))
+
+
 def _glow_lamps(scene, notes):
     import numpy as np
     from mathutils import Vector
     existing = sum(1 for ob in scene.objects if ob.type == "LIGHT" and ob.visible_get() and not ob.hide_render)
     budget = max(0, LAMP_CAP - existing - 8)
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    cells = {}      # (ix, iy, iz) → [intensity rgb (Cycles W/sr), Σ weight·position, Σ weight, names]
+    cells = {}      # (ix, iy, iz, facing) → [intensity rgb (Cycles W/sr), Σ weight·position, Σ weight, names, Σ weight·normal, faces (centre, area, spread), materials]
     panels = []     # (position, normal, radiance, area, name)
     pictured = set()
     for ob in list(scene.objects):
         if ob.type != "MESH" or not ob.visible_get() or ob.hide_render:
             continue
         # the haze's glow cards are air, not a surface that lights the room
-        if any(sl.material and (sl.material.get("reze") or {}).get("additive") for sl in ob.material_slots):
+        if any(_haze_card(sl.material) for sl in ob.material_slots):
             continue
         glows = {}
         for i, slot in enumerate(ob.material_slots):
@@ -752,14 +999,21 @@ def _glow_lamps(scene, notes):
                 area = p.area * abs(mw.to_3x3().determinant()) ** (2 / 3)
                 if n.length > 0:
                     n.normalize()
-                by.setdefault(p.material_index, []).append((np.array(c), np.array(n), area))
+                # its spread about its centre, as an even sheet: a quad's is a
+                # third of its corners' (a strip that is one long quad has its
+                # length here, not in where its centre falls)
+                corners = np.array([tuple(mw @ me.vertices[v].co) for v in p.vertices]) - np.array(c)
+                spread = corners.T @ corners / (3 * len(corners))
+                by.setdefault(p.material_index, []).append((np.array(c), np.array(n), area, spread))
         finally:
             ev.to_mesh_clear()
         for i, faces in by.items():
             L = glows[i]
+            mname = ob.material_slots[i].material.name
             centres = np.array([f[0] for f in faces])
             normals = np.array([f[1] for f in faces])
             areas = np.array([f[2] for f in faces])
+            spreads = [f[3] for f in faces]
             A = float(areas.sum())
             if A <= 0:
                 continue
@@ -774,33 +1028,86 @@ def _glow_lamps(scene, notes):
                     As = float(areas[pick].sum())
                     if As >= PANEL_MIN_AREA:
                         centre = (centres[pick] * areas[pick, None]).sum(0) / As
-                        panels.append((centre, axis * side, L, As, ob.name))
+                        # ONE PLANE, not a run of parallel strips: neon frames
+                        # spaced down a tunnel all face the same way, and as one
+                        # spot at their middle they lit the tunnel's axis and
+                        # none of its walls. Spread along the normal past a
+                        # quarter of the panel's own size is strips, lit as points.
+                        depth = np.sqrt(((centres[pick] - centre) @ axis) ** 2 @ areas[pick] / As)
+                        if depth > 0.25 * math.sqrt(As):
+                            continue
+                        panels.append((centre, axis * side, L, As, ob.name, {mname}))
                         rest &= ~pick
-            # every way: each face's share, L·a/4, into its cell
-            for c, a in zip(centres[rest], areas[rest]):
-                key = tuple(np.floor(c / GLOW_CELL).astype(int))
+            # each face's share, L·a/4 every way, into its cell
+            for c, nrm, a, sp in zip(centres[rest], normals[rest], areas[rest], [spreads[j] for j in np.flatnonzero(rest)]):
+                # binned by the way the face looks too (its main axis and
+                # sign), so a slab's two glowing sides are two emitters, each
+                # where its face is, not one bulb in the slab's middle
+                side = int(np.argmax(np.abs(nrm)))
+                key = (*np.floor(c / GLOW_CELL).astype(int).tolist(), side * 2 + int(nrm[side] > 0))
                 w = float(a * max(L))
-                cell = cells.setdefault(key, [np.zeros(3), np.zeros(3), 0.0, set()])
+                cell = cells.setdefault(key, [np.zeros(3), np.zeros(3), 0.0, set(), np.zeros(3), [], set()])
                 cell[0] += L * a / 4
                 cell[1] += c * w
                 cell[2] += w
                 cell[3].add(ob.name)
+                cell[4] += nrm * w
+                cell[5].append((c, a, sp))
+                cell[6].add(mname)
     for name in sorted(pictured):
         note(notes, f"{name}: its glow comes from nodes (a picture or a gradient), so it blooms but lights nothing")
 
-    lamps = []
-    for centre, normal, L, A, name in panels:
+    lamps = []      # (peak, kind, position, normal, intensity, bulb, name, tube half-axis or None, materials)
+    for centre, normal, L, A, name, mats in panels:
         I = L * A                                   # on-axis, Cycles W/sr
-        lamps.append((max(I) / math.pi, "panel", centre + normal * 0.05, normal, I, math.sqrt(A / math.pi), name))
-    for key, (I, pw, w, names) in cells.items():
+        lamps.append((max(I) / math.pi, "panel", centre + normal * 0.05, normal, I, math.sqrt(A / math.pi), name, None, mats))
+    for key, (I, pw, w, names, nw, faces, mats) in cells.items():
         if w <= 0:
             continue
         name = sorted(names)[0] + (f" +{len(names) - 1}" if len(names) > 1 else "")
-        lamps.append((max(I) / math.pi, "point", pw / w, None, I, GLOW_CELL / 2, name))
+        # A CELL THAT GLOWS ONE WAY (a strip's single face, a sign's front) is
+        # a Lambertian emitter, not a bulb: it sends all of its π·L·A into the
+        # half space it faces, L·A on its axis falling as the cosine. As a
+        # point (L·A/4 every way) half of it went into the wall behind and the
+        # room in front got half — measured on a single glowing sheet before a
+        # white wall: 0.36 of Cycles' light as a point, 0.98 as this. Faces of
+        # one bin that still look several ways (a tube's curve) keep the
+        # point, their mean over directions.
+        facing = nw / w
+        if float(np.linalg.norm(facing)) > 0.9:
+            n = facing / float(np.linalg.norm(facing))
+            # A STRIP IS A TUBE: a run of faces long across its face and thin
+            # (a neon line) is lit as the app's tube lamp along it — its light
+            # the segment's, its reflection in a glossy wall a band, where a
+            # point gave a dot. Its length from the faces' spread along their
+            # main axis (√3·σ is the half-length of an even run), its width the
+            # area over that, and the bulb half the width — the strip's own
+            # size, so the panel beside it is lit from centimetres away. (The
+            # cell's half-size, 0.5 m, held its light flat across the whole
+            # half metre around it.)
+            fc = np.array([f[0] for f in faces])
+            fa = np.array([f[1] for f in faces])
+            centre = (fc * fa[:, None]).sum(0) / fa.sum()
+            # the cell's spread across its face: where its faces sit, and each
+            # face's own
+            off = fc - centre
+            cov = (off * fa[:, None]).T @ off / fa.sum() + sum(f[2] * f[1] for f in faces) / fa.sum()
+            flatten = np.eye(3) - np.outer(n, n)
+            cov = flatten @ cov @ flatten
+            vals, vecs = np.linalg.eigh(cov)
+            half = math.sqrt(3 * max(float(vals[-1]), 0.0))
+            width = float(fa.sum()) / max(2 * half, 1e-6)
+            if half > 2 * width:
+                u = vecs[:, -1]
+                lamps.append((max(I * 4) / math.pi, "panel", centre + n * 0.005, n, I * 4, max(width / 2, 0.005), name, u * half, mats))
+                continue
+            lamps.append((max(I * 4) / math.pi, "panel", pw / w + n * 0.05, n, I * 4, GLOW_CELL / 2, name, None, mats))
+            continue
+        lamps.append((max(I) / math.pi, "point", pw / w, None, I, GLOW_CELL / 2, name, None, mats))
     lamps = [l for l in lamps if l[0] >= GLOW_MIN]
     lamps.sort(key=lambda l: -l[0])
     kept, dropped = lamps[:budget], lamps[budget:]
-    for k, (peak, kind, pos, normal, I, near, name) in enumerate(kept):
+    for k, (peak, kind, pos, normal, I, near, name, tube, _mats) in enumerate(kept):
         top = float(max(I))
         data = bpy.data.lights.new(f"{name} glow {k + 1}", "SPOT" if kind == "panel" else "POINT")
         data.color = tuple(float(v) / top for v in I)
@@ -816,9 +1123,27 @@ def _glow_lamps(scene, notes):
             ob.rotation_euler = Vector(normal.tolist()).to_track_quat("-Z", "Y").to_euler()
         scene.collection.objects.link(ob)
         _lamp_extras(ob, near, panel=kind == "panel")
+        if tube is not None:
+            # glTF axes, metres: the lamp is its position ± this
+            ob["reze"] = {**ob["reze"].to_dict(), "tube": [round(float(tube[0]), 4), round(float(tube[2]), 4), round(float(-tube[1]), 4)]}
+    # A GLOW THE LAMPS CARRY stays out of the app's reflection capture: the
+    # lamps already draw its reflection in every glossy surface, and the
+    # capture's picture of the strip put it there a second time (the tunnel's
+    # walls a fifth too bright). Only where all of a material's glow was kept.
+    carried = set().union(*(l[8] for l in kept)) - set().union(*(l[8] for l in dropped)) if kept else set()
+    for mname in carried:
+        m = bpy.data.materials.get(mname)
+        if m is not None:
+            m["reze"] = {**(m["reze"].to_dict() if "reze" in m else {}), "inProbe": False}
+    # a new object's matrix_world is the identity until the scene updates, and
+    # the haze cards that follow find each lamp's box by it — without this
+    # every glowing-surface lamp sat at the origin, outside a far-end cloud
+    bpy.context.view_layer.update()
     if kept:
+        tubes = sum(1 for l in kept if l[7] is not None)
         note(notes, f"glowing surfaces: {len(kept)} lamp(s) throwing their light into the room "
-                    f"({sum(1 for l in kept if l[1] == 'panel')} panel spot(s), {sum(1 for l in kept if l[1] == 'point')} point(s))")
+                    f"({tubes} strip tube(s), {sum(1 for l in kept if l[1] == 'panel') - tubes} panel spot(s), "
+                    f"{sum(1 for l in kept if l[1] == 'point')} point(s))")
     if dropped:
         share = sum(l[0] for l in dropped) / max(1e-9, sum(l[0] for l in lamps))
         note(notes, f"glowing surfaces: {len(dropped)} weaker lamp(s) left out at the app's {LAMP_CAP}-lamp cap ({share:.0%} of the glow)")
@@ -1165,6 +1490,15 @@ def _haze(scene, notes, probe=None):
         return None
     name, (sigma, albedo), lo, hi = max(boxes, key=lambda b: b[1][0] * float(np.prod(b[3] - b[2])))
     box = next((ob for ob in scene.objects if ob.name == name), None)
+    if box is not None and not _holds_cast(lo, hi):
+        # A LOCAL CLOUD, not the room's air: a haze box away from where the cast
+        # stands (around a few lamps at the end of a tunnel) dims only what is
+        # seen through it, and the app's fog dims everything by its distance
+        # from the eye — from out in front, the whole stage went to the haze's
+        # colour. Its glow is the cards' job (_glow_cards), kept inside the box.
+        note(notes, f"haze: {name} is a local volume away from where the cast stands — not fog; "
+                    "its glow around the lights inside it is drawn by cards")
+        return None
     measured = None
     if box is not None:
         try:
@@ -1221,29 +1555,109 @@ def _haze_boxes(scene):
     return out
 
 
-def _glow_image(name, size, fn):
-    """An emissive picture of a glow: fn(u, v) -> 0..1 shape, u and v in -1..1."""
+def _surfaces_bvh(scene):
+    """One BVH of every surface that renders, world space — what blocks a
+    light's air. Haze boxes, glow cards and hidden objects are left out. One
+    tree: a scene ray cast through two thousand objects took 12 s for a rig."""
+    import numpy as np
+    from mathutils.bvhtree import BVHTree
+    dg = bpy.context.evaluated_depsgraph_get()
+    verts, tris, base = [], [], 0
+    for ob in scene.objects:
+        if ob.type != "MESH" or not ob.visible_get() or ob.hide_render or not ob.material_slots:
+            continue
+        if all(s.material and (_volume_only(s.material) or _haze_card(s.material)) for s in ob.material_slots):
+            continue
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        try:
+            me.calc_loop_triangles()
+            nv, nt = len(me.vertices), len(me.loop_triangles)
+            if not nv or not nt:
+                continue
+            co = np.empty(nv * 3, dtype=np.float64)
+            me.vertices.foreach_get("co", co)
+            co = co.reshape(-1, 3)
+            m = np.array(ob.matrix_world)
+            verts.append(co @ m[:3, :3].T + m[:3, 3])
+            tv = np.empty(nt * 3, dtype=np.int64)
+            me.loop_triangles.foreach_get("vertices", tv)
+            tris.append(tv.reshape(-1, 3) + base)
+            base += nv
+        finally:
+            ev.to_mesh_clear()
+    if not verts:
+        return None
+    return BVHTree.FromPolygons(np.concatenate(verts).tolist(), np.concatenate(tris).tolist(), all_triangles=True)
+
+
+def _mean_exit(bvh, at, lo, hi, n=64, skip=0.0):
+    """How far a light's air reaches, averaged over directions: to the haze
+    box's wall or the first surface, whichever comes first — a wall the light
+    cannot see past casts the air behind it into shadow. Surfaces nearer than
+    `skip` (the light's own bulb: a glowing strip's lamp sits in the strip)
+    are passed through."""
+    import numpy as np
+    from mathutils import Vector
+    k = np.arange(n) + 0.5
+    phi = np.arccos(1 - 2 * k / n)
+    th = math.pi * (1 + 5 ** 0.5) * k
+    d = np.stack([np.cos(th) * np.sin(phi), np.sin(th) * np.sin(phi), np.cos(phi)], axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.where(d > 0, (hi - at) / d, np.where(d < 0, (lo - at) / d, np.inf))
+    reach = np.clip(t.min(axis=1), 0, None)
+    if bvh is None:
+        return float(reach.mean())
+    origin = Vector(at.tolist())
+    for i in range(n):
+        ray = Vector(d[i].tolist())
+        gone = 0.0
+        for _ in range(8):
+            loc, _n, _f, dist = bvh.ray_cast(origin + ray * gone, ray, float(reach[i]) - gone)
+            if loc is None:
+                break
+            if gone + dist > skip:
+                reach[i] = gone + dist
+                break
+            gone += dist + 1e-3
+    return float(reach.mean())
+
+
+def _glow_image(name, size, fn, cover=None):
+    """An emissive picture of a glow: fn(u, v) -> 0..1 shape, u and v in -1..1.
+    With cover(u, v) (how much the card veils what is behind it, 0..1), the
+    picture is the light per unit of that alpha, scaled to its brightest, and
+    the alpha is the veil. (image, the scale the strength takes on)."""
     import numpy as np
     img = bpy.data.images.new(name, size, size, alpha=True)
     t = (np.arange(size) + 0.5) / size * 2 - 1
     u, v = np.meshgrid(t, t)
     shape = np.clip(fn(u, v), 0.0, 1.0)
+    alpha = np.ones_like(shape)
+    top = 1.0
+    if cover is not None:
+        alpha = np.clip(cover(u, v), 0.0, 1.0)
+        per = np.where(alpha > 1e-4, shape / np.maximum(alpha, 1e-4), 0.0)
+        top = float(per.max()) or 1.0
+        shape = per / top
     # STORED sRGB-ENCODED: an 8-bit picture is colour data, decoded to linear
     # where it is drawn — written raw, a tail at 0.15 came back as 0.02 and
     # the glow was its core alone.
     enc = np.where(shape <= 0.0031308, shape * 12.92, 1.055 * np.power(shape, 1 / 2.4) - 0.055)
     px = np.zeros((size, size, 4), dtype=np.float32)
     px[..., 0] = px[..., 1] = px[..., 2] = enc
-    px[..., 3] = 1.0
+    px[..., 3] = alpha
     img.pixels.foreach_set(px.ravel())
     img.pack()
-    return img
+    return img, top
 
 
-def _glow_material(name, colour, strength, image):
+def _glow_material(name, colour, strength, image, cover=False):
     """Unlit and added: light, not cover (stageLightSheetGraph in the app,
     which draws the emissive picture times its strength). The colour is
-    multiplied into the picture's emission, so it travels in the picture."""
+    multiplied into the picture's emission, so it travels in the picture.
+    With cover, laid over at the picture's alpha instead (stageHazeSheetGraph):
+    a haze cloud's glow, which veils what is behind it."""
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -1272,7 +1686,7 @@ def _glow_material(name, colour, strength, image):
         m.surface_render_method = "BLENDED"
     nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
     m.use_backface_culling = False
-    m["reze"] = {"unlit": True, "additive": True, "castShadow": False}
+    m["reze"] = {"unlit": True, "cover": True, "castShadow": False} if cover else {"unlit": True, "additive": True, "castShadow": False}
     return m
 
 
@@ -1317,7 +1731,8 @@ def _glow_cards(scene, notes, only=None):
     boxes = _haze_boxes(scene)
     if not boxes:
         return
-    made = 0
+    made = veiled = 0
+    bvh = False     # built on the first light inside a haze
     for ob in list(scene.objects):
         if ob.type != "LIGHT" or not ob.visible_get() or ob.hide_render:
             continue
@@ -1331,34 +1746,56 @@ def _glow_cards(scene, notes, only=None):
         if box is None:
             continue
         sigma, albedo = box[1], np.array(box[2])
+        # THE GLOW STOPS WHERE THE HAZE DOES: past the box's walls there is no
+        # air to light, and behind a wall the air is in the light's shadow —
+        # the cards drew a glow metres out, over the tunnel's roof and the sky.
+        # Its reach is held to how far the light's air goes, on average over
+        # directions (the shape fades to nothing there).
+        # the bulb: a Blender light's soft size, or a glowing surface lamp's
+        # own (the panel's √(A/π), a strip cell's half length — its "near")
+        r0 = max(getattr(L, "shadow_soft_size", 0.1), (ob.get("reze") or {}).get("near", 0.0), 0.15)
+        if bvh is False:
+            bvh = _surfaces_bvh(scene)
+        span = _mean_exit(bvh, at, box[3], box[4], skip=r0)
         power = L.energy * (2.0 ** getattr(L, "exposure", 0.0))
         col = np.array(L.color) * albedo * sigma            # sigma_s, per channel
-        if col.max() <= 0 or power <= 0:
+        if col.max() <= 0 or power <= 0 or span < 2 * r0:
             continue
-        r0 = max(getattr(L, "shadow_soft_size", 0.1), 0.15)
         mw = ob.matrix_world
+        # A CLOUD AWAY FROM THE CAST (see _haze) stands in open air, the world
+        # sky behind it, and an added card claims full coverage there: a black
+        # quad. Its cards are laid over instead, their alpha the veil the haze
+        # draws over what is behind it, e^(-sigma*l) through the cloud's middle
+        # (l twice the light's reach), shared among the planes.
+        veil = 1 - math.exp(-sigma * 2 * span) if not _holds_cast(box[3], box[4]) else 0.0
+
+        def card(shape, envelope, planes, colour, strength):
+            cover = (lambda u, v: 1 - (1 - veil * envelope(u, v)) ** (1 / planes)) if veil else None
+            img, top = _glow_image(f"{ob.name} glow", GLOW_TEX, shape, cover)
+            return _glow_material(f"{ob.name} haze glow", colour, strength / planes * top, img, cover=bool(veil))
         # a cone past 170° is a panel's hemisphere (a glowing screen), not a beam
         if L.type == "SPOT" and L.spot_size < math.radians(170):
             theta = L.spot_size / 2
             tan_t = math.tan(theta)
             I = power / (4 * math.pi)
             k = col * I * tan_t / (2 * math.pi)             # L = k * sqrt(1 - u^2) / r
-            reach = float(min(25.0, max(0.5, k.max() / GLOW_FLOOR)))
+            reach = float(min(25.0, span, max(0.5, k.max() / GLOW_FLOOR)))
             peak = k / r0
             strength = float(peak.max())
             blend = max(L.spot_blend, 0.05)
             ratio = r0 / reach
 
-            def shape(u, v, ratio=ratio, blend=blend):
+            def envelope(u, v, blend=blend):
                 r = (v + 1) / 2                              # 0 at the lamp, 1 at the reach
-                rr = np.maximum(r, ratio)
                 across = np.abs(u) / np.maximum(r, 1e-4)    # across the cone's width there
                 edge = np.clip((1 - across) / blend, 0, 1)
                 edge = edge * edge * (3 - 2 * edge)
                 fade = np.clip(1 - r, 0, 1) ** 2
-                return ratio / rr * np.sqrt(np.clip(1 - across ** 2, 0, 1)) * edge * fade
-            img = _glow_image(f"{ob.name} glow", GLOW_TEX, shape)
-            mat = _glow_material(f"{ob.name} haze glow", (peak / strength).tolist(), strength / SPOT_PLANE_SUM, img)
+                return np.sqrt(np.clip(1 - across ** 2, 0, 1)) * edge * fade
+
+            def shape(u, v, ratio=ratio):
+                return ratio / np.maximum((v + 1) / 2, ratio) * envelope(u, v)
+            mat = card(shape, envelope, SPOT_PLANE_SUM, (peak / strength).tolist(), strength)
             axis = (mw.to_3x3() @ Vector((0, 0, -1))).normalized()
             side = axis.orthogonal().normalized()
             quads = []
@@ -1368,17 +1805,23 @@ def _glow_cards(scene, notes, only=None):
                 quads.append((mw.translation + axis * (reach / 2), q * (reach * tan_t), axis * (reach / 2)))
             _glow_planes(f"{ob.name} haze glow", quads, mat, scene)
         else:
+            # a panel (a hemisphere spot) sends π·I into the air, the
+            # cosine-weighted half sphere, where a point of the same on-axis
+            # intensity sends 4π·I
+            if L.type == "SPOT":
+                power *= 0.25
             k = col * power / (16 * math.pi)                 # L = k / b
-            reach = float(min(20.0, max(0.3, k.max() / GLOW_FLOOR)))
+            reach = float(min(20.0, span, max(0.3, k.max() / GLOW_FLOOR)))
             peak = k / r0
             strength = float(peak.max())
             ratio = r0 / reach
 
+            def envelope(u, v):
+                return np.clip(1 - u * u - v * v, 0, 1) ** 2
+
             def shape(u, v, ratio=ratio):
-                b = np.sqrt(u * u + v * v)
-                return ratio / np.maximum(b, ratio) * np.clip(1 - b * b, 0, 1) ** 2
-            img = _glow_image(f"{ob.name} glow", GLOW_TEX, shape)
-            mat = _glow_material(f"{ob.name} haze glow", (peak / strength).tolist(), strength / POINT_PLANE_SUM, img)
+                return ratio / np.maximum(np.sqrt(u * u + v * v), ratio) * envelope(u, v)
+            mat = card(shape, envelope, POINT_PLANE_SUM, (peak / strength).tolist(), strength)
             phi = (1 + 5 ** 0.5) / 2
             dirs = [Vector(d).normalized() for d in ((0, 1, phi), (0, -1, phi), (1, phi, 0), (-1, phi, 0), (phi, 0, 1), (-phi, 0, 1))]
             quads = []
@@ -1388,9 +1831,11 @@ def _glow_cards(scene, notes, only=None):
                 quads.append((mw.translation.copy(), a * reach, b * reach))
             _glow_planes(f"{ob.name} haze glow", quads, mat, scene)
         made += 1
+        veiled += bool(veil)
     if made:
         what = "glowing surface lamp(s)" if only is not None else "light(s)"
-        note(notes, f"haze glow: {made} {what} light the air around them - additive cards from the haze's density and each light's power")
+        how = "cards laid over, veiling what is behind (a cloud in open air)" if veiled == made else "additive cards"
+        note(notes, f"haze glow: {made} {what} light the air around them - {how}, from the haze's density and each light's power")
 
 
 # ── The world ──
@@ -1462,13 +1907,84 @@ def _world_panorama(scene, notes, width=1024):
     return data
 
 
+# THE ROOM'S OWN REFLECTION. A dark glossy room lit by its own neon — a
+# tunnel, a club — looks the way it does in Cycles because its walls and floor
+# mirror the strips. The app's reflection probe captures exactly that, but by
+# itself it is one cube for the whole stage, box-projected over every surface,
+# so a floor that runs on past the room turns the room's colour where Cycles
+# shows it reflecting the plain world. Unity's answer is a box probe per room:
+# the room captured from inside it, projected onto its own box, and a surface
+# outside the box reflecting the sky. The room is what the cast sees from where
+# it stands, rays from the cast's spot over the whole sphere: the box of the
+# first hits that are under the room's roof (a surface above them, or met
+# looking up), then stretched through its openings to what the cast sees
+# beyond them inside the room's own cross-section — the floor in front of a
+# tunnel's mouth mirrors the tunnel; the floor beside its walls does not. A
+# centimetre over, so the surfaces it was measured on count as inside. It is a
+# room only when it roofs the cast — most rays into the upper half find a
+# surface; under an open sky the world is what everything reflects, as before.
+
+ROOM_RAYS = 2048
+
+
+def _room_probe(scene, notes):
+    """extras.reze.probe for a stage whose cast stands in a roofed room, glTF
+    axes and metres: {at, min, max}. None in the open, or with no surfaces."""
+    import numpy as np
+    from mathutils import Vector
+    bvh = _surfaces_bvh(scene)
+    if bvh is None:
+        return None
+    at = Vector((0.0, 0.0, PROBE_HEIGHT))
+    n = ROOM_RAYS
+    k = np.arange(n) + 0.5
+    phi = np.arccos(1 - 2 * k / n)
+    th = math.pi * (1 + 5 ** 0.5) * k
+    d = np.stack([np.cos(th) * np.sin(phi), np.sin(th) * np.sin(phi), np.cos(phi)], axis=1)
+    sky = Vector((0.0, 0.0, 1.0))
+    inside, beyond, up, roofed = [], [], 0, 0
+    for i in range(n):
+        loc, normal, _f, _dist = bvh.ray_cast(at, Vector(d[i].tolist()))
+        if d[i][2] > 0:
+            up += 1
+            roofed += loc is not None
+        if loc is None:
+            continue
+        under = d[i][2] > 0 or bvh.ray_cast(loc + normal * 1e-3 + sky * 1e-3, sky)[0] is not None
+        (inside if under else beyond).append(tuple(loc))
+    if not inside or roofed * 2 <= up:
+        return None
+    h = np.array(inside)
+    room_lo, room_hi = h.min(0), h.max(0)
+    lo, hi = room_lo.copy(), room_hi.copy()
+    # through the openings, within the cross-section: a hit outside the
+    # roofed room on one axis only stretches the box along that axis
+    for q in beyond:
+        out = [k for k in range(3) if not room_lo[k] <= q[k] <= room_hi[k]]
+        if len(out) == 1:
+            lo[out[0]], hi[out[0]] = min(lo[out[0]], q[out[0]]), max(hi[out[0]], q[out[0]])
+    lo, hi = lo - 0.01, hi + 0.01
+    note(notes, f"reflections: the cast stands in a room ({roofed / up:.0%} of the sky above it is roofed), "
+                f"{hi[0] - lo[0]:.1f} x {hi[1] - lo[1]:.1f} x {hi[2] - lo[2]:.1f} m; it reflects itself, outside it the world")
+    gl = lambda v: [float(v[0]), float(v[2]), float(-v[1])]  # noqa: E731 — Blender to glTF axes
+    return {"at": gl(at), "min": [float(lo[0]), float(lo[2]), float(-hi[1])], "max": [float(hi[0]), float(hi[2]), float(-lo[1])]}
+
+
+def _holds_cast(lo, hi):
+    """Whether a haze box takes in where the cast stands (the origin, at the
+    probe's height): the room's air rather than a cloud somewhere in it."""
+    p = (0.0, 0.0, PROBE_HEIGHT)
+    return all(lo[k] - 1e-3 <= p[k] <= hi[k] + 1e-3 for k in range(3))
+
+
 def _has_haze(scene):
+    """A haze the cast stands in: the world's volume, or a volume box around
+    the origin. A cloud elsewhere is the glow cards' alone."""
     if scene.world and scene.world.node_tree:
         out = next((n for n in scene.world.node_tree.nodes if n.type == "OUTPUT_WORLD" and n.is_active_output), None)
         if out and out.inputs["Volume"].links:
             return True
-    return any(ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.material_slots
-               and all(sl.material and _volume_only(sl.material) for sl in ob.material_slots) for ob in scene.objects)
+    return any(_holds_cast(b[3], b[4]) for b in _haze_boxes(scene))
 
 
 def _haze_world(scene, notes, width=512):
@@ -1551,6 +2067,27 @@ def _world(scene, notes, haze=None):
 # engine, 2^-12.5 to 2^7, a texel every 19.5/(n − 1) stops), saved through the
 # scene's view transform and look at exposure 0 — the app applies the exposure
 # before the cube, as Blender does before the transform.
+
+# THE PIXEL FILTER. Cycles builds each pixel from the light around it, through
+# a Blackman-Harris window twice its filter width across (1.5 px by default),
+# or a box. On a surface it is invisible; on something smaller than a pixel and
+# far brighter than white it decides the look — a 3 cm ember glowing at twenty
+# times white spreads into a coloured square several pixels wide, and a neon
+# edge gets its coloured fringe. The app draws each pixel as its own square, so
+# the stage carries the filter (view.filter) and the app applies it to the
+# scene's light before the view transform. Cycles' own setting, whatever engine
+# the .blend is set to: Cycles is the render it is matched against.
+
+
+def _pixel_filter(scene):
+    """view.filter, {width (px), type}, or None for a filter the app lacks."""
+    c = getattr(scene, "cycles", None)
+    if c is None:
+        return None
+    kind = {"BLACKMAN_HARRIS": "blackman-harris", "BOX": "box"}.get(getattr(c, "filter_type", "BLACKMAN_HARRIS"))
+    width = float(getattr(c, "filter_width", 1.5))
+    return {"width": round(width, 4), "type": kind} if kind and width > 0 else None
+
 
 # THE GLARE. Cycles and EEVEE (4.2+) bloom only through a compositor Glare
 # node, so the stage carries the .blend's own: its threshold (scene-linear, the
@@ -1682,6 +2219,148 @@ def _missing_pictures(notes):
 def _stored(previous, key):
     v = previous.get(key) if hasattr(previous, "get") else None
     return v.to_dict() if hasattr(v, "to_dict") else v
+
+
+# ── Colours from nodes, baked by Cycles ──
+#
+# glTF carries a colour as a constant or a picture. A base or glow colour made
+# by nodes — a Voronoi through a ramp, a noise, a gradient on the object's
+# coordinates — went out as the exporter's grey: a cube glowing cyan through
+# cells came out a dull box. Such a colour is baked by Cycles into a picture on
+# a fresh UV layout (only on objects whose materials use no pictures, so no
+# other map loses its UVs): the base colour as DIFFUSE colour, the glow as
+# EMIT, which is colour × strength, stored over its brightest with that as the
+# strength.
+
+BAKE_TEXELS_PER_M = 128
+BAKE_MAX = 1024
+
+
+def _from_nodes(socket):
+    """A colour input fed by nodes that fold to no constant and are no plain picture."""
+    if not socket.links:
+        return False
+    if _image_fed(socket):
+        return False
+    return _constant_colour(*_linked_from(socket)) is None
+
+
+def _baked_colours(scene, notes):
+    import numpy as np
+    targets = {}
+    for mat in bpy.data.materials:
+        if not mat.node_tree or mat.users == 0 or _volume_only(mat) or _haze_card(mat):
+            continue
+        node = _surface(mat)
+        if node is None or node.type != "BSDF_PRINCIPLED":
+            continue
+        if any(n.type in ("TEX_IMAGE", "TEX_ENVIRONMENT") for n in _all_nodes(mat.node_tree)):
+            continue
+        i = node.inputs
+        base = _from_nodes(i["Base Color"])
+        glow = _from_nodes(i["Emission Color"]) and not i["Emission Strength"].links and i["Emission Strength"].default_value > 0
+        if base or glow:
+            targets[mat.name] = (base, glow)
+    if not targets:
+        return
+    obs = [ob for ob in scene.objects if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.data.polygons
+           and any(s.material and s.material.name in targets for s in ob.material_slots)
+           and all(s.material and not any(n.type in ("TEX_IMAGE", "TEX_ENVIRONMENT") for n in _all_nodes(s.material.node_tree))
+                   for s in ob.material_slots if s.material and s.material.node_tree)]
+    if not obs:
+        return
+    dg = bpy.context.evaluated_depsgraph_get()
+    vl = bpy.context.view_layer
+    c = scene.cycles
+    keep = (scene.render.engine, c.samples, c.use_denoising)
+    baked, origin = set(), {}
+    try:
+        scene.render.engine = "CYCLES"
+        c.samples = 16
+        for ob in obs:
+            if ob.modifiers:
+                ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+                ob.modifiers.clear()
+            elif ob.data.users > 1:
+                ob.data = ob.data.copy()
+            me = ob.data
+            for uv in list(me.uv_layers):
+                me.uv_layers.remove(uv)
+            me.uv_layers.new(name="UVMap")
+            s = ob.matrix_world.to_scale()
+            area = sum(p.area for p in me.polygons) * abs(s.x * s.y)
+            size = int(min(BAKE_MAX, max(64, 2 ** math.ceil(math.log2(max(1.0, math.sqrt(area) * BAKE_TEXELS_PER_M))))))
+            for o in scene.objects:
+                o.select_set(False)
+            ob.select_set(True)
+            vl.objects.active = ob
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=2.0 / size, area_weight=0.0, scale_to_bounds=False)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            # ITS OWN COPY of a shared material: the baked picture is this
+            # object's atlas, on this object's fresh UVs
+            for slot in ob.material_slots:
+                m = slot.material
+                if m and m.name in targets and m.users > 1:
+                    slot.material = m.copy()
+                    targets[slot.material.name] = targets[m.name]
+                    origin[slot.material.name] = origin.get(m.name, m.name)
+            mats = [s.material for s in ob.material_slots if s.material and s.material.name in targets]
+            for kind in ("EMIT", "DIFFUSE"):
+                want = [m for m in mats if targets[m.name][0 if kind == "DIFFUSE" else 1]]
+                if not want:
+                    continue
+                img = bpy.data.images.new(f"reze_bake_{kind.lower()}", size, size, float_buffer=True)
+                img.colorspace_settings.name = "Non-Color"
+                added = []
+                # every slot gets the target (Cycles bakes the active image node
+                # of each material), the others' results thrown away
+                for m in {s.material for s in ob.material_slots if s.material}:
+                    n = m.node_tree.nodes.new("ShaderNodeTexImage")
+                    n.image = img
+                    m.node_tree.nodes.active = n
+                    added.append((m, n))
+                try:
+                    if kind == "DIFFUSE":
+                        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, margin=2, use_clear=True)
+                    else:
+                        bpy.ops.object.bake(type="EMIT", margin=2, use_clear=True)
+                finally:
+                    for m, n in added:
+                        m.node_tree.nodes.remove(n)
+                px = np.empty(size * size * 4, dtype=np.float32)
+                img.pixels.foreach_get(px)
+                bpy.data.images.remove(img)
+                rgb = px.reshape(size, size, 4)[..., :3].astype(np.float64)
+                top = float(rgb.max()) if kind == "EMIT" else 1.0
+                if top <= 0:
+                    continue
+                v = np.clip(rgb / top, 0, 1)
+                enc = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
+                out = bpy.data.images.new(f"{ob.name} {'glow' if kind == 'EMIT' else 'colour'}", size, size)
+                out.pixels.foreach_set(np.concatenate([enc, np.ones((size, size, 1))], axis=-1).astype(np.float32).ravel())
+                out.pack()
+                for m in want:
+                    nt = m.node_tree
+                    bsdf = _surface(m)
+                    tex = nt.nodes.new("ShaderNodeTexImage")
+                    tex.image = out
+                    uvn = nt.nodes.new("ShaderNodeUVMap")
+                    uvn.uv_map = "UVMap"
+                    nt.links.new(uvn.outputs[0], tex.inputs["Vector"])
+                    sock = bsdf.inputs["Emission Color" if kind == "EMIT" else "Base Color"]
+                    for link in list(sock.links):
+                        nt.links.remove(link)
+                    nt.links.new(tex.outputs["Color"], sock)
+                    if kind == "EMIT":
+                        bsdf.inputs["Emission Strength"].default_value = top
+                    baked.add(origin.get(m.name, m.name))
+    finally:
+        scene.render.engine, c.samples, c.use_denoising = keep
+    if baked:
+        note(notes, f"colours from nodes: {', '.join(sorted(baked))} baked by Cycles into pictures (base colour and glow), "
+                    "which glTF can carry")
 
 
 # ── Occlusion: the room's own contact darkening, baked by Cycles ──
@@ -1917,6 +2596,11 @@ def export_stage(out_path, webp=True, quality=90):
     previous = scene.get("reze")
     carried = {k: _stored(previous, k) for k in ("grading", "ambient", "fog", "groundShadow")}
     device = _cycles_device(scene)
+    step(0.32, "Colours from nodes")
+    try:
+        _baked_colours(scene, notes)
+    except Exception as e:  # noqa: BLE001 — the stage still exports without them
+        note(notes, f"colours from nodes: could not be baked ({e})")
     ambient = None
     if not carried.get("ambient"):
         step(0.35, f"Measuring the room's light (Cycles on {device})")
@@ -1965,6 +2649,9 @@ def export_stage(out_path, webp=True, quality=90):
 
     vs = scene.view_settings
     view = {"transform": vs.view_transform, "look": vs.look, "exposure": vs.exposure, "gamma": vs.gamma}
+    pixel = _pixel_filter(scene)
+    if pixel:
+        view["filter"] = pixel
     try:
         view["lut"] = _view_lut(scene)
         note(notes, f"view: {vs.view_transform}" + (f" / {vs.look}" if vs.look not in ("", "None") else "") + " baked from Blender's colour management")
@@ -1975,13 +2662,24 @@ def export_stage(out_path, webp=True, quality=90):
     note(notes, "glare: " + (f"bloom from {bloom['threshold']:.2f} at {bloom['intensity']:.2f}, scatter {bloom['scatter']:.2f}" if bloom["enabled"]
                              else bloom.get("note", "none in the compositor, so no bloom")))
     bloom.pop("note", None)
+    probe = None
+    if haze_world is None:
+        try:
+            probe = _room_probe(scene, notes)
+        except Exception as e:  # noqa: BLE001 — the world then stands in for the reflections
+            note(notes, f"reflections: the room could not be measured ({e})")
     scene["reze"] = {"version": 1, "world": world, "view": view, "bloom": bloom, "notes": notes,
+                     # Principled's highlights: Schlick's Fresnel on every lamp,
+                     # where a Unity stage keeps URP's fixed reflectance
+                     "shading": "principled",
                      **({"ambient": ambient} if ambient else {}), **({"fog": fog} if fog else {}),
                      # The world picture is what Cycles sees from the stage,
                      # haze included, so the stage reflects that rather than the
                      # app's own capture (lit without the lamps' shadows, it
                      # comes out too bright on a shiny floor).
-                     **({"reflections": "world"} if world.get("format") == "hdr" else {}),
+                     # Unless the cast stands in a roofed room of its own, which
+                     # then reflects itself (_room_probe).
+                     **({"probe": probe} if probe else {"reflections": "world"} if world and world.get("format") == "hdr" else {}),
                      **{k: v for k, v in carried.items() if v},
                      **({"particlesJson": json.dumps(particles)} if particles else {})}
 
