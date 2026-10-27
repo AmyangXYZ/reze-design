@@ -817,6 +817,10 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
 [data-paper] [data-paper-solid]:hover {
   background: oklch(from var(--foreground) l c h / 0.85) !important;
 }
+/* Disabled, the solid greys as every disabled control on paper does. */
+[data-paper] [data-paper-solid]:disabled {
+  background: var(--ink-disabled) !important;
+}
 /* On paper what the pointer is on is in the full ink. */
 [data-paper] :is(button, [role="menuitem"], [role="option"]):hover:not(:disabled, [class*="text-red-400"]) {
   color: var(--foreground);

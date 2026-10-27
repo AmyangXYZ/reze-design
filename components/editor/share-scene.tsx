@@ -274,10 +274,15 @@ function ShareSceneForm({
   // size — the screen's canvas is the band between the columns, which the
   // gallery's spotlight then stretched to twice its width. Lossless here; the
   // upload encodes it once (lib/poster.ts).
+  // A 4K render takes a moment; the slot says so while it runs.
+  const [capturing, setCapturing] = useState(false)
   const capturePoster = () => {
+    if (capturing) return
+    setCapturing(true)
     void captureCover()
       .then((blob) => takePoster(new File([blob], "cover.png", { type: "image/png" })))
       .catch(() => {})
+      .finally(() => setCapturing(false))
   }
   const posterInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("idle")
@@ -614,6 +619,7 @@ function ShareSceneForm({
                   <Button
                     type="button"
                     variant="bare"
+                    disabled={capturing}
                     onClick={(e) => {
                       e.preventDefault()
                       capturePoster()
@@ -643,8 +649,9 @@ function ShareSceneForm({
                   type="button"
                   variant="ghost"
                   onClick={() => posterInputRef.current?.click()}
+                  disabled={capturing}
                   data-publish-thumb
-                  className="mt-0.5 block h-auto aspect-video w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/10 dark:hover:bg-white/10"
+                  className="relative mt-0.5 block h-auto aspect-video w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/10 dark:hover:bg-white/10"
                 >
                   {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't
@@ -658,6 +665,11 @@ function ShareSceneForm({
                     <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
                       <ImagePlus className="size-4" />
                       <span className="text-2xs">{t.share.thumbnailPick}</span>
+                    </span>
+                  )}
+                  {capturing && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-white">
+                      <Loader2 className="size-4 animate-spin" />
                     </span>
                   )}
                 </Button>
