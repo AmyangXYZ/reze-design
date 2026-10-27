@@ -6,25 +6,23 @@
 // with no one in between; it ends when the model stops asking for tools, when
 // the user presses stop, or at a round limit that makes it wrap up.
 //
-// The model is reached once per round: on the person's own key, straight from
-// this browser (lib/ai/providers, over their own network); on Premium,
-// through /api/agent, which holds this server's key. The history
+// The model is reached once per round, on the person's own key, straight from
+// this browser (lib/ai/providers, over their own network). The history
 // here is APPEND-ONLY: every reply is kept exactly as it came back (thinking
 // included) and nothing earlier is ever rewritten — the model's reasoning is
 // bound to the history it was produced against. The one replacement is the
-// newest message, swapped for the copy the server actually sent (images
+// newest message, swapped for the copy the provider actually sent (images
 // uploaded and referenced by id) before anything follows it.
 //
 // What is SENT is a copy with the older pictures left out and the older text
 // condensed (see sendable, compact): providers with no file uploads keep
 // pictures inline, and re-sending every capture, every tool result and every
 // scene snapshot every round grew each request without end — 70k tokens a
-// call for the heaviest Premium users, almost all of it re-read history.
+// call for the heaviest users, almost all of it re-read history.
 
 import type Anthropic from "@anthropic-ai/sdk"
 import type { ToolResult } from "@/lib/ai/scene-tools"
-import type { Via } from "@/lib/ai/providers/presets"
-import { TurnError } from "@/lib/ai/providers/types"
+import { TurnError, type Provider, type Target } from "@/lib/ai/providers/types"
 import { summarizeStep } from "@/lib/ai/agent-summary"
 
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
@@ -38,7 +36,7 @@ export type Usage = { input: number; output: number; cached: number; cacheWrite?
 export const addUsage = (a: Usage | null, b: Usage | null): Usage | null =>
   !a ? b : !b ? a : { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached, cacheWrite: (a.cacheWrite ?? 0) + (b.cacheWrite ?? 0) }
 
-/** One line of /api/agent's stream. */
+/** What a provider streams back during a turn. */
 export type AgentStreamEvent =
   | { type: "sent"; message: AgentMessage }
   | { type: "text"; text: string }
@@ -271,25 +269,6 @@ export function historyFor(_api: "anthropic" | "openai" | "compat", messages: Ag
  *  matching what it was produced against. */
 const signatureRefusal = (error: string) => /signature|thinking/i.test(error) && /invalid|400|mismatch|modif/i.test(error)
 
-/** Read an NDJSON response line by line. */
-async function* lines(res: Response): AsyncGenerator<AgentStreamEvent> {
-  const reader = res.body!.getReader()
-  const decoder = new TextDecoder()
-  let buf = ""
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    let nl: number
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim()
-      buf = buf.slice(nl + 1)
-      if (line) yield JSON.parse(line) as AgentStreamEvent
-    }
-  }
-  if (buf.trim()) yield JSON.parse(buf) as AgentStreamEvent
-}
-
 /**
  * Run the loop from `history`, whose last message is the user's new request.
  * Resolves with the history as it stands at the end — always well-formed:
@@ -300,10 +279,10 @@ export async function runAgent(opts: {
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   onProgress: (p: AgentProgress) => void
   signal: AbortSignal
-  /** The person's own connection, called from this browser; absent means
-   *  Premium, through the server. */
-  via?: Via | null
-  endpoint?: string
+  /** The person's own connection, called from this browser. */
+  route: { provider: Provider; target: Target }
+  /** False for a model that reads text only. */
+  seeing: boolean
   maxRounds?: number
 }): Promise<AgentOutcome> {
   const messages = [...opts.history]
@@ -332,66 +311,36 @@ export async function runAgent(opts: {
       else if (e.type === "error") done = { ok: false, error: e.message, retryable: e.retryable === true }
     }
 
-    // Their own key: the browser calls the service itself.
-    if (opts.via) {
+    try {
+      const { AGENT_SYSTEM, AGENT_TOOLS, TEXT_ONLY_NOTE, modelNote } = await import("@/lib/ai/agent-context")
+      const { provider, target } = opts.route
+      const send = (history: AgentMessage[]) =>
+        provider.turn({
+          target,
+          messages: history,
+          system: (opts.seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(target.model),
+          tools: AGENT_TOOLS,
+          send: handle,
+          signal: opts.signal,
+        })
+      const refusedEdit = (error: string) => provider.api === "anthropic" && opts.seeing && signatureRefusal(error)
       try {
-        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS, TEXT_ONLY_NOTE, modelNote }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
-        const route = routeOf(opts.via)
-        if ("error" in route) return { ok: false, error: route.error, retryable: false }
-        const seeing = opts.via.vision !== false
-        const send = (history: AgentMessage[]) =>
-          route.provider.turn({
-            target: route.target,
-            messages: history,
-            system: (seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(route.target.model),
-            tools: AGENT_TOOLS,
-            send: handle,
-            signal: opts.signal,
-          })
-        const refusedEdit = (error: string) => route.provider.api === "anthropic" && seeing && signatureRefusal(error)
-        try {
-          await send(historyFor(route.provider.api, messages, seeing))
-        } catch (e) {
-          if (!refusedEdit(e instanceof Error ? e.message : String(e))) throw e
-          done = null
-          await send(messages)
-        }
-        // A refusal reported in the stream rather than thrown: the same retry.
-        const failed = done as Round | null
-        if (failed && !failed.ok && refusedEdit(failed.error)) {
-          done = null
-          await send(messages)
-        }
+        await send(historyFor(provider.api, messages, opts.seeing))
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError ? e.retryable : true }
+        if (!refusedEdit(e instanceof Error ? e.message : String(e))) throw e
+        done = null
+        await send(messages)
       }
-      return done ?? { ok: false, error: "the reply was cut off", retryable: true }
-    }
-
-    let res: Response
-    try {
-      res = await fetch(opts.endpoint ?? "/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: sendable(messages) }),
-        signal: opts.signal,
-      })
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true }
-    }
-    if (!res.ok || !res.body) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string; retryable?: boolean }
-      return { ok: false, error: body.error ?? `HTTP ${res.status}`, retryable: body.retryable ?? [429, 502, 504].includes(res.status) }
-    }
-    try {
-      for await (const e of lines(res)) {
-        handle(e)
-        if (done) return done
+      // A refusal reported in the stream rather than thrown: the same retry.
+      const failed = done as Round | null
+      if (failed && !failed.ok && refusedEdit(failed.error)) {
+        done = null
+        await send(messages)
       }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true }
+      return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError ? e.retryable : true }
     }
-    return { ok: false, error: "the reply was cut off", retryable: true }
+    return done ?? { ok: false, error: "the reply was cut off", retryable: true }
   }
 
   for (let round = 0; ; round++) {

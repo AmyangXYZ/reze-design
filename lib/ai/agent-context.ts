@@ -1,6 +1,4 @@
-// What every model is told: the instructions and the tools. One module for
-// both places a turn can run — this server, for Premium, and the person's own
-// browser, for their own key — so the two can never drift apart.
+// What every model is told: the instructions and the tools.
 
 import { AGENT_SYSTEM_PROMPT } from "@/lib/ai/agent-prompt"
 import { SCENE_TOOLS } from "@/lib/ai/scene-tools"

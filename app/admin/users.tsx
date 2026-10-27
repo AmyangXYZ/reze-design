@@ -1,18 +1,17 @@
 "use client"
 
-// People: who has an account, how they sign in, what they publish and what the
-// AI costs for them — and the account panel, where an admin acts on one.
+// People: who has an account, how they sign in, what they publish — and the
+// account panel, where an admin acts on one.
 
 import { Stamp } from "@/components/stamp"
 import { useEffect, useMemo, useState } from "react"
-import { ExternalLink, Search, X } from "lucide-react"
+import { ExternalLink, Eye, Heart, Lock, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { KINDS } from "./kinds"
 import type { ItemRow, UserRow } from "./types"
 import { DeleteAccountAction, DeleteItemAction, RenameAction, SuspendAction, VerifyAction } from "./user-actions"
-import { UsageView, tokens } from "./usage"
 
 type Filter = "all" | "verified" | "suspended"
 
@@ -55,7 +54,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
   const [open, setOpen] = useState<string | null>(null)
-  const [sort, setSort] = useState<"joined" | "published" | "ai">("joined")
+  const [sort, setSort] = useState<"joined" | "published">("joined")
 
   const q = query.trim().toLowerCase()
   const shown = useMemo(() => {
@@ -64,7 +63,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
         (filter === "all" || (filter === "verified" ? u.verified : u.banned)) &&
         (!q || [u.username, u.name, u.email, u.id, ...u.providers].some((f) => f?.toLowerCase().includes(q))),
     )
-    const key = (u: UserRow) => (sort === "published" ? published(u).count : sort === "ai" ? u.aiTokens30 : Date.parse(u.createdAt))
+    const key = (u: UserRow) => (sort === "published" ? published(u).count : Date.parse(u.createdAt))
     return [...list].sort((a, b) => key(b) - key(a))
   }, [users, q, filter, sort])
 
@@ -93,7 +92,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
         </div>
         <div className="ml-auto flex items-center gap-1 text-[13px] text-muted-foreground" role="group" aria-label="Sort">
           Sort
-          {(["joined", "published", "ai"] as const).map((s) => (
+          {(["joined", "published"] as const).map((s) => (
             <Button
               key={s}
               size="xs"
@@ -101,7 +100,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
               onClick={() => setSort(s)}
               className={cn("h-7 rounded-chip px-2.5 text-[13px]", sort === s ? "bg-accent text-foreground" : "text-muted-foreground")}
             >
-              {s === "joined" ? "Newest" : s === "published" ? "Most published" : "AI use"}
+              {s === "joined" ? "Newest" : "Most published"}
             </Button>
           ))}
         </div>
@@ -115,7 +114,6 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
               <th className="px-3.5 py-2.5 font-medium">Status</th>
               <th className="px-3.5 py-2.5 font-medium">Signs in with</th>
               <th className="px-3.5 py-2.5 font-medium">Published</th>
-              <th className="px-3.5 py-2.5 font-medium">AI, 30 days</th>
               <th className="px-3.5 py-2.5 font-medium">Joined</th>
               <th className="px-3.5 py-2.5 font-medium" />
             </tr>
@@ -167,7 +165,6 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-3.5 py-2.5 font-mono">{u.aiTokens30 ? tokens(u.aiTokens30) : <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={u.createdAt} /></td>
                   {/* The row opens the panel; these act without opening it. */}
                   <td className="px-3.5 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -190,7 +187,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
 }
 
 /** One account: who they are, what can be done to the account (each action
- *  named and explained), everything they published, and their AI use. */
+ *  named and explained), and everything they published. */
 function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boolean; onClose: () => void }) {
   const [items, setItems] = useState<ItemRow[] | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -245,11 +242,6 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
         </section>
 
         <section className="space-y-2">
-          <Heading>AI use on this server’s key</Heading>
-          <UsageView user={u.id} compact />
-        </section>
-
-        <section className="space-y-2">
           <Heading>Published{items ? ` · ${items.length}` : ""}</Heading>
           {items === null ? (
             <p className="text-muted-foreground">Loading…</p>
@@ -265,10 +257,19 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
                   ) : (
                     <span className="flex h-9 w-16 shrink-0 items-center justify-center rounded-chip bg-muted text-[11px] text-muted-foreground capitalize">{i.kind}</span>
                   )}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate">{i.name}</div>
-                    <div className="text-muted-foreground">
-                      <span className="capitalize">{i.kind}</span> · {i.likeCount} likes · {i.visibility} · <Stamp iso={i.createdAt} />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate">{i.name}</span>
+                      {i.visibility === "private" && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Private" />}
+                      {i.displayOnly && <Eye className="size-3 shrink-0 text-muted-foreground" aria-label="View only" />}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="capitalize">{i.kind}</span>
+                      <span className="flex items-center gap-1">
+                        <Heart className="size-3" />
+                        <span className="font-mono">{i.likeCount}</span>
+                      </span>
+                      <Stamp iso={i.createdAt} className="font-mono" />
                     </div>
                   </div>
                   {i.kind === "scene" && (

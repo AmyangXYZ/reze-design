@@ -64,7 +64,6 @@ const titleOf = (request: string) => (request.length > 32 ? `${request.slice(0, 
 export function useAgent({
   scene,
   via,
-  ready,
   runTool,
   begin,
   end,
@@ -72,12 +71,10 @@ export function useAgent({
 }: {
   /** The open scene's identity: a new one stops a run in progress. */
   scene: unknown
-  /** The person's own connection, or null for Premium. Read when a run
+  /** The person's own connection, or null when there is none — then a
+   *  request says to add a model rather than asking anyone. Read when a run
    *  starts: switching mid-run takes effect on the next request. */
   via: Via | null
-  /** A model to ask: the person's own, or Premium. Without one a request
-   *  says to add a model rather than asking anyone. */
-  ready: boolean
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   /** Group the run's changes into one undo step. */
   begin: (label?: string) => void
@@ -222,7 +219,6 @@ export function useAgent({
     if (!files.length) return
     // Uploaded by whichever key the conversation used last.
     if (viaRef.current) void deleteOwnFiles(viaRef.current, files).catch(() => null)
-    else void fetch("/api/agent", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) }).catch(() => null)
   }, [])
 
   // A different scene stops a run in progress (its tools would act on the new
@@ -270,9 +266,13 @@ export function useAgent({
       let spent: Usage | null = null
       begin(label.length > 40 ? `${label.slice(0, 40)}…` : label)
       try {
-        const out = await runAgent({
+        const via = viaRef.current
+        const { routeOf } = await import("@/lib/ai/providers")
+        const route = via ? routeOf(via) : { error: "no model" }
+        const out = "error" in route ? { messages: from, ended: "error" as const, error: route.error } : await runAgent({
           history: from,
-          via: viaRef.current,
+          route,
+          seeing: via?.vision !== false,
           runTool,
           signal: controller.signal,
           onProgress: (p) => {
@@ -348,7 +348,7 @@ export function useAgent({
       // A picture with no words asks for its look.
       const request = text.trim() || (refs.length ? "Make the scene follow this reference image's style." : "")
       if (!request || abort.current) return
-      if (!ready) return setNotice(noticeOf("error", "premium", null))
+      if (!viaRef.current) return setNotice(noticeOf("error", "no model", null))
       // A picture would reach a model that cannot see it; say so, send nothing.
       if (refs.length && viaRef.current?.vision === false) return setNotice({ kind: "textOnly", kept: false })
       const at = history.current.length
@@ -378,7 +378,7 @@ export function useAgent({
         pictures,
       )
     },
-    [runTool, go, ready, tabs, thumbs, writeIndex],
+    [runTool, go, tabs, thumbs, writeIndex],
   )
 
   /** The notice's own action: try the failed request again from where it
@@ -463,8 +463,8 @@ export function useAgent({
   )
 
   // In development the director is on window.rezeAgent, like the tools on
-  // rezeTools: an eval script (or a headless browser that is not signed in to
-  // Premium) can send a request and read the whole conversation back.
+  // rezeTools: an eval script can send a request and read the whole
+  // conversation back.
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return
     const w = window as unknown as { rezeAgent?: unknown }

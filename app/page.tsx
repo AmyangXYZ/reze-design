@@ -2777,10 +2777,9 @@ function Lab() {
           if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: left, y: top, w: vw, h: vh }
           const w = a < va ? vh * a : vw
           const h = a < va ? vh : vw / a
-          // Set from the band's left edge — 26rem, the search box's — rather
-          // than centred in it, so the picture lines up under the search.
           return {
-            x: left,
+            // Centred on the screen, held inside the band.
+            x: Math.min(Math.max((framing.frameVp.w - w) / 2, left), right - w),
             y: top + (vh - h) / 2,
             w,
             h,
@@ -3361,17 +3360,6 @@ function Lab() {
   // never leaves this device until it is published, and publishing is where an
   // account becomes the answer.
   const { data: authSession } = useSession()
-  // The art director is open to everyone: each person brings their own key
-  // (lib/ai/connections). Under `next dev` this server's key is offered too,
-  // to a signed-in developer — Premium, which offered it on the deployed
-  // site, ended on 2026-10-11 (lib/ai/gate).
-  // In development, ?premium in the address offers it in a browser that is
-  // not signed in. Read only once `mounted`, so the URL cannot disagree with
-  // the server's render.
-  const [devPremium] = useState(
-    () => process.env.NODE_ENV === "development" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("premium"),
-  )
-  const premium = process.env.NODE_ENV === "development" && (!!authSession || devPremium)
   const authorName = authSession?.user.username ?? t.effectLibrary.you
   // Fetch the published rows BEFORE a library is opened, not when one is.
   // Everyone's rows need no session, so they start at once; yours (private
@@ -4331,23 +4319,22 @@ function Lab() {
   )
   // The looks saved in this browser for the inspected model (lib/model-looks):
   // what its next upload wears in place of the auto-styling.
-  const inspectedLooksKey = useMemo(() => {
-    const model = inspected && engineRef.current?.getModel(inspected.id)
-    return model ? modelLooksKey(model) : null
-  }, [inspected, engineRef])
-  const [savedLooks, setSavedLooks] = useState<{ key: string; groups: StyleGroup[] | null } | null>(null)
+  // Keyed by the engine's model, so it is read in the effect, never in render.
+  const [savedLooks, setSavedLooks] = useState<{ id: string; key: string; groups: StyleGroup[] | null } | null>(null)
   useEffect(() => {
-    if (!inspectedLooksKey) return
+    const model = inspected && engineRef.current?.getModel(inspected.id)
+    const key = model ? modelLooksKey(model) : null
+    if (!inspected || !key) return
     let live = true
-    void loadModelLooks(inspectedLooksKey).then((groups) => {
-      if (live) setSavedLooks({ key: inspectedLooksKey, groups })
+    void loadModelLooks(key).then((groups) => {
+      if (live) setSavedLooks({ id: inspected.id, key, groups })
     })
     return () => {
       live = false
     }
-  }, [inspectedLooksKey])
-  const looksSaved =
-    !!savedLooks?.groups && savedLooks.key === inspectedLooksKey && sameLooks(savedLooks.groups, inspectedGroups)
+  }, [inspected, engineRef])
+  const inspectedLooksKey = savedLooks?.id === inspected?.id ? savedLooks?.key ?? null : null
+  const looksSaved = !!inspectedLooksKey && !!savedLooks?.groups && sameLooks(savedLooks.groups, inspectedGroups)
   const toggleSavedLooks = useCallback(async () => {
     if (!inspectedLooksKey) return
     const next = looksSaved ? null : savableLooks(inspectedGroups)
@@ -4355,7 +4342,7 @@ function Lab() {
       toast.error(t.materials.looksSaveFailed)
       return
     }
-    setSavedLooks({ key: inspectedLooksKey, groups: next })
+    setSavedLooks((l) => (l ? { ...l, groups: next } : l))
     toast.success(next ? t.materials.looksSavedToast : t.materials.looksForgotToast)
   }, [inspectedLooksKey, looksSaved, inspectedGroups, t])
   const inspectGroupsApply = useCallback(
@@ -6195,9 +6182,9 @@ function Lab() {
   // The art director runs those tools in a loop (lib/ai/agent-loop); each
   // request it takes is one step in the scene's undo history.
   const aiSettings = useAiSettings()
-  const aiActive = resolveActive(aiSettings, premium)
+  const aiActive = resolveActive(aiSettings)
   const [aiMenuOpen, setAiMenuOpen] = useState(false)
-  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), ready: aiActive !== null, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end, jump: sceneHistory.jump })
+  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end, jump: sceneHistory.jump })
 
   // ── Persistence ──
   //
@@ -7226,7 +7213,6 @@ function Lab() {
               <AgentMenu
                 settings={aiSettings}
                 active={aiActive}
-                premium={premium}
                 open={aiMenuOpen}
                 onOpenChange={setAiMenuOpen}
                 text={t.lab.agent.settings}

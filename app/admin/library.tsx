@@ -1,11 +1,11 @@
 "use client"
 
-// What people published: scenes as a wall of posters, effects, grades and
-// shader graphs as tables. Each kind loads when its view opens.
+// What people published, as walls of poster cards. Each kind loads when its
+// view opens.
 
 import { Stamp } from "@/components/stamp"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Check, ChevronDown, ChevronUp, Copy, ExternalLink, Search } from "lucide-react"
+import { Check, Clapperboard, Copy, ExternalLink, Eye, Heart, Lock, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -13,7 +13,7 @@ import type { KindKey } from "./kinds"
 import type { ItemRow } from "./types"
 import { DeleteItemAction } from "./user-actions"
 
-function useItems(kind: KindKey) {
+export function useItems(kind: KindKey) {
   const [rows, setRows] = useState<ItemRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const load = useCallback(
@@ -92,134 +92,99 @@ function CopyLink({ path }: { path: string }) {
   )
 }
 
-export function ScenesView() {
-  const { rows, error, reload } = useItems("scene")
+/** What an item's poster says about who can reach it: private, or (a scene)
+ *  watch-only. Public and forkable carries no mark. */
+export function Reach({ item }: { item: ItemRow }) {
+  const marks = [
+    item.visibility === "private" && { icon: Lock, label: "Private" },
+    item.displayOnly && { icon: Eye, label: "View only" },
+  ].filter((m): m is { icon: typeof Lock; label: string } => !!m)
+  if (!marks.length) return null
+  return (
+    <div className="absolute top-2 right-2 flex gap-1">
+      {marks.map((m) => (
+        <span key={m.label} title={m.label} aria-label={m.label} className="flex size-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-xs">
+          <m.icon className="size-3.5" />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** Scenes, effects, grades or shader graphs: a wall of cards, each its poster
+ *  with who can reach it marked on it, then its name, its author, and its
+ *  numbers, a line each. */
+export function ItemsView({ kind, noun }: { kind: KindKey; noun: string }) {
+  const { rows, error, reload } = useItems(kind)
   const [query, setQuery] = useState("")
   const [sort, setSort] = useState<Sort>("new")
   const shown = useShown(rows, query, sort)
-  if (error) return <p className="text-xs text-amber-600">{error}</p>
-  if (!rows) return <p className="text-xs text-muted-foreground">Loading…</p>
+  const scene = kind === "scene"
+  if (error) return <p className="text-[13px] text-amber-600">{error}</p>
+  if (!rows) return <p className="text-[13px] text-muted-foreground">Loading…</p>
   return (
     <div className="space-y-4">
-      <Toolbar query={query} setQuery={setQuery} sort={sort} setSort={setSort} sorts={["new", "likes"]} count={shown.length} />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+      <Toolbar query={query} setQuery={setQuery} sort={sort} setSort={setSort} sorts={scene ? ["new", "likes"] : ["new", "likes", "used"]} count={shown.length} />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4">
         {shown.map((s) => {
-          const path = `/${s.author}/${s.id}`
+          const path = scene ? `/${s.author}/${s.id}` : null
+          const poster = s.poster ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a stored poster
+            <img src={s.poster} alt="" className="size-full object-cover" />
+          ) : (
+            <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No poster</span>
+          )
           return (
             <article key={s.id} className="overflow-hidden rounded-surface border border-line bg-card">
-              <a href={path} target="_blank" rel="noreferrer" className="block aspect-video bg-muted">
-                {s.poster ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- a stored poster
-                  <img src={s.poster} alt="" className="size-full object-cover" />
+              <div className="relative aspect-video bg-muted">
+                {path ? (
+                  <a href={path} target="_blank" rel="noreferrer" className="block size-full">
+                    {poster}
+                  </a>
                 ) : (
-                  <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No poster</span>
+                  poster
                 )}
-              </a>
-              <div className="flex items-start gap-2 p-3 text-xs">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{s.name}</div>
-                  <div className="truncate text-muted-foreground">
-                    @{s.author} · {s.likeCount} likes · {s.visibility}
+                <Reach item={s} />
+              </div>
+              <div className="space-y-1 p-3 text-[13px]">
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1 truncate font-medium" title={s.description || undefined}>
+                    {s.name}
                   </div>
-                  <Stamp iso={s.createdAt} className="block font-mono text-muted-foreground" />
+                  <div className="-my-1 flex shrink-0 gap-0.5">
+                    {path && (
+                      <>
+                        <Button size="icon-xs" variant="ghost" asChild className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                          <a href={path} target="_blank" rel="noreferrer" aria-label="Open the public page">
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        </Button>
+                        <CopyLink path={path} />
+                      </>
+                    )}
+                    <DeleteItemAction id={s.id} name={s.name} variant="icon" onDone={() => void reload()} />
+                  </div>
                 </div>
-                <div className="flex shrink-0 gap-0.5">
-                  <Button size="icon-xs" variant="ghost" asChild className="text-muted-foreground hover:bg-accent hover:text-foreground">
-                    <a href={path} target="_blank" rel="noreferrer" aria-label="Open the public page">
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  </Button>
-                  <CopyLink path={path} />
-                  <DeleteItemAction id={s.id} name={s.name} variant="icon" onDone={() => void reload()} />
+                <div className="truncate font-mono text-xs text-muted-foreground">@{s.author}</div>
+                <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1" title="Likes">
+                    <Heart className="size-3" />
+                    <span className="font-mono">{s.likeCount}</span>
+                  </span>
+                  {!scene && (
+                    <span className="flex items-center gap-1" title="Published scenes that use it">
+                      <Clapperboard className="size-3" />
+                      <span className="font-mono">{s.usedInScenes}</span>
+                    </span>
+                  )}
+                  <Stamp iso={s.createdAt} className="ml-auto font-mono" />
                 </div>
               </div>
             </article>
           )
         })}
       </div>
-      {shown.length === 0 && <p className="text-xs text-muted-foreground">{query ? "No scenes match." : "No scenes yet."}</p>}
-    </div>
-  )
-}
-
-/** The items table's columns, and what each sorts by. */
-const COLUMNS: { key: string; header: string; title?: string; value?: (r: ItemRow) => string | number }[] = [
-  { key: "name", header: "Name", value: (r) => r.name },
-  { key: "author", header: "Author", value: (r) => r.author },
-  { key: "likes", header: "Likes", value: (r) => r.likeCount },
-  { key: "scenes", header: "In scenes", title: "Published scenes that use it", value: (r) => r.usedInScenes },
-  { key: "visibility", header: "Visibility", value: (r) => r.visibility },
-  { key: "created", header: "Created", value: (r) => Date.parse(r.createdAt) },
-  { key: "actions", header: "" },
-]
-
-/** Effects, grades or shader graphs: a table, since there is no picture to show. */
-export function ItemsView({ kind, noun }: { kind: Exclude<KindKey, "scene">; noun: string }) {
-  const { rows, error, reload } = useItems(kind)
-  const [query, setQuery] = useState("")
-  const [sort, setSort] = useState<{ key: string; desc: boolean }>({ key: "created", desc: true })
-  const filtered = useShown(rows, query, "new")
-  const shown = useMemo(() => {
-    const get = COLUMNS.find((c) => c.key === sort.key)?.value
-    if (!get) return filtered
-    return [...filtered].sort((a, b) => {
-      const [x, y] = [get(a), get(b)]
-      const cmp = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))
-      return sort.desc ? -cmp : cmp
-    })
-  }, [filtered, sort])
-  if (error) return <p className="text-[13px] text-amber-600">{error}</p>
-  if (!rows) return <p className="text-[13px] text-muted-foreground">Loading…</p>
-  return (
-    <div className="space-y-4">
-      <Toolbar query={query} setQuery={setQuery} sort="new" setSort={() => {}} sorts={[]} count={shown.length} />
-      <div className="overflow-hidden rounded-surface border border-line">
-        <table className="w-full text-[13px]">
-          <thead className="text-muted-foreground">
-            <tr className="border-b border-line text-left">
-              {COLUMNS.map((c) => {
-                const active = sort.key === c.key
-                return (
-                  <th key={c.key} className="px-3.5 py-2.5 font-medium" aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}>
-                    {c.value ? (
-                      <Button
-                        variant="bare"
-                        // Text starts A→Z; counts and dates start with the most.
-                        onClick={() => setSort((s) => (s.key === c.key ? { key: c.key, desc: !s.desc } : { key: c.key, desc: c.key !== "name" && c.key !== "author" && c.key !== "visibility" }))}
-                        className={cn("inline-flex items-center gap-1 font-medium hover:text-foreground", active ? "text-foreground" : "text-muted-foreground")}
-                      >
-                        {c.header}
-                        {active && (sort.desc ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />)}
-                      </Button>
-                    ) : (
-                      c.header
-                    )}
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((r) => (
-              <tr key={r.id} className="border-b border-line last:border-0">
-                <td className="px-3.5 py-2.5">
-                  <div className="font-medium">{r.name}</div>
-                  {r.description && <div className="max-w-md truncate text-muted-foreground">{r.description}</div>}
-                </td>
-                <td className="px-3.5 py-2.5 font-mono text-muted-foreground">@{r.author}</td>
-                <td className="px-3.5 py-2.5 font-mono">{r.likeCount}</td>
-                <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{r.usedInScenes}</td>
-                <td className="px-3.5 py-2.5 text-muted-foreground">{r.visibility}</td>
-                <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={r.createdAt} /></td>
-                <td className="px-3.5 py-2.5 text-right">
-                  <DeleteItemAction id={r.id} name={r.name} variant="icon" onDone={() => void reload()} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {shown.length === 0 && <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">{query ? `No ${noun} match.` : `No ${noun} yet.`}</p>}
-      </div>
+      {shown.length === 0 && <p className="text-[13px] text-muted-foreground">{query ? `No ${noun} match.` : `No ${noun} yet.`}</p>}
     </div>
   )
 }

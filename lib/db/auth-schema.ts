@@ -1,8 +1,6 @@
 import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
-export type Plan = "free" | "premium";
-
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -20,10 +18,6 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false).notNull(),
   bannedAt: timestamp("banned_at"),
   banReason: text("ban_reason"),
-  /** Retired 2026-10-11: Premium (the AI on this server's key) ended, and the
-   *  hand-granted accounts became `verified`. Nothing reads it; drop it in the
-   *  next migration once the build that stopped reading it is deployed. */
-  plan: text("plan").$type<Plan>().default("free").notNull(),
   /** A maker we vouch for: their effects, shaders and scenes are good to learn
    *  from and build on. Granted by hand from /admin, and shown as a check beside
    *  their name wherever their work is. */

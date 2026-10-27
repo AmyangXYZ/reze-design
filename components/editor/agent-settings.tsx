@@ -21,7 +21,6 @@ import { connectionLabel, listModels, updateAi, verifyModel, type Active, type A
 
 export type AgentSettingsText = {
   menu: string
-  premium: string
   addConnection: string
   addModel: string
   key: string
@@ -42,7 +41,7 @@ export type AgentSettingsText = {
   keyNote: string
 }
 
-const isActive = (a: Active | null, connection: string, model?: string) => !!a && a.connection === connection && (model === undefined || ("model" in a && a.model === model))
+const isActive = (a: Active | null, connection: string, model: string) => a?.connection === connection && a.model === model
 
 /**
  * One choosable line: a mark column (the selection check, or the row's own
@@ -103,7 +102,6 @@ type View = { kind: "list" } | { kind: "add" } | { kind: "models"; connection: s
 export function AgentMenu({
   settings,
   active,
-  premium,
   open,
   onOpenChange,
   text,
@@ -111,7 +109,6 @@ export function AgentMenu({
 }: {
   settings: AiSettings
   active: Active | null
-  premium: boolean
   /** Controlled, so the panel's "Add a model" can open it too. */
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -135,13 +132,13 @@ export function AgentMenu({
       </PopoverTrigger>
       {/* The left dock's popovers, to the pixel: radius, surface, edge, shadow. */}
       <PopoverContent align="end" className="w-64 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float" onCloseAutoFocus={(e) => e.preventDefault()}>
-        <MenuBody settings={settings} active={active} premium={premium} text={text} />
+        <MenuBody settings={settings} active={active} text={text} />
       </PopoverContent>
     </Popover>
   )
 }
 
-function MenuBody({ settings, active, premium, text }: { settings: AiSettings; active: Active | null; premium: boolean; text: AgentSettingsText }) {
+function MenuBody({ settings, active, text }: { settings: AiSettings; active: Active | null; text: AgentSettingsText }) {
   const [view, setView] = useState<View>({ kind: "list" })
   if (view.kind === "add") return <AddConnection text={text} onBack={() => setView({ kind: "list" })} onAdded={(id) => setView({ kind: "models", connection: id })} />
   if (view.kind === "models") {
@@ -163,11 +160,6 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
 
   return (
     <div className="max-h-[28rem] overflow-y-auto">
-      {premium && (
-        <Line selected={isActive(active, "premium")} onClick={() => choose({ connection: "premium" })}>
-          {text.premium}
-        </Line>
-      )}
       {settings.connections.map((c) => (
         <div key={c.id} className="mt-1 border-t border-line pt-1 first:mt-0 first:border-0 first:pt-0">
           <div className="flex items-center gap-1 pr-1">
@@ -215,7 +207,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
           </Line>
         </div>
       ))}
-      <div className={cn(settings.connections.length || premium ? "mt-1 border-t border-line pt-1" : "")}>
+      <div className={cn(settings.connections.length ? "mt-1 border-t border-line pt-1" : "")}>
         <Line mark={<Plus className="size-3" />} onClick={() => setView({ kind: "add" })}>
           {text.addConnection}
         </Line>

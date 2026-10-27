@@ -1,4 +1,4 @@
-// Tests for the agent loop, against a scripted /api/agent.
+// Tests for the agent loop, against a scripted provider.
 //
 //   npx esbuild lib/ai/agent-loop.test.mts --bundle --platform=node --format=esm \
 //     --tsconfig=tsconfig.json --outfile=analysis/agent/al.mjs && node analysis/agent/al.mjs
@@ -10,8 +10,9 @@
 // makes the model wrap up at the round limit.
 
 import assert from "node:assert/strict"
-import { runAgent, filesIn, settle, toolResultBlock, historyFor, compact, sendable, LOOP_NOTE, SNAPSHOT, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
+import { runAgent, filesIn, settle, toolResultBlock, historyFor, compact, sendable, LOOP_NOTE, SNAPSHOT, type AgentMessage } from "./agent-loop"
 import type { ToolResult } from "./scene-tools"
+import { TurnError, type Provider, type TurnArgs } from "./providers/types"
 
 let failures = 0
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -28,50 +29,47 @@ type Reply = { content: unknown[]; stopReason: string }
 const toolUse = (id: string, name: string, input: object = {}) => ({ type: "tool_use", id, name, input })
 const text = (t: string) => ({ type: "text", text: t })
 
-/** A fetch that answers each POST with the next scripted reply, recording
- *  what it was sent. `sent` swaps the newest message the way the server does. */
+type Route = { provider: Provider; target: { key: string; model: string; baseURL: string } }
+
+/** A provider whose turn runs `turn`. */
+const providerOf = (turn: (args: TurnArgs) => Promise<void>): Route => ({
+  provider: { api: "compat", turn, models: async () => [], deleteFiles: async () => {} },
+  target: { key: "k", model: "m", baseURL: "http://x" },
+})
+
+/** A provider that answers each turn with the next scripted reply, recording
+ *  what it was sent. `sent` swaps the newest message the way an upload does. */
 function scripted(replies: Reply[], opts: { upload?: boolean } = {}) {
   const bodies: AgentMessage[][] = []
   let i = 0
-  const fetchImpl = async (_url: string, init: { body: string }) => {
-    const { messages } = JSON.parse(init.body) as { messages: AgentMessage[] }
+  const route = providerOf(async ({ messages, send }) => {
     bodies.push(messages)
     const reply = replies[i++]
     if (!reply) throw new Error("script ran out")
     const last = messages[messages.length - 1]
-    const sentCopy = opts.upload ? { ...last, uploaded: true } : last
-    const events: AgentStreamEvent[] = [
-      { type: "sent", message: sentCopy as AgentMessage },
-      { type: "text", text: "…" },
-      { type: "message", content: reply.content as never, stopReason: reply.stopReason, usage: null },
-    ]
-    return new Response(events.map((e) => JSON.stringify(e)).join("\n") + "\n", { status: 200 })
-  }
-  return { fetchImpl, bodies }
+    send({ type: "sent", message: (opts.upload ? { ...last, uploaded: true } : last) as AgentMessage })
+    send({ type: "text", text: "…" })
+    send({ type: "message", content: reply.content as never, stopReason: reply.stopReason, usage: null })
+  })
+  return { route, bodies }
 }
 
-function withFetch<T>(f: unknown, run: () => Promise<T>): Promise<T> {
-  const was = globalThis.fetch
-  globalThis.fetch = f as typeof fetch
-  return run().finally(() => (globalThis.fetch = was))
-}
+const agent = (route: Route, opts: Omit<Parameters<typeof runAgent>[0], "route" | "seeing">) => runAgent({ ...opts, route, seeing: true })
 
 const user = (t: string): AgentMessage => ({ role: "user", content: [{ type: "text", text: t }] })
 
 await test("tools run in order, each answered, until the model stops calling them", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [toolUse("a", "get_scene"), toolUse("b", "capture", { size: 256 })], stopReason: "tool_use" },
     { content: [text("Warmer now.")], stopReason: "end_turn" },
   ])
   const ran: string[] = []
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({
+  const out = await agent(route, {
       history: [user("warmer")],
       runTool: async (name) => (ran.push(name), { data: { ok: true } }),
       onProgress: () => {},
       signal: new AbortController().signal,
-    }),
-  )
+    })
   assert.equal(out.ended, "done")
   assert.deepEqual(ran, ["get_scene", "capture"])
   // user, assistant(tool calls), user(results), assistant(text)
@@ -82,14 +80,12 @@ await test("tools run in order, each answered, until the model stops calling the
 })
 
 await test("the history only grows: each request extends the last one", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [toolUse("a", "get_scene")], stopReason: "tool_use" },
     { content: [toolUse("b", "capture")], stopReason: "tool_use" },
     { content: [text("done")], stopReason: "end_turn" },
   ])
-  await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   for (let k = 1; k < bodies.length; k++) {
     const prev = JSON.stringify(bodies[k - 1])
     const now = JSON.stringify(bodies[k].slice(0, bodies[k - 1].length))
@@ -97,20 +93,17 @@ await test("the history only grows: each request extends the last one", async ()
   }
 })
 
-await test("the newest message is replaced by the copy the server sent", async () => {
-  const { fetchImpl } = scripted([{ content: [text("hi")], stopReason: "end_turn" }], { upload: true })
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+await test("the newest message is replaced by the copy the provider sent", async () => {
+  const { route } = scripted([{ content: [text("hi")], stopReason: "end_turn" }], { upload: true })
+  const out = await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal((out.messages[0] as { uploaded?: boolean }).uploaded, true)
 })
 
 await test("stop mid-run answers every pending call and ends", async () => {
   const controller = new AbortController()
-  const { fetchImpl } = scripted([{ content: [toolUse("a", "capture"), toolUse("b", "set_settings")], stopReason: "tool_use" }])
+  const { route } = scripted([{ content: [toolUse("a", "capture"), toolUse("b", "set_settings")], stopReason: "tool_use" }])
   const ran: string[] = []
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({
+  const out = await agent(route, {
       history: [user("x")],
       runTool: async (name) => {
         ran.push(name)
@@ -119,8 +112,7 @@ await test("stop mid-run answers every pending call and ends", async () => {
       },
       onProgress: () => {},
       signal: controller.signal,
-    }),
-  )
+    })
   assert.equal(out.ended, "stopped")
   assert.deepEqual(ran, ["capture"], "nothing runs after stop")
   const results = out.messages[out.messages.length - 1].content as { tool_use_id: string; is_error?: boolean }[]
@@ -130,11 +122,9 @@ await test("stop mid-run answers every pending call and ends", async () => {
 
 await test("at the round limit the model is told to wrap up, then the loop ends", async () => {
   const forever = Array.from({ length: 5 }, (_, k) => ({ content: [toolUse(`t${k}`, "capture")], stopReason: "tool_use" }))
-  const { fetchImpl, bodies } = scripted(forever)
+  const { route, bodies } = scripted(forever)
   let ran = 0
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => (ran++, { data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 }),
-  )
+  const out = await agent(route, { history: [user("x")], runTool: async () => (ran++, { data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 })
   assert.equal(out.ended, "limit")
   const wrap = JSON.stringify(bodies[2])
   assert.match(wrap, /last round for this request/)
@@ -144,57 +134,52 @@ await test("at the round limit the model is told to wrap up, then the loop ends"
 
 await test("pauses and cut-off calls count toward the round limit", async () => {
   const forever = Array.from({ length: 6 }, (_, k) => ({ content: [toolUse(`t${k}`, "capture")], stopReason: k % 2 ? "pause_turn" : "max_tokens" }))
-  const { fetchImpl, bodies } = scripted(forever)
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 }),
-  )
+  const { route, bodies } = scripted(forever)
+  const out = await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 })
   assert.equal(out.ended, "limit")
   assert.equal(bodies.length, 3)
 })
 
 await test("a text reply cut off at the token limit is continued once", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [text("Warmer, and the")], stopReason: "max_tokens" },
     { content: [text("rim is cooler.")], stopReason: "max_tokens" },
   ])
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  const out = await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(out.ended, "done")
   assert.equal(bodies.length, 2)
   assert.match(JSON.stringify(bodies[1]), /cut off/)
 })
 
 await test("a call cut off at the token limit is not run", async () => {
-  const { fetchImpl } = scripted([
+  const { route } = scripted([
     { content: [toolUse("a", "set_settings", { patch: {} })], stopReason: "max_tokens" },
     { content: [text("ok")], stopReason: "end_turn" },
   ])
   const ran: string[] = []
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  const out = await agent(route, { history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.deepEqual(ran, [])
   assert.equal(out.ended, "done")
 })
 
-await test("a server error ends the run with its message", async () => {
-  const f = async () => new Response(JSON.stringify({ error: "premium" }), { status: 403 })
-  const out = await withFetch(f, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+await test("a provider error ends the run with its message", async () => {
+  const f = providerOf(async () => {
+    throw new TurnError("model error 401: bad key", false)
+  })
+  const out = await agent(f, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(out.ended, "error")
-  assert.equal(out.error, "premium")
+  assert.equal(out.error, "model error 401: bad key")
 })
 
 await test("a transient failure is retried, and the run carries on", async () => {
-  const { fetchImpl } = scripted([{ content: [text("ok")], stopReason: "end_turn" }])
+  const { route } = scripted([{ content: [text("ok")], stopReason: "end_turn" }])
   let calls = 0
-  const flaky = async (url: string, init: { body: string }) => (++calls === 1 ? new Response(JSON.stringify({ error: "bad gateway" }), { status: 502 }) : fetchImpl(url, init))
+  const flaky = providerOf(async (args) => {
+    if (++calls === 1) throw new TurnError("bad gateway", true)
+    return route.provider.turn(args)
+  })
   const retries: string[] = []
-  const out = await withFetch(flaky, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: (p) => p.type === "retry" && retries.push(p.reason), signal: new AbortController().signal }),
-  )
+  const out = await agent(flaky, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: (p) => p.type === "retry" && retries.push(p.reason), signal: new AbortController().signal })
   assert.equal(out.ended, "done")
   assert.equal(calls, 2)
   assert.deepEqual(retries, ["bad gateway"])
@@ -202,37 +187,34 @@ await test("a transient failure is retried, and the run carries on", async () =>
 
 await test("a refusal that retrying cannot fix is not retried", async () => {
   let calls = 0
-  const f = async () => (calls++, new Response(JSON.stringify({ error: "premium" }), { status: 403 }))
-  const out = await withFetch(f, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  const f = providerOf(async () => {
+    calls++
+    throw new TurnError("model error 401: bad key", false)
+  })
+  const out = await agent(f, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(out.ended, "error")
   assert.equal(calls, 1)
 })
 
 await test("one direct change finishes without being sent back to look", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [toolUse("a", "set_settings", { patch: {} })], stopReason: "tool_use" },
     { content: [text("Done.")], stopReason: "end_turn" },
   ])
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  const out = await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(out.ended, "done")
   assert.equal(bodies.length, 2)
 })
 
 await test("two or more changes finishing unseen get one nudge to look", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [toolUse("a", "set_settings", { patch: {} }), toolUse("a2", "set_grade", {})], stopReason: "tool_use" },
     { content: [text("Done.")], stopReason: "end_turn" },
     { content: [toolUse("b", "capture")], stopReason: "tool_use" },
     { content: [text("Checked, done.")], stopReason: "end_turn" },
   ])
   const ran: string[] = []
-  const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  const out = await agent(route, { history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(out.ended, "done")
   assert.deepEqual(ran, ["set_settings", "set_grade", "capture"])
   assert.equal(bodies.length, 4)
@@ -240,13 +222,11 @@ await test("two or more changes finishing unseen get one nudge to look", async (
 })
 
 await test("a run that only looked, or looked last, is not nudged", async () => {
-  const { fetchImpl, bodies } = scripted([
+  const { route, bodies } = scripted([
     { content: [toolUse("a", "set_settings", { patch: {} }), toolUse("b", "capture")], stopReason: "tool_use" },
     { content: [text("Done.")], stopReason: "end_turn" },
   ])
-  await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
-  )
+  await agent(route, { history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal })
   assert.equal(bodies.length, 2)
 })
 
@@ -411,7 +391,7 @@ await test("a message once condensed reads the same every later round (the cache
 })
 
 await test("a long session costs a fraction of what it did to re-send", () => {
-  // A heavy Premium session's shape: requests with a scene snapshot, each
+  // A heavy session's shape: requests with a scene snapshot, each
   // several rounds of reading, changing and looking. Sizes are the real tools'
   // order of magnitude: a snapshot ~6k tokens, a capture's numbers ~2k.
   const h: AgentMessage[] = []

@@ -1,10 +1,9 @@
-// What the agent route asks of a model provider: one turn, streamed.
+// What the agent loop asks of a model provider: one turn, streamed.
 //
 // The conversation is kept in ONE shape whichever model answers — Anthropic's
 // message blocks, which is what the browser stores, shows and re-sends — and
 // each provider translates at its edge. So the loop, the panel and a saved
-// conversation never learn which model is on the other end; switching is the
-// route's decision alone (see app/api/agent/route.ts).
+// conversation never learn which model is on the other end.
 //
 // A turn: upload any inline images in the newest message and say so with a
 // `sent` event (the browser keeps that copy), stream text / thinking / tool

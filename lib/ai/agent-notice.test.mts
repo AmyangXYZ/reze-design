@@ -34,14 +34,9 @@ await test("the step limit offers to continue; a closed page, to try again", () 
   assert.equal(noticeOf("interrupted", null, null)?.action, "retry")
 })
 
-await test("every message the server and the loop send lands on a plain kind", () => {
+await test("every message the providers and the loop send lands on a plain kind", () => {
   const cases: [string, string][] = [
-    ["unauthenticated", "signIn"],
-    ["premium", "premium"],
-    ["slow down", "rateLimited"],
-    ["HTTP 429", "rateLimited"],
-    ["too large", "tooLarge"],
-    ["the server has no AI key", "notSetUp"],
+    ["no model", "noModel"],
     ["model error 401: Incorrect API key provided", "badKey"],
     ["model error 403: permission denied", "badKey"],
     ["the model is busy — try again in a moment", "busy"],
@@ -56,11 +51,10 @@ await test("every message the server and the loop send lands on a plain kind", (
   for (const [error, kind] of cases) assert.equal(errorKind(error), kind, error)
 })
 
-await test("faults that a second try can fix offer one; account and setup refusals do not", () => {
+await test("faults that a second try can fix offer one; setup refusals do not", () => {
   assert.equal(noticeOf("error", "the model is busy", null)?.action, "retry")
   assert.equal(noticeOf("error", "Failed to fetch", null)?.action, "retry")
-  assert.equal(noticeOf("error", "premium", null)?.action, undefined)
-  assert.equal(noticeOf("error", "the server has no AI key", null)?.action, undefined)
+  assert.equal(noticeOf("error", "no model", null)?.action, undefined)
   assert.equal(noticeOf("error", "model error 401: bad key", null)?.action, undefined)
   assert.equal(noticeOf("error", "model error 400: bad", null)?.action, "newChat")
 })
@@ -70,8 +64,8 @@ await test("only a general message carries the raw detail", () => {
   assert.equal(noticeOf("error", "the model is busy", null)?.detail, undefined)
 })
 
-await test("nothing ran before an account refusal, so nothing is said to be kept", () => {
-  assert.equal(noticeOf("error", "premium", null)?.kept, false)
+await test("nothing ran before a setup refusal, so nothing is said to be kept", () => {
+  assert.equal(noticeOf("error", "no model", null)?.kept, false)
   assert.equal(noticeOf("error", "Failed to fetch", null)?.kept, true)
 })
 

@@ -1,25 +1,20 @@
-// Claude, through the Anthropic Messages API — from this server for Premium,
-// from the person's own browser for their own key.
+// Claude, through the Anthropic Messages API, from the person's own browser
+// on their own key.
 //
 // The conversation's own shape is Anthropic's, so this is nearly a pass-
-// through. What it adds: on the server, images uploaded once to the Files
-// API (the history the browser re-sends stays small and is never rewritten,
-// which preserved thinking needs); summarized adaptive thinking for the
+// through. What it adds: summarized adaptive thinking for the
 // progress line, the whole prefix cached, stale tool results cleared
 // server-side in a long session, and a fallback model when a request is
 // declined.
 
-import Anthropic, { toFile } from "@anthropic-ai/sdk"
+import Anthropic from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import { TurnError, bytesOf, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 
-/** The client for a key, naming a workspace when it is this server's own
- *  organisation-wide key that needs it said (ANTHROPIC_WORKSPACE_ID). */
+/** The client for a key. No retries here: the loop retries a failed round
+ *  itself. The key is the person's own, sent from their own page. */
 function client(target: Omit<Target, "model">): Anthropic {
-  const workspace = target.key === process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_WORKSPACE_ID : undefined
-  // No retries here: the loop retries a failed round itself. In a browser
-  // the key is the person's own, sent from their own page.
-  return new Anthropic({ apiKey: target.key, baseURL: target.baseURL, maxRetries: 0, dangerouslyAllowBrowser: true, ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}) })
+  return new Anthropic({ apiKey: target.key, baseURL: target.baseURL, maxRetries: 0, dangerouslyAllowBrowser: true })
 }
 
 type Block = Anthropic.Beta.BetaContentBlockParam
@@ -54,31 +49,11 @@ function ownHistory(messages: AgentMessage[]): AgentMessage[] {
   })
 }
 
-/** The newest message with every inline image uploaded and referenced by id. */
-async function uploadImages(c: Anthropic, message: AgentMessage): Promise<AgentMessage> {
-  if (typeof message.content === "string") return message
-  const upload = async (b: Block): Promise<Block> => {
-    if (b.type === "image" && b.source.type === "base64") {
-      const ext = b.source.media_type.split("/")[1] ?? "jpeg"
-      const file = await c.files.upload({
-        file: await toFile(bytesOf(b.source.data), `capture.${ext}`, { type: b.source.media_type }),
-      })
-      return { type: "image", source: { type: "file", file_id: file.id } }
-    }
-    if (b.type === "tool_result" && Array.isArray(b.content)) {
-      return { ...b, content: (await Promise.all(b.content.map((x) => upload(x as Block)))) as typeof b.content }
-    }
-    return b
-  }
-  return { ...message, content: await Promise.all(message.content.map(upload)) }
-}
-
 async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
   const c = client(target)
   // Anthropic's file store refuses requests from a web page (no CORS), so
-  // in the person's browser pictures go inline — the loop re-sends only the
-  // latest few. On this server (Premium) each is uploaded once.
-  const last = typeof window === "undefined" ? await uploadImages(c, messages[messages.length - 1]) : messages[messages.length - 1]
+  // pictures go inline — the loop re-sends only the latest few.
+  const last = messages[messages.length - 1]
   send({ type: "sent", message: last })
   try {
     const reply = c.beta.messages.stream(

@@ -1,6 +1,6 @@
 // The AI services a person can connect with their own key.
 //
-// Plain module: the server reads it to know where to send a request, the AI
+// Plain module: the loop reads it to know where to send a request, the AI
 // panel's menu reads it to offer the choices. Three wire formats cover them
 // all — Anthropic's Messages API, OpenAI's Responses API, and the Chat
 // Completions API that everyone else speaks (lib/ai/providers/compat.ts).

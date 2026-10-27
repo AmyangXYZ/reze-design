@@ -9,14 +9,13 @@
 import { Stamp } from "@/components/stamp"
 import { useCallback, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { BarChart3, Clapperboard, HardDrive, LayoutDashboard, Palette, Sparkles, Users, Workflow } from "lucide-react"
+import { Clapperboard, HardDrive, LayoutDashboard, Palette, Sparkles, Users, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { AssetList } from "./actions"
 import type { KindKey } from "./kinds"
-import { ItemsView, ScenesView } from "./library"
+import { ItemsView, Reach, useItems } from "./library"
 import type { UserRow } from "./types"
-import { UsageView } from "./usage"
 import { Avatar, UsersView } from "./users"
 
 const VIEWS = [
@@ -26,7 +25,6 @@ const VIEWS = [
   { id: "effects", label: "Effects", icon: Sparkles },
   { id: "grades", label: "Grades", icon: Palette },
   { id: "graphs", label: "Shaders", icon: Workflow },
-  { id: "usage", label: "AI usage", icon: BarChart3 },
   { id: "assets", label: "Storage", icon: HardDrive },
 ] as const
 type ViewId = (typeof VIEWS)[number]["id"]
@@ -109,11 +107,10 @@ export function AdminApp({
         <h1 className="mb-6 text-xl font-semibold">{title}</h1>
         {pane("overview", <Overview users={users} counts={counts} stats={stats} go={go} />)}
         {pane("users", <UsersView users={users} selfId={selfId} />)}
-        {pane("scenes", <ScenesView />)}
+        {pane("scenes", <ItemsView kind="scene" noun="scenes" />)}
         {pane("effects", <ItemsView kind="effect" noun="effects" />)}
         {pane("grades", <ItemsView kind="grade" noun="grades" />)}
         {pane("graphs", <ItemsView kind="graph" noun="shaders" />)}
-        {pane("usage", <UsageView />)}
         {pane("assets", <AssetList />)}
       </main>
     </div>
@@ -153,11 +150,7 @@ function Overview({ users, counts, stats, go }: { users: UserRow[]; counts: Reco
         <Tile label="Likes" value={stats.likes} note={`${stats.publicItems} public items`} />
       </section>
 
-      <div className="grid gap-8 xl:grid-cols-[1fr_22rem]">
-        <section className="space-y-3">
-          <h2 className="text-[13px] font-semibold text-muted-foreground">AI usage on this server’s key</h2>
-          <UsageView compact />
-        </section>
+      <div className="grid gap-8 xl:grid-cols-[22rem_1fr]">
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground">Newest accounts</h2>
           <ul className="divide-y divide-line rounded-surface border border-line">
@@ -173,7 +166,46 @@ function Overview({ users, counts, stats, go }: { users: UserRow[]; counts: Reco
             ))}
           </ul>
         </section>
+        <section className="space-y-3">
+          <h2 className="text-[13px] font-semibold text-muted-foreground">Newest scenes</h2>
+          <NewestScenes go={go} />
+        </section>
       </div>
+    </div>
+  )
+}
+
+/** The latest scenes as posters, the overview's picture of what is being made. */
+function NewestScenes({ go }: { go: (v: ViewId) => void }) {
+  const { rows, error } = useItems("scene")
+  if (error) return <p className="text-[13px] text-amber-600">{error}</p>
+  if (!rows) return <p className="text-[13px] text-muted-foreground">Loading…</p>
+  if (!rows.length) return <p className="text-[13px] text-muted-foreground">No scenes yet.</p>
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-3">
+      {rows.slice(0, 9).map((s) => (
+        <a key={s.id} href={`/${s.author}/${s.id}`} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-surface border border-line bg-card">
+          <div className="relative aspect-video bg-muted">
+            {s.poster ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a stored poster
+              <img src={s.poster} alt="" className="size-full object-cover" />
+            ) : (
+              <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No poster</span>
+            )}
+            <Reach item={s} />
+          </div>
+          <div className="space-y-0.5 px-3 py-2">
+            <div className="truncate text-[13px] font-medium group-hover:underline">{s.name}</div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate font-mono">@{s.author}</span>
+              <Stamp iso={s.createdAt} className="shrink-0 font-mono" />
+            </div>
+          </div>
+        </a>
+      ))}
+      <Button variant="ghost" onClick={() => go("scenes")} className="col-span-full h-8 justify-self-start rounded-chip px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground">
+        All scenes
+      </Button>
     </div>
   )
 }

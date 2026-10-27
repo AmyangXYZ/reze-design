@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     author: i.author,
     likeCount: i.likeCount,
     visibility: i.visibility,
+    displayOnly: i.displayOnly,
     createdAt: i.createdAt.toISOString(),
     usedInScenes: usage.get(i.id) ?? 0,
     description: i.description,

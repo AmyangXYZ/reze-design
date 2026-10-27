@@ -29,7 +29,7 @@ export const ACTIONS = {
   rename: { label: "Change handle", tip: "Change their @handle. Their published items move to the new one; old links keep working." },
   remove_account: {
     label: "Delete account",
-    tip: "Delete the account for good: sign-in, sessions and AI usage. What they published stays, with no owner. Not reversible.",
+    tip: "Delete the account for good: sign-in and sessions. What they published stays, with no owner. Not reversible.",
   },
   delete_item: { label: "Delete", tip: "Delete this item for good. Scenes that used it lose it. Not reversible." },
 } as const

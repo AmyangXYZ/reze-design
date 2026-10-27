@@ -1010,8 +1010,8 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   --color-line-strong: var(--chrome-line-strong);
 
   /* Reze's violet: violet-400, the palette's nearest to her hair lifted to read
-     on this ground. The Premium line in the account menu — a brand mark, outside
-     the three interaction accents. */
+     on this ground. The verified check — a brand mark, outside the three
+     interaction accents. */
   --color-reze: oklch(70.2% 0.183 293.541); /* = violet-400 */
 
   /* TYPE: four sizes — 2xs (11) captions, counters, chips · xs (12) the

@@ -1,5 +1,5 @@
-// GPT, through OpenAI's Responses API — from this server for Premium, from
-// the person's own browser for their own key.
+// GPT, through OpenAI's Responses API, from the person's own browser on their
+// own key.
 //
 // The Responses API rather than Chat Completions because the GPT-6 models take
 // function tools only there. The conversation arrives in the shared shape

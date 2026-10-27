@@ -190,6 +190,13 @@
       "when": 1792804625890,
       "tag": "0026_bili_images",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793127327344,
+      "tag": "0027_retire_premium",
+      "breakpoints": true
     }
   ]
 }

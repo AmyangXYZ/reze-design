@@ -10,10 +10,12 @@ export type ItemRow = {
   author: string
   likeCount: number
   visibility: string
+  /** Scenes only: watch, don't fork. */
+  displayOnly: boolean
   createdAt: string
   usedInScenes: number
   description: string
-  /** A scene's cover, when it has one. */
+  /** The item's cover, when it has one. */
   poster: string | null
 }
 
@@ -34,6 +36,4 @@ export type UserRow = {
   createdAt: string
   /** Published count and likes earned, per kind. */
   perKind: Record<KindKey, { n: number; likes: number }>
-  /** AI tokens on this server's key in the last 30 days (input + output). */
-  aiTokens30: number
 }

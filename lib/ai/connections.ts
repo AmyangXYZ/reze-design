@@ -23,9 +23,8 @@ export type Connection = {
   models: ModelEntry[]
 }
 
-/** What the next request uses: Premium (this server's key), or one model of
- *  one connection. */
-export type Active = { connection: "premium" } | { connection: string; model: string }
+/** What the next request uses: one model of one connection. */
+export type Active = { connection: string; model: string }
 
 export type AiSettings = { connections: Connection[]; active: Active | null }
 
@@ -67,12 +66,10 @@ export function useAiSettings(): AiSettings {
 }
 
 /** The model a request uses, resolved: what was picked if it still exists,
- *  else Premium where there is Premium, else the first model that passed. */
-export function resolveActive(s: AiSettings, premium: boolean): Active | null {
+ *  else the first model that passed. */
+export function resolveActive(s: AiSettings): Active | null {
   const a = s.active
-  if (a?.connection === "premium" && premium) return a
-  if (a && "model" in a && s.connections.some((c) => c.id === a.connection && c.models.some((m) => m.id === a.model))) return a
-  if (premium) return { connection: "premium" }
+  if (a && s.connections.some((c) => c.id === a.connection && c.models.some((m) => m.id === a.model))) return a
   // A model that sees first; one that reads text only still does the work.
   for (const verdict of ["ready", "textOnly"]) {
     for (const c of s.connections) {
@@ -83,9 +80,9 @@ export function resolveActive(s: AiSettings, premium: boolean): Active | null {
   return null
 }
 
-/** The connection as a request carries it; null for Premium or nothing. */
+/** The connection as a request carries it; null for nothing. */
 export function viaOf(s: AiSettings, active: Active | null): Via | null {
-  if (!active || !("model" in active)) return null
+  if (!active) return null
   const c = s.connections.find((x) => x.id === active.connection)
   if (!c) return null
   const textOnly = c.models.find((m) => m.id === active.model)?.verdict === "textOnly"
