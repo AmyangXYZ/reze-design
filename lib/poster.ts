@@ -6,10 +6,9 @@
 // open by everyone, which makes it the one image on this site worth compressing
 // hardest.
 //
-// WebP at q82 and a 1920px long edge. The cap is not arbitrary: a card never
-// shows more, and a cover is also the OpenGraph image for a maker's page
-// (app/[user]/page.tsx), where 1200px is the recommended width — so 1920 is
-// generous for every use it has and still throws away most of a 4K screenshot.
+// WebP at q82 and a 3840px long edge: 4K, which the gallery's spotlight needs —
+// it lays a cover across the whole page, near 3000 device pixels on a Retina
+// laptop, and a 1920 cover read soft there. WebP keeps even 4K small.
 //
 // LOSSY IS RIGHT HERE, where it is wrong for a texture: nothing samples a cover,
 // nothing lights from it, and no shader reads its alpha. It is a picture of a
@@ -21,8 +20,8 @@
 // something bigger — hands back the file that was picked. The worst outcome is
 // a heavier cover.
 
-/** What a card or a share card can use. Beyond this is detail nobody sees. */
-const MAX_EDGE = 1920
+/** What the gallery's spotlight can use. Beyond this is detail nobody sees. */
+const MAX_EDGE = 3840
 const QUALITY = 0.82
 
 export async function posterToWebp(file: File): Promise<File> {

@@ -231,7 +231,7 @@ import {
 import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { isCompositingBackground } from "@/lib/export-background"
-import type { ExportProgress } from "@/lib/video-export"
+import { captureStill, type ExportProgress } from "@/lib/video-export"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { DEFAULT_LOOK, loadLookPref, saveLookPref } from "@/lib/look-pref"
@@ -6775,6 +6775,27 @@ function Lab() {
       makeDoc: (bundle) => makeSceneDoc(slots, bundle),
     }
   }
+  /** A scene's cover: the shot as framed, rendered at 4K (the poster's long
+   *  edge, lib/poster.ts) over the scene's own background, unmarked. */
+  const captureCover = async (): Promise<Blob> => {
+    const engine = engineRef.current
+    const canvas = canvasRef.current
+    if (!engine || !canvas) throw new Error("no engine")
+    const [width, height] = [3840, 2160]
+    await rasterLyricsAt(height)
+    try {
+      return await captureStill({
+        engine,
+        canvas,
+        settings: { width, height, watermark: false, background: "scene" },
+        backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
+        backgroundColor: settings.background.color,
+        atTime: engine.getModel(masterId ?? primaryId ?? "")?.getAnimationProgress().current ?? 0,
+      })
+    } finally {
+      await rasterLyricsAt(canvas.height)
+    }
+  }
   const collectScenePublish = async (): Promise<ScenePublishSource> => {
     await sceneWhole()
     return writers.current!.publish()
@@ -8206,6 +8227,7 @@ function Lab() {
             openGallery()
           }}
           collect={collectScenePublish}
+          captureCover={captureCover}
           // Looks worn by this scene that the scene's readers could not resolve:
           // a draft that only exists on this device, or — for a PUBLIC scene — an
           // item published privately, which its audience cannot fetch. Takes the

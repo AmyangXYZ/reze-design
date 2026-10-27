@@ -148,6 +148,8 @@ export function ShareSceneDialog(props: {
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
   collect: () => Promise<ScenePublishSource>
+  /** The shot as framed, rendered at the cover's size — see captureCover. */
+  captureCover: () => Promise<Blob>
   unpublished: (visibility: Visibility) => UnpublishedUse[]
   /** A look this scene wears was published from here under `newName`. */
   onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, newName: string) => void
@@ -176,6 +178,7 @@ function ShareSceneForm({
   updatesMeta,
   onPublished,
   collect,
+  captureCover,
   unpublished,
   onLookPublished,
   onGallery,
@@ -199,6 +202,7 @@ function ShareSceneForm({
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
   collect: () => Promise<ScenePublishSource>
+  captureCover: () => Promise<Blob>
   /** Looks this scene's readers could not resolve, under the visibility it is
    *  about to be published with. Publishing is blocked while this is non-empty
    *  — see lib/refs.ts for why. */
@@ -265,28 +269,15 @@ function ShareSceneForm({
       return URL.createObjectURL(f)
     })
   }
-  // The cover from what is on screen: publishing frames the scene at a
-  // cover's 16:9, so the frame drawn now IS the cover, saved as WebP at
-  // 1280×720. Read in a frame queued from a timer, so it runs after the
-  // engine's render while the canvas still holds it.
+  // The cover from the shot as framed: publishing frames the scene at a
+  // cover's 16:9, and the engine renders that frame again at the cover's own
+  // size — the screen's canvas is the band between the columns, which the
+  // gallery's spotlight then stretched to twice its width. Lossless here; the
+  // upload encodes it once (lib/poster.ts).
   const capturePoster = () => {
-    const canvas = document.querySelector<HTMLCanvasElement>("main canvas")
-    if (!canvas || !canvas.width) return
-    window.setTimeout(() =>
-      requestAnimationFrame(() => {
-        const out = document.createElement("canvas")
-        out.width = 1280
-        out.height = 720
-        const g = out.getContext("2d")
-        if (!g) return
-        // Cover-fit: fill 16:9 from the middle of whatever shape is drawn.
-        const s = Math.max(out.width / canvas.width, out.height / canvas.height)
-        const w = canvas.width * s
-        const h = canvas.height * s
-        g.drawImage(canvas, (out.width - w) / 2, (out.height - h) / 2, w, h)
-        out.toBlob((blob) => blob && takePoster(new File([blob], "cover.webp", { type: "image/webp" })), "image/webp", 0.9)
-      }),
-    )
+    void captureCover()
+      .then((blob) => takePoster(new File([blob], "cover.png", { type: "image/png" })))
+      .catch(() => {})
   }
   const posterInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("idle")
