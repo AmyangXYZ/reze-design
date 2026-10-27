@@ -324,6 +324,10 @@ export function useEngine(
         }
         await engine.init()
         if (life.gone) return
+        // Under a stage's roof the sun reaches neither the floor nor the cast,
+        // and lamps cast nothing: the cast's own shadow, along the sun, is the
+        // shadow she has there. Open sky keeps the sun's.
+        engine.setStageCastShadow({ color: { x: 0, y: 0, z: 0 }, amount: 0.6 })
         setEngineReady(true)
         // Superseded before it loaded anything — a swap is waiting on this boot
         // and brings its own scene. The canvas still needs its loop, which the
