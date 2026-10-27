@@ -511,7 +511,7 @@ export function AgentPanel({
   // leaves you there; a new request brings you back down.
   const content = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
-  // Scrolled up away from the bottom: a pill offers the way back.
+  // Scrolled up away from the bottom: the token line offers the way back.
   const [away, setAway] = useState(false)
   const toLatest = () => {
     const el = scroller.current
@@ -657,21 +657,6 @@ export function AgentPanel({
         )}
         </div>
       </div>
-      {away && (
-        <div className="relative h-0">
-          <Button
-            variant="bare"
-            onClick={toLatest}
-            className={cn(
-              "absolute bottom-2 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground",
-              cover ? "left-4" : "left-1/2 -translate-x-1/2 rounded-full border border-line-strong bg-surface-raised px-2.5 py-1 shadow-float",
-            )}
-          >
-            <ArrowDown className="size-3" />
-            {text.latest}
-          </Button>
-        </div>
-      )}
       {/* The prompt: a command line on the same tinted bar a sent request
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
@@ -704,10 +689,23 @@ export function AgentPanel({
       )}
       {/* The request's tokens, in one place: live while it runs, the final
           count after — a line of its own above the input, so the chat ends
-          above it rather than running underneath. */}
-      {usage !== undefined && (
-        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-2xs leading-4 text-muted-foreground tabular-nums">
-          {usage ? (
+          above it rather than running underneath. Scrolled up, the way back
+          to the latest sits at its start. */}
+      {(usage !== undefined || away) && (
+        <div className="flex shrink-0 items-end justify-between gap-2 px-4 pb-1 text-2xs leading-4 text-muted-foreground tabular-nums">
+          {away ? (
+            <Button
+              variant="bare"
+              onClick={toLatest}
+              className="flex cursor-pointer items-center gap-1 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowDown className="size-3" />
+              {text.latest}
+            </Button>
+          ) : (
+            <span />
+          )}
+          {usage === undefined ? null : usage ? (
             <span aria-label={text.usage.detail(...usageParts(usage))}>
               <TokenCount key={conversationId ?? ""} total={usage.input + usage.output} label={text.usage.tokens} />
             </span>
@@ -716,9 +714,9 @@ export function AgentPanel({
           )}
         </div>
       )}
-      <div className={cn("shrink-0 border-t border-line py-1.5", cover ? "px-4" : "px-2.5")}>
-        {/* On the cover the field is the hairline above it. */}
-        <div className={cover ? "py-1" : "rounded-interior bg-white/5 px-1.5 py-1 ring-foreground focus-within:ring-1"}>
+      <div className={cn("shrink-0", cover ? "px-4 pb-1.5" : "border-t border-line px-2.5 py-1.5")}>
+        {/* On the cover the field is the hairline above it, inset like the words. */}
+        <div className={cover ? "border-t border-line pt-2.5 pb-1" : "rounded-interior bg-white/5 px-1.5 py-1 ring-foreground focus-within:ring-1"}>
           {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
               {refs.map((r, k) => (
