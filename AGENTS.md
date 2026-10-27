@@ -192,7 +192,10 @@ it was uploaded into. The test that matters is the model, not the slot: **does
 it have a head bone** (`isFigure`)?
 - A figure gets its parts first (eye, face, hair, skin, socks, stockings,
   metal, cloth), on the current style pack's graphs. Hair and eye carry render
-  classes. Then what its materials are made of (glass, wood…).
+  classes. Then what its materials are made of (glass, wood…). An eye shadow
+  (目影) is an eye part that MULTIPLIES over the iris: `engineGroups`
+  (`lib/material-maps.ts`), which every apply goes through, keys it
+  `blendByMaterial: "multiply"` in its eye group.
 - Anything without a head gets the material table first (`lib/stage-style.ts`),
   then Stage Surface for converted materials, then only the safe material roles
   (cloth, metal, socks, stockings). It never gets hair, eye, face or skin, so a

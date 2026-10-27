@@ -3,7 +3,7 @@
 //   npx esbuild lib/auto-style.test.mts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/t.mjs && node /tmp/t.mjs
 import "@/lib/test-stock.mts"
 import assert from "node:assert/strict"
-import { autoStyle, classify, isFigure, roleFor } from "./auto-style"
+import { autoStyle, classify, isFigure, roleFor, withEyeShadows } from "./auto-style"
 import { STAGE_SURFACE } from "./stage-style"
 
 const byLabel = <T extends { label?: string; id: string }>(groups: T[]): Record<string, T> => Object.fromEntries(groups.map((g) => [g.label ?? g.id, g]))
@@ -81,6 +81,23 @@ assert.deepEqual(classify("Material3", "", false), null)
   const first = autoStyle(["前髪", "目"], [mine as never], { figure: true, pack: "ag" })!
   assert.deepEqual(byLabel(first).Mine.materials, ["前髪"], "a hand-grouped material stays where it was put")
   assert.equal(autoStyle(["前髪", "目"], first, { figure: true, pack: "ag" }), null)
+}
+
+// An eye shadow is an eye part that multiplies: it stays in the eye group and
+// is drawn darkening the iris, never veiling it. Only in an eye group, and a
+// blend the group already keys is kept.
+{
+  const graph = { version: 1, nodes: [], links: [], output: { node: "x", socket: "y" } } as never
+  assert.equal(roleFor("目影", true), "eye")
+  const [eye, cloth, keyed] = withEyeShadows([
+    { id: "eye", materials: ["目", "HL", "目影"], graph, renderClass: "eye" },
+    { id: "cloth", materials: ["目影"], graph, renderClass: "auto" },
+    { id: "eye2", materials: ["眼影"], graph, renderClass: "eye", blendByMaterial: { 眼影: "over" } },
+  ])
+  assert.deepEqual(eye.blendByMaterial, { 目影: "multiply" })
+  assert.deepEqual(eye.materials, ["目", "HL", "目影"], "still the eye's")
+  assert.equal(cloth.blendByMaterial, undefined, "only an eye group's shadows multiply")
+  assert.deepEqual(keyed.blendByMaterial, { 眼影: "over" })
 }
 
 console.log("auto-style: ok")

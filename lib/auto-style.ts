@@ -83,6 +83,36 @@ const ROLE_HINTS: [Role, (string | RegExp)[]][] = [
   ],
 ]
 
+/** The eye parts the game MULTIPLIES over the iris rather than lays over it.
+ *  An eye shadow (目影) is a soft light-grey band at partial alpha whose job is
+ *  to darken the top of the eye; laid over, it veils the iris white. It stays
+ *  an eye part — the stencil, the draw order and the graph are the eye's — and
+ *  takes blend "multiply" for itself. Kept in step with the engine's. */
+const EYE_SHADOW_HINTS = ["目影", "眼影", "eyeshadow", "eye_shadow", "eye shadow"]
+
+const isEyeShadow = (material: string) => {
+  const lower = material.toLowerCase()
+  return EYE_SHADOW_HINTS.some((h) => lower.includes(h))
+}
+
+/**
+ * `groups` as the engine should draw them: each eye group's shadows multiplying.
+ *
+ * Derived on the way to the engine, as the material maps are, rather than
+ * stored: a scene document records an eye group by its role, so every eye
+ * group — loaded, auto-styled, dragged together by hand or built by the AI —
+ * comes through here and none has to remember it. A blend a group already
+ * keys for a member is kept.
+ */
+export function withEyeShadows(groups: StyleGroup[]): StyleGroup[] {
+  return groups.map((g) => {
+    if (g.renderClass !== "eye") return g
+    const shadows = g.materials.filter((m) => isEyeShadow(m) && !g.blendByMaterial?.[m])
+    if (!shadows.length) return g
+    return { ...g, blendByMaterial: { ...g.blendByMaterial, ...Object.fromEntries(shadows.map((m) => [m, "multiply" as const])) } }
+  })
+}
+
 /** Whole names that are body parts — skin by another name. Whole, never
  *  substrings: 手 is a hand, 手套 the glove it wears. */
 const BODY_PART_NAMES = new Set(["手", "手部", "腕", "足", "脚", "腿", "爪", "hand", "hands", "arm", "arms", "leg", "legs", "body"])

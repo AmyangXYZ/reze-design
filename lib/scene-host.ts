@@ -19,7 +19,7 @@ import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } fr
 import { loadLocalBundle, loadModelLooks } from "@/lib/asset-store"
 import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { sceneFiles } from "@/lib/scene-files"
-import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
+import { clearMaterialMaps, loadMaterialMaps, engineGroups } from "@/lib/material-maps"
 import { loadParticleTextures } from "@/lib/effect-textures"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
@@ -623,7 +623,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         `load ${entry.model.file}`,
         await engine.applyStyleGroups(
           entry.model.id,
-          withMaterialMaps(
+          engineGroups(
             entry.model.id,
             docGroups.filter((g) => g.materials.length > 0),
           ),
@@ -810,7 +810,7 @@ export async function autoStyleOnEngine(engine: Engine, modelId: string, existin
   const saved = key ? await loadModelLooks(key) : null
   if (model && saved) {
     const groups = fitLooks(saved, model)
-    reportGroups("saved looks", await engine.applyStyleGroups(modelId, withMaterialMaps(modelId, groups)))
+    reportGroups("saved looks", await engine.applyStyleGroups(modelId, engineGroups(modelId, groups)))
     return groups
   }
   const next = autoStyleModel(model, existing, loadLookPref())
@@ -819,7 +819,7 @@ export async function autoStyleOnEngine(engine: Engine, modelId: string, existin
     "auto-style",
     await engine.applyStyleGroups(
       modelId,
-      withMaterialMaps(
+      engineGroups(
         modelId,
         next.filter((g) => g.materials.length > 0),
       ),

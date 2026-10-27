@@ -10,7 +10,7 @@ import { modelKey, type Scene, type SceneAttach, type SceneCamera, type ScenePar
 import { loadModelLooks, sweepRetiredBundles } from "@/lib/asset-store"
 import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { referencedFiles, relFilePath, sceneFiles } from "@/lib/scene-files"
-import { clearMaterialMaps, materialMapPaths, withMaterialMaps } from "@/lib/material-maps"
+import { clearMaterialMaps, materialMapPaths, engineGroups } from "@/lib/material-maps"
 import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 import {
@@ -613,13 +613,13 @@ export function useEngine(
       groups = kept.groups.map((g) => ({ ...g, materials: g.materials.filter((n) => names.has(n)) }))
       reportGroups(
         "keep stage looks",
-        await engine.applyStyleGroups(id, withMaterialMaps(id, groups.filter((g) => g.materials.length > 0))),
+        await engine.applyStyleGroups(id, engineGroups(id, groups.filter((g) => g.materials.length > 0))),
       )
     } else if (saved) {
       // Looks saved for this stage (lib/model-looks). Holding materials, they
       // also keep the stage classifier in app/page.tsx off it.
       const fitted = fitLooks(saved, model)
-      reportGroups("saved looks", await engine.applyStyleGroups(id, withMaterialMaps(id, fitted)))
+      reportGroups("saved looks", await engine.applyStyleGroups(id, engineGroups(id, fitted)))
       groups = withSpecialGroups(fitted)
     }
     const hidden = (kept?.hidden ?? []).filter((n) => names.has(n))
@@ -1379,7 +1379,7 @@ export function useEngine(
       })
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [], slotMap: [] }
-      return engine.upsertStyleGroup(modelId, withMaterialMaps(modelId, [group])[0], opts)
+      return engine.upsertStyleGroup(modelId, engineGroups(modelId, [group])[0], opts)
     },
     [],
   )
@@ -1393,7 +1393,7 @@ export function useEngine(
       `applyGroups ${modelId}`,
       await engineRef.current?.applyStyleGroups(
         modelId,
-        withMaterialMaps(
+        engineGroups(
           modelId,
           next.filter((g) => g.materials.length > 0),
         ),
@@ -1411,7 +1411,7 @@ export function useEngine(
     if (groups?.length) {
       reportGroups(
         "reset",
-        await engine.applyStyleGroups(modelId, withMaterialMaps(modelId, groups.filter((g) => g.materials.length > 0))),
+        await engine.applyStyleGroups(modelId, engineGroups(modelId, groups.filter((g) => g.materials.length > 0))),
       )
       next = groups
     } else {

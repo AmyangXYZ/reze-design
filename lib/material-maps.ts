@@ -15,6 +15,7 @@
 // data.
 
 import type { GroupImage, Model, StyleGroup } from "reze-engine"
+import { withEyeShadows } from "@/lib/auto-style"
 
 export type MaterialImages = (GroupImage | null)[]
 
@@ -30,9 +31,16 @@ export function clearMaterialMaps(modelId: string) {
 
 const readsMaps = (g: StyleGroup) => g.graph.nodes.some((n) => n.type.startsWith("tex_image/"))
 
-/** `groups` as the engine should receive them: each group whose graph samples
- *  group images gets its materials' maps, unless it already carries its own. */
-export function withMaterialMaps(modelId: string, groups: StyleGroup[]): StyleGroup[] {
+/** `groups` as the engine should receive them: their materials' maps, and each
+ *  eye group's shadows multiplying (withEyeShadows). Every apply goes through
+ *  here, so neither has to be remembered at a call site. */
+export function engineGroups(modelId: string, groups: StyleGroup[]): StyleGroup[] {
+  return withMaterialMaps(modelId, withEyeShadows(groups))
+}
+
+/** Each group whose graph samples group images gets its materials' maps,
+ *  unless it already carries its own. */
+function withMaterialMaps(modelId: string, groups: StyleGroup[]): StyleGroup[] {
   const maps = live.get(modelId)
   if (!maps) return groups
   return groups.map((g) => {
