@@ -185,6 +185,7 @@ import {
 } from "@/lib/scene"
 import { collectSceneSlots as collectSlots, type CollectedAnim, type SceneSlots } from "@/lib/scene-collect"
 import { isScenePatch, mergePatchFiles, mergeScenePatch, patchRoots } from "@/lib/scene-patch"
+import { upgradeSceneDoc, type V1SceneDoc } from "@/lib/scene-upgrade"
 import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
 import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
@@ -6889,7 +6890,8 @@ function Lab() {
       if (isScenePatch(parsed)) {
         await importScenePatch(parsed, files.filter((f) => f !== docFile), toastId, name)
       } else {
-        const doc = parsed as SceneDoc
+        // An exported file may predate the current format.
+        const doc = upgradeSceneDoc(parsed as V1SceneDoc | SceneDoc)
         const resolve = await resolveSceneRefs(doc)
         const imported = parseSceneDoc(doc, stockEffect, libraryGraph, resolve)
         draftArrivedLooks(imported)

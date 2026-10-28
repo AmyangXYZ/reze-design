@@ -25,9 +25,12 @@ import {
   type StagePixelFilter,
 } from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
+import { upgradeAssetsDoc, type V1SceneDoc } from "@/lib/scene-upgrade"
 import { isLightCookie, type LightCookie } from "@/lib/light-cookies"
 
-export const SCENE_FORMAT_VERSION = 1
+/** 2: every model entry and every style group carries its id, and a group its
+ *  pass fields. lib/scene-upgrade.ts reads a 1. */
+export const SCENE_FORMAT_VERSION = 2
 
 /** A file the scene points at. */
 export type AssetRef = { name: string; url: string }
@@ -39,8 +42,9 @@ export type ModelSource =
   | { kind: "bundle"; path: string } // inside the scene's asset bundle
 
 export type ModelRef = {
-  /** Engine key, unique within the scene. Never authored — minted from the .pmx
-   *  filename by modelKey(), at import and at parse alike. */
+  /** Engine key, unique within the scene. Minted from the .pmx filename by
+   *  modelKey() when the model arrives, and written into the document, so a
+   *  reload names every model as the editor did. */
   id: string
   /** .pmx filename inside the folder/archive — also what the Assets panel shows. */
   file: string
@@ -408,8 +412,8 @@ export type Scene = {
 // structure.
 
 /**
- * A style group as AUTHORED: a display label, which materials, and which shader
- * graph they use. No id — engine keys are minted at parse, like model keys.
+ * A style group as AUTHORED: its id, a display label, which materials, which
+ * shader graph they use, and how its pass draws them.
  *
  * `graph` is a full ShaderGraph in anything the app writes: a published scene is
  * frozen artwork, so it carries its shading BY VALUE and renders identically
@@ -420,11 +424,14 @@ export type Scene = {
  * lib/default-scene.ts) where both sides move in one commit. Serialization never
  * produces one.
  *
- * `role` marks the groups with special pass integration (hair/eye stenciling,
- * stockings' hashed alpha). Not a user choice — the app maintains these groups —
- * but it must travel, because nothing else in the document implies it.
+ * `renderClass`, `alphaMode` and `blend` are the engine's own fields, absent at
+ * their defaults (auto, opaque, over). Nothing else in the document implies
+ * them: a hair group's stencil, stockings' hashed alpha, Glass's premultiplied
+ * blend and a light sheet's additive one all travel here.
  */
 export type StyleGroupDoc = {
+  /** The group's key, unique within its model: StyleGroup's `id`. */
+  id: string
   label?: string
   materials: string[]
   /**
@@ -433,7 +440,9 @@ export type StyleGroupDoc = {
    * serialization never writes one).
    */
   graph: ItemRef | ShaderGraph | string
-  role?: "hair" | "eye" | "stockings"
+  renderClass?: StyleGroup["renderClass"]
+  alphaMode?: StyleGroup["alphaMode"]
+  blend?: StyleGroup["blend"]
 }
 
 /** Distinguishes the three `graph` forms without inspecting a ShaderGraph's shape.
@@ -446,6 +455,8 @@ export const isItemRef = (v: unknown): v is ItemRef =>
   typeof v === "object" && v !== null && "id" in v && typeof (v as { id: unknown }).id === "string"
 
 export type SceneModelDoc = {
+  /** The model's key, unique within the scene: ModelRef's `id`. */
+  id: string
   /** Path to the .pmx, or to a .zip containing it. */
   model: string
   /** Path to this model's motion, or null. */
@@ -593,10 +604,9 @@ export type SceneDoc = {
 
 /**
  * Mint an engine key from a .pmx filename ("miku.pmx" → "miku", "miku-2" on
- * collision). The ONLY way model keys come to exist — documents never author them,
- * so there is no id to keep unique, remember, or get wrong. Filename-derived
- * rather than positional so stored per-model state can only ever reattach to the
- * same model, not to whatever occupies the slot next time.
+ * collision), for a model arriving in a scene. From then on the key is the
+ * model's: the document carries it, and everything that names the model — its
+ * groups, a prop's parent, a part's stage, a lamp's stage — names it by this.
  */
 export function modelKey(file: string, taken: Iterable<string>): string {
   const base = (file.split("/").pop() ?? file).replace(/\.pmx$/i, "") || "model"
@@ -706,15 +716,13 @@ function appliedEffects(
     .filter((e): e is AppliedEffect => e !== null)
 }
 
-/** Role → engine pass integration, both directions of the round trip. */
-const ROLE_INTEGRATION = {
-  hair: { renderClass: "hair" },
-  eye: { renderClass: "eye" },
-  stockings: { alphaMode: "hashed" },
-} as const satisfies Record<string, Pick<StyleGroup, "renderClass" | "alphaMode">>
-
-const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
-  g.renderClass === "hair" || g.renderClass === "eye" ? g.renderClass : g.alphaMode === "hashed" ? "stockings" : undefined
+/** A group's pass fields, written only where they differ from the engine's
+ *  defaults — the same three in both directions of the round trip. */
+const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">) => ({
+  ...(g.renderClass && g.renderClass !== "auto" ? { renderClass: g.renderClass } : {}),
+  ...(g.alphaMode && g.alphaMode !== "opaque" ? { alphaMode: g.alphaMode } : {}),
+  ...(g.blend && g.blend !== "over" ? { blend: g.blend } : {}),
+})
 
 /** The assets half of the document round trip — used alone by local persistence,
  *  and by parseSceneDoc for the whole document. */
@@ -773,13 +781,14 @@ function visibilityFieldOf(windows: VisibilityWindow[] | undefined): { visibilit
 }
 
 export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
-  const ids: string[] = []
+  const ids = new Set<string>()
   const models = a.models.map((m) => {
     const { source, file } = parseModelSource(m.model)
-    const id = modelKey(file, ids)
-    ids.push(id)
+    if (typeof m.id !== "string" || !m.id) throw new Error(`scene document: ${m.model} has no id`)
+    if (ids.has(m.id)) throw new Error(`scene document: two models are called "${m.id}"`)
+    ids.add(m.id)
     return {
-      model: { id, file, source },
+      model: { id: m.id, file, source },
       animation: m.animation ? assetFromPath(m.animation) : null,
       morph: m.morph ? assetFromPath(m.morph) : null,
       // Spread-if-present, so a cast member parses to the same shape a pre-stage
@@ -828,12 +837,12 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
   }
 }
 
-/** The inverse: live assets back to their authored form. Ids are dropped — parse
- *  re-mints the same ones from the same filenames, which is the round trip's whole
- *  contract. */
+/** The inverse: live assets back to their authored form, each model under the
+ *  id the editor knows it by. */
 export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
   return {
     models: a.models.map((m) => ({
+      id: m.model.id,
       model: modelPath(m.model),
       animation: m.animation?.url ?? null,
       morph: m.morph?.url ?? null,
@@ -884,10 +893,13 @@ export function parseSceneDoc(
    *  community items must be fetched first (see resolveSceneRefs). */
   resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
 ): Scene {
-  // Engine keys for groups are minted here the way newGroupId mints them in the
-  // editor: a slug of the label (role as fallback), deduped within the model.
   const resolveGroups = (gs: StyleGroupDoc[]): StyleGroup[] => {
     const ids = new Set<string>()
+    for (const g of gs) {
+      if (typeof g.id !== "string" || !g.id) throw new Error(`scene document: a group of ${g.materials.length} materials has no id`)
+      if (ids.has(g.id)) throw new Error(`scene document: two groups of one model are called "${g.id}"`)
+      ids.add(g.id)
+    }
     return gs
       .map((g): StyleGroup | null => {
         // A pin resolves to the published item, so the group wears that item's
@@ -907,12 +919,7 @@ export function parseSceneDoc(
         // with the wrong look — its materials fall back to the engine default,
         // which is visibly neutral instead of visibly wrong.
         if (!graph) return null
-        const base =
-          (g.label ?? g.role ?? "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
-        let id = base
-        for (let n = 2; ids.has(id); n++) id = `${base}-${n}`
-        ids.add(id)
-        return { id, label: g.label, materials: g.materials, graph, ...(g.role ? ROLE_INTEGRATION[g.role] : {}) }
+        return { id: g.id, label: g.label, materials: g.materials, graph, ...passFieldsOf(g) }
       })
       .filter((g): g is StyleGroup => g !== null)
   }
@@ -928,9 +935,7 @@ export function parseSceneDoc(
   }
 
   const assets = parseAssetsDoc(doc.assets)
-  // Keys were minted by parseAssetsDoc in document order — the doc itself is id-free.
-  const ids = assets.models.map((m) => m.model.id)
-  const materials = doc.assets.models.flatMap((m, i) => (m.materials ? [[ids[i], m.materials] as const] : []))
+  const materials = doc.assets.models.flatMap((m) => (m.materials ? [[m.id, m.materials] as const] : []))
   const hidden = materials.filter(([, m]) => m.hidden?.length)
 
   return {
@@ -1351,12 +1356,13 @@ export function serializeSceneDoc(
   },
 ): SceneDoc {
   const toDoc = (g: StyleGroup): StyleGroupDoc => ({
+    id: g.id,
     label: g.label,
     materials: g.materials,
     // A pin when this is exactly some published graph; the whole thing when it
     // isn't — an unpublished draft, or one the user has since edited.
     graph: refs?.graph(g.graph) ?? g.graph,
-    role: roleOf(g),
+    ...passFieldsOf(g),
   })
   return {
     version: SCENE_FORMAT_VERSION,
@@ -1390,6 +1396,7 @@ export function serializeSceneDoc(
         const hidden = live.hidden[m.model.id]
         const groups = live.groups[m.model.id]
         return {
+          id: m.model.id,
           model: modelPath(m.model),
           animation: m.animation?.url ?? null,
           morph: m.morph?.url ?? null,
@@ -1597,7 +1604,7 @@ export const ASSETS_KEY = storageKey("sceneAssets")
 
 export function saveSceneAssets(sceneId: string, assets: SceneAssetsDoc): void {
   try {
-    window.localStorage.setItem(ASSETS_KEY, JSON.stringify({ sceneId, assets }))
+    window.localStorage.setItem(ASSETS_KEY, JSON.stringify({ sceneId, version: SCENE_FORMAT_VERSION, assets }))
   } catch {
     // storage full/blocked — the next boot falls back to the demo
   }
@@ -1608,8 +1615,10 @@ function loadStoredAssets(sceneId: string): SceneAssetsDoc | null {
   try {
     const raw = window.localStorage.getItem(ASSETS_KEY)
     if (!raw) return null
-    const rec = JSON.parse(raw) as { sceneId: string; assets: SceneAssetsDoc }
-    return rec.sceneId === sceneId ? rec.assets : null
+    // Format 1 had no version on this record, and no model ids in it.
+    const rec = JSON.parse(raw) as { sceneId: string; version?: number; assets: SceneAssetsDoc }
+    if (rec.sceneId !== sceneId) return null
+    return rec.version === undefined ? upgradeAssetsDoc(rec.assets as V1SceneDoc["assets"]) : rec.assets
   } catch {
     return null
   }

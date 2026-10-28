@@ -31,11 +31,11 @@ test("a document carries which stage a part belongs to", () => {
     assets: {
       ...EMPTY_SCENE_DOC.assets,
       models: [
-        { model: "stages/room/room.pmx", stage: true, transform: at(0) },
-        { model: "stages/sky/sky.pmx", stage: true, partOf: "room", transform: at(0) },
-        { model: "stages/plaza/plaza.pmx", stage: true, transform: at(40) },
+        { id: "room", model: "stages/room/room.pmx", stage: true, transform: at(0) },
+        { id: "sky", model: "stages/sky/sky.pmx", stage: true, partOf: "room", transform: at(0) },
+        { id: "plaza", model: "stages/plaza/plaza.pmx", stage: true, transform: at(40) },
         // A cast member naming a parent is not a part: only a stage can be one.
-        { model: "models/a/a.pmx", partOf: "room" },
+        { id: "a", model: "models/a/a.pmx", partOf: "room" },
       ],
     },
   }

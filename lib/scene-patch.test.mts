@@ -25,10 +25,11 @@ const base = (): SceneDoc => ({
     ...structuredClone(EMPTY_SCENE_DOC.assets),
     models: [
       {
+        id: "reze",
         model: "/models/reze/reze.pmx",
         animation: "/motions/Demo.vmd",
         morph: null,
-        materials: { groups: [{ label: "Body", materials: ["skin"], graph: "AG Body" }] },
+        materials: { groups: [{ id: "body", label: "Body", materials: ["skin"], graph: "AG Body" }] },
       },
     ],
     cameraAnimation: "camera/mine.vmd",
@@ -41,6 +42,7 @@ const base = (): SceneDoc => ({
 })
 
 const prop = (name: string, origin?: string) => ({
+  id: name,
   model: `props/${name}/${name}.pmx`,
   animation: `props/${name}/${name}.vmd`,
   prop: true,
@@ -150,7 +152,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
 // ── Keyed by id: replace in place, remove, and leave the unlisted alone ──
 {
   const doc = base()
-  doc.assets.models.push(prop("cup"), { ...prop("cup"), model: "other/cup.pmx" })
+  doc.assets.models.push(prop("cup"), { ...prop("cup"), id: "cup-2", model: "other/cup.pmx" })
   const out = mergeScenePatch(doc, {
     patch: true,
     assets: { models: [{ id: "cup-2", remove: true }, { ...prop("cup"), animation: "new.vmd" }] },
@@ -170,7 +172,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
 // ── Null clears; `cast: null` clears the cast and only the cast ──
 {
   const doc = base()
-  doc.assets.models.push({ ...prop("cup"), origin: "a" }, { model: "stages/room/room.pmx", stage: true })
+  doc.assets.models.push({ ...prop("cup"), origin: "a" }, { id: "room", model: "stages/room/room.pmx", stage: true })
   const out = mergeScenePatch(doc, {
     patch: true,
     assets: { cast: null, cameraAnimation: null },
@@ -194,7 +196,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.equal(out.settings.background.effects?.length, 2, "no effects listed: the tagged ones stay")
   assert.equal(out.settings.sun.elevation, 45)
   assert.equal(out.settings.sun.azimuth, 10)
-  assert.equal(out.version, 1)
+  assert.equal(out.version, base().version, "the base's format, never the patch's")
   assert.equal("patch" in out, false)
   assert.equal("origin" in out, false)
 }
@@ -233,7 +235,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   const doc = base()
   doc.assets.models[0].morph = "/motions/Demo-face.vmd"
   // A stage and a prop ahead of her: the lead is the first that is neither.
-  doc.assets.models.unshift({ model: "stages/room/room.pmx", stage: true }, { ...prop("cup"), origin: "107402" })
+  doc.assets.models.unshift({ id: "room", model: "stages/room/room.pmx", stage: true }, { ...prop("cup"), origin: "107402" })
   const t = { ...take("touch1", ["fan"], []), assets: { ...take("touch1", ["fan"], []).assets, castMotion: { animation: "character.vmd" } } }
   const out = mergeScenePatch(doc, t)
   const her = out.assets.models.find((m) => m.model === "/models/reze/reze.pmx")!
@@ -255,7 +257,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.equal(lead.animation?.name, "character.vmd")
   // Only the first cast member moves.
   const two = base()
-  two.assets.models.push({ model: "/models/miku/miku.pmx", animation: "/motions/m.vmd" })
+  two.assets.models.push({ id: "miku", model: "/models/miku/miku.pmx", animation: "/motions/m.vmd" })
   const o2 = mergeScenePatch(two, { patch: true, assets: { castMotion: { animation: "character.vmd" } } })
   assert.deepEqual(o2.assets.models.map((m) => m.animation), ["character.vmd", "/motions/m.vmd"])
 }
@@ -295,7 +297,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.equal(parseSceneDoc(out, stockEffect, libraryGraph).assets.models[0].animation, null)
 
   const empty = base()
-  empty.assets.models = [{ model: "stages/room/room.pmx", stage: true }, prop("cup")]
+  empty.assets.models = [{ id: "room", model: "stages/room/room.pmx", stage: true }, prop("cup")]
   const before = structuredClone(empty)
   const none = mergeScenePatch(empty, { patch: true, assets: { castMotion: { animation: "character.vmd" } } })
   assert.deepEqual(none.assets.models, before.assets.models, "no cast member: nothing moves")
@@ -336,7 +338,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
 // ── A game stage replaces the scene's stage, and what that stage brought ──
 {
   const doc = base()
-  doc.assets.models = [{ model: "stages/x340/x340.pmx", stage: true }, ...doc.assets.models] as typeof doc.assets.models
+  doc.assets.models = [{ id: "x340", model: "stages/x340/x340.pmx", stage: true }, ...doc.assets.models] as typeof doc.assets.models
   const lamp = (id: string, stage?: string) => ({ id, kind: "point", color: "#ffffff", strength: 1, position: [0, 0, 0], ...(stage ? { stage } : {}) })
   doc.settings.lights = [lamp("mine"), lamp("glb", "x340")] as unknown as typeof doc.settings.lights
   const out = mergeScenePatch(doc, { patch: true, origin: "dlc", assets: { nativeStage: "stage/" }, settings: { lights: [lamp("game")] } })

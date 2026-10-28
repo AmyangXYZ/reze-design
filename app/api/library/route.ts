@@ -18,6 +18,7 @@ import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundl
 import { NOT_STOCK, presetRows } from "@/lib/library-rows"
 import { publicJson } from "@/lib/cdn"
 import { parseVideoLink } from "@/lib/video-link"
+import { SCENE_FORMAT_VERSION } from "@/lib/scene"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -363,6 +364,11 @@ export async function POST(request: Request) {
   }
   if (payload == null || typeof payload !== "object") {
     return NextResponse.json({ error: "payload is required" }, { status: 400 })
+  }
+  // A scene in the format every reader takes. A tab opened before a format
+  // change still writes the old one; it publishes after a reload.
+  if (kind === "scene" && (payload as { doc?: { version?: unknown } }).doc?.version !== SCENE_FORMAT_VERSION) {
+    return NextResponse.json({ error: "this tab is out of date: reload the page to publish" }, { status: 409 })
   }
   // A scene redistributes other people's models, motions and music. The 借物表 is
   // the community's own norm for that, so it is required rather than encouraged.

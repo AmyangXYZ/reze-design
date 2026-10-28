@@ -13,8 +13,8 @@
 //   - a field set to null clears it
 //   - an absent field keeps the current scene's value
 //   - other lists replace wholesale, except:
-//       assets.models — merged by model id (the key the scene mints from the
-//         .pmx filename, or an explicit `id`). A listed model is added, or
+//       assets.models — merged by model id (an explicit `id`, or the key a
+//         model of that .pmx filename is minted). A listed model is added, or
 //         replaces the one with its id in place; `{ id, remove: true }` deletes
 //         one; unlisted models stay. `assets.cast: null` first clears every
 //         model that is neither stage nor prop — the cast.
@@ -105,9 +105,8 @@ export function patchTags(patch: JsonObject): Set<string> {
 /**
  * The scene the patch describes: `base` with `patch` applied.
  *
- * The base's models are keyed the way parseAssetsDoc keys them — in order,
- * a second model of one filename taking `-2` — so an id a patch names is the
- * id the editor shows.
+ * The base's models are keyed by their own ids, the ones the editor shows, so
+ * an id a patch names is one the user can see.
  */
 export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
   if (!isObject(patchDoc)) throw new Error("scene patch: not an object")
@@ -148,12 +147,7 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
   const merged = mergePatch(base as unknown as Json, plain) as unknown as SceneDoc
 
   // ── assets.models, by id ──
-  const ids: string[] = []
-  let rows = base.assets.models.map((m) => {
-    const id = modelKey(m.model, ids)
-    ids.push(id)
-    return { id, doc: structuredClone(m) as unknown as PatchModelDoc }
-  })
+  let rows = base.assets.models.map((m) => ({ id: m.id, doc: structuredClone(m) as unknown as PatchModelDoc }))
   if (assetsP && "cast" in assetsP && assetsP.cast === null) rows = rows.filter((r) => r.doc.stage || r.doc.prop)
   // A scene holds one stage: a patch bringing a game stage replaces the stage
   // the scene had, as an uploaded stage does — two floors at one height fight.
@@ -179,8 +173,7 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
         continue
       }
       if (typeof m.model !== "string" || !m.model) continue
-      const doc: PatchModelDoc = structuredClone(m)
-      delete doc.id
+      const doc: PatchModelDoc = { ...structuredClone(m), id: key }
       delete doc.remove
       if (origin && !doc.origin) doc.origin = origin
       const at = rows.findIndex((r) => r.id === key)

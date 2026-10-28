@@ -52,6 +52,7 @@ import type { Engine, NativeLook } from "reze-engine"
 
 // ── The document carries both fields, both ways ──
 const prop = {
+  id: "X306a_beizi",
   model: "props/X306a_beizi/X306a_beizi.pmx",
   animation: "props/X306a_beizi/X306a_beizi.vmd",
   prop: true,

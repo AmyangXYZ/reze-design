@@ -68,11 +68,12 @@ const DEMO = "https://assets.reze.one/demo/demo-cat"
 const MODEL = "https://assets.reze.one/demo/reze-webp"
 
 const DEMO_SCENE_DOC: SceneDoc = {
-  version: 1,
+  version: 2,
   name: "Hello Reze",
   assets: {
     models: [
       {
+        id: "reze",
         model: `${MODEL}/reze.pmx`,
         // 人は猫 — a dance, the expressions that go with it, and the track they
         // were timed to. A first-time visitor should land on a scene doing all
@@ -86,23 +87,25 @@ const DEMO_SCENE_DOC: SceneDoc = {
         morph: `${DEMO}/animations-gz/Demo_morph.vmd`,
         materials: {
           groups: [
-            { label: "Body", materials: ["skin"], graph: "AG Body" },
+            { id: "body", label: "Body", materials: ["skin"], graph: "AG Body" },
             {
+              id: "cloth_smooth",
               label: "Smooth Cloth",
               materials: ["shirt", "shorts", "ribbon", "choker", "bozi", "cloth01", "cloth01.001"],
               graph: "AG Smooth Cloth",
             },
-            { label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },
-            { label: "Stockings", materials: ["socks"], graph: "AG Stockings" },
-            { label: "Hair", materials: ["头发"], graph: "AG Hair", role: "hair" },
-            { label: "Face", materials: ["face01", "唇", "齿", "口腔", "舌"], graph: "AG Face" },
+            { id: "cloth_rough", label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },
+            { id: "stockings", label: "Stockings", materials: ["socks"], graph: "AG Stockings", alphaMode: "hashed" },
+            { id: "hair", label: "Hair", materials: ["头发"], graph: "AG Hair", renderClass: "hair" },
+            { id: "face", label: "Face", materials: ["face01", "唇", "齿", "口腔", "舌"], graph: "AG Face" },
             {
+              id: "eye",
               label: "Eye",
               // The brows and lashes ride with the eyes, as they did on the last
               // model: they are drawn as eye features rather than as skin.
               materials: ["目白", "瞳1", "瞳2", "eyebrow", "eyelash", "eyelash_crease"],
               graph: "AG Eye",
-              role: "eye",
+              renderClass: "eye",
             },
           ],
           hidden: [],
@@ -207,7 +210,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
  * neither a black void nor a finished look.
  */
 export const EMPTY_SCENE_DOC: SceneDoc = {
-  version: 1,
+  version: 2,
   name: "Untitled scene",
   assets: { models: [], cameraAnimation: null, audio: null, midi: null, lyrics: null, backdrop: null, skybox: null },
   settings: {
