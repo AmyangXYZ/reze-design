@@ -134,6 +134,8 @@ export type SceneModel = {
   visibility?: VisibilityWindow[]
   /** Left out of the sun's shadow. Absent = casts, as its PMX materials say. */
   castShadow?: false
+  /** Left out of the cast fill (settings.fill). Absent = lit by it. */
+  fill?: false
   /** Bundle path to a look.json: the game's own materials for this model, drawn
    *  by its translated shaders. See lib/unity-native. */
   look?: string
@@ -487,6 +489,8 @@ export type SceneModelDoc = {
   visibility?: VisibilityWindow[]
   /** Left out of the sun's shadow. Absent = casts. */
   castShadow?: false
+  /** Left out of the cast fill. Absent = lit by it. */
+  fill?: false
   /** Path to a look.json — the game's own materials for this model. */
   look?: string
   /** The tag of the scene patch it came in with. See SceneModel.origin. */
@@ -738,7 +742,7 @@ const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "look" | "origin"
+    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "fill" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
@@ -758,6 +762,7 @@ function stageFieldsOf(
     // An empty lane is the same as no lane: on stage throughout.
     ...visibilityFieldOf(m.visibility),
     ...(m.castShadow === false ? { castShadow: false as const } : {}),
+    ...(m.fill === false ? { fill: false as const } : {}),
     // Here with the rest because it has the same three sites to survive.
     ...(typeof m.look === "string" && m.look ? { look: m.look } : {}),
     // And what brought it, for the next patch with the same tag to find.

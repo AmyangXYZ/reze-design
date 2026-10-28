@@ -127,6 +127,8 @@ export function useSceneSync({
   /** Cast member ids, in order — stages excluded, the same list the engine's
    *  own subjects are drawn from. */
   castIds = [],
+  /** The cast members the cast fill leaves out. */
+  unfilledIds = [],
   /** Each stage and the sun it carries for itself, or null: a directional
    *  light on the stage's layer, while the scene's sun keys the cast. */
   stageSuns = [],
@@ -150,6 +152,7 @@ export function useSceneSync({
   hdri?: File | null
   exportBackground?: ExportBackground
   castIds?: string[]
+  unfilledIds?: string[]
   stageSuns?: { id: string; sun: { color: string; strength: number } | null }[]
   onEffectSurface?: (byUid: Record<string, EffectSurface>) => void
 }) {
@@ -580,8 +583,8 @@ export function useSceneSync({
     const f = castFill
     const c = f && f.strength > 0 ? hexToLinearVec3(f.color) : null
     const fill = c && f ? { x: c.x * f.strength, y: c.y * f.strength, z: c.z * f.strength } : null
-    for (const id of castIds) engine.setModelFill(id, fill)
-  }, [engineRef, ready, castIds, castFill])
+    for (const id of castIds) engine.setModelFill(id, unfilledIds.includes(id) ? null : fill)
+  }, [engineRef, ready, castIds, unfilledIds, castFill])
 
   /**
    * A dial moved, without reinstalling.
@@ -853,7 +856,7 @@ export function useSceneSync({
  * CONTENTS: useSceneSync depends on it, and a fresh array every render would
  * reinstall the effect layer sixty times a second.
  */
-export function useSceneCast<M extends { id: string }>(
+export function useSceneCast<M extends { id: string; fill?: false }>(
   models: M[],
   stages: { id: string; partOf?: string; sun?: { color: string; strength: number } | null }[],
   props: { id: string }[],
@@ -862,11 +865,13 @@ export function useSceneCast<M extends { id: string }>(
   const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
   const castKey = cast.map((m) => m.id).join("\u0000")
   const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  const unfilledKey = cast.filter((m) => m.fill === false).map((m) => m.id).join("\u0000")
+  const unfilledIds = useMemo(() => (unfilledKey ? unfilledKey.split("\u0000") : []), [unfilledKey])
   // The first stage holds the scene's lighting, its sun included: a stage
   // added beside it brings no daylight of its own.
   const stageSuns = useMemo(() => {
     const first = stages.find((s) => !s.partOf)
     return first ? [{ id: first.id, sun: first.sun ?? null }] : []
   }, [stages])
-  return { stageIds, cast, castIds, stageSuns }
+  return { stageIds, cast, castIds, unfilledIds, stageSuns }
 }

@@ -223,6 +223,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // and a prop can be made to appear on cue just as well.
       ...(m.visibility?.length ? { visibility: m.visibility } : {}),
       ...(m.castShadow === false ? { castShadow: false as const } : {}),
+      ...(m.fill === false ? { fill: false as const } : {}),
       ...(look ? { look } : {}),
       ...(origin ? { origin } : {}),
     }

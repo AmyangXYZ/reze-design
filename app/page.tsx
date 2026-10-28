@@ -1905,10 +1905,12 @@ function CastMemberRow({
   rotation,
   spawnGuess,
   castShadow,
+  fill,
   onPosition,
   onScale,
   onRotation,
   onCastShadow,
+  onFill,
   onReset,
   onReplace,
   onRemove,
@@ -1931,10 +1933,13 @@ function CastMemberRow({
   spawnGuess?: boolean
   /** Whether the sun's shadow includes them. */
   castShadow: boolean
+  /** Whether the cast fill lights them. */
+  fill: boolean
   onPosition: (position: [number, number, number]) => void
   onScale: (scale: number) => void
   onRotation: (rotation: [number, number, number]) => void
   onCastShadow: (on: boolean) => void
+  onFill: (on: boolean) => void
   /** Back to where the model rests: origin, unturned, life size. */
   onReset: () => void
   onReplace: () => void
@@ -2081,6 +2086,10 @@ function CastMemberRow({
         <div className="mt-1.5 flex items-center justify-between">
           <span className="text-2xs">{t.lab.ctl.shadow}</span>
           <Switch size="sm" checked={castShadow} onCheckedChange={onCastShadow} />
+        </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          <span className="text-2xs">{t.lab.ctl.castFill}</span>
+          <Switch size="sm" checked={fill} onCheckedChange={onFill} />
         </div>
         </Cover>
       </PopoverContent>
@@ -2352,6 +2361,7 @@ function Lab() {
     setCastRotation,
     setCastScale,
     setCastShadow,
+    setCastFill,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -2574,7 +2584,7 @@ function Lab() {
    * here would give it two homes and two delete buttons. The shipped editor
    * filters by exactly this set.
    */
-  const { stageIds, cast, castIds: castIdList, stageSuns: stageSunList } = useSceneCast(models, stages, props)
+  const { stageIds, cast, castIds: castIdList, unfilledIds, stageSuns: stageSunList } = useSceneCast(models, stages, props)
   /**
    * Cast rows still ON THE WAY — one skeleton each.
    *
@@ -3683,6 +3693,7 @@ function Lab() {
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
+    unfilledIds,
     stageSuns: stageSunList,
     onEffectSurface: setEffectSurface,
   })
@@ -8446,10 +8457,12 @@ function Lab() {
                   rotation={m.rotation}
                   spawnGuess={m.spawnGuess}
                   castShadow={m.castShadow !== false}
+                  fill={m.fill !== false}
                   onPosition={(position) => setCastPosition(m.id, position)}
                   onScale={(v) => setCastScale(m.id, v)}
                   onRotation={(rotation) => setCastRotation(m.id, rotation)}
                   onCastShadow={(on) => setCastShadow(m.id, on)}
+                  onFill={(on) => setCastFill(m.id, on)}
                   onReset={() => {
                     setCastScale(m.id, 1)
                     setCastRotation(m.id, [0, 0, 0])

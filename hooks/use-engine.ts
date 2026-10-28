@@ -1008,6 +1008,20 @@ export function useEngine(
     )
   }, [])
 
+  /** Whether the cast fill lights a cast member. Off is the only state written;
+   *  useSceneSync applies it. */
+  const setCastFill = useCallback((id: string, on: boolean) => {
+    setModels((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        if (!on) return { ...m, fill: false as const }
+        const rest = { ...m }
+        delete rest.fill
+        return rest
+      }),
+    )
+  }, [])
+
   /**
    * The stretches a model is on stage for — its lane on the timeline. Any model:
    * a cast member's costume change, or a prop that is only there for a stretch.
@@ -1642,6 +1656,7 @@ export function useEngine(
     setCastScale,
     setCastRotation,
     setCastShadow,
+    setCastFill,
     setCastVisibility,
     planes,
     addPlaneFromFile,

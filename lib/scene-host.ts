@@ -658,6 +658,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       engine.setModelCastShadow(entry.model.id, false)
       info.castShadow = false
     }
+    if (entry.fill === false) info.fill = false
     const modelGroups = withSpecialGroups(
       docGroups ?? autoGroups ?? [],
       // The character seeds go to whatever has a head — a prop that is a second
@@ -924,6 +925,8 @@ export type EngineModelInfo = {
   spawnGuess?: boolean
   /** Left out of the sun's shadow — see SceneModel.castShadow. */
   castShadow?: false
+  /** Left out of the cast fill — see SceneModel.fill. */
+  fill?: false
   /** Every bone's name, in rig order — what a prop's bone picker lists. Kept
    *  here rather than read off the live model in render, which the row cannot
    *  do without reaching into a ref. */
