@@ -10555,7 +10555,7 @@ function Lab() {
         <aside
           data-edge="right"
           className={cn(
-            "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-6 text-xs",
+            "cover-type dock-backing absolute top-[5.75rem] right-7 bottom-[10.25rem] flex w-[18rem] flex-col pl-6 text-xs",
             "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
             !agentOpen && "invisible translate-x-2 opacity-0",
           )}
