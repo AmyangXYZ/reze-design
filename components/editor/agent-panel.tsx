@@ -11,7 +11,7 @@
 // takes a minute reads as a minute of visible work, not a frozen box. The
 // canvas changes beside it; the panel has no scrim for that reason.
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Square, ArrowDown, ArrowUp, ImagePlus, X, Undo2, Redo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -23,6 +23,7 @@ import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
 import { DETAIL_OUTLINED } from "@/components/editor/library-shell"
 import { useCover } from "@/components/ui/cover"
+import { scrollFade, useScrollFade } from "@/components/editor/scroll-fade"
 
 /** On the cover, an action is a line of type: muted, ink on hover, no box. */
 const COVER_ACTION = "h-6 w-fit gap-1 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
@@ -492,6 +493,16 @@ export function AgentPanel({
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  // A long draft scrolls inside the field with no bar: the edge it runs past
+  // fades instead.
+  const [fadeRef, fadeBelow, fadeAbove] = useScrollFade<HTMLTextAreaElement>()
+  const inputRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      input.current = el
+      fadeRef(el)
+    },
+    [fadeRef],
+  )
   // Ready to type the moment the panel opens or a tab is opened. The panel
   // fades in with visibility in its transition, and a field still hidden at
   // the transition's first frame refuses focus without a word — so try each
@@ -761,7 +772,7 @@ export function AgentPanel({
               <Prompt />
             </span>
             <Textarea
-              ref={input}
+              ref={inputRef}
               disabled={!!onSetup}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -789,7 +800,10 @@ export function AgentPanel({
               rows={1}
               // Bare: the bar is the field. One line is the row's 20px, so the
               // caret sits on the prompt mark's line.
-              className="max-h-40 min-h-5 rounded-none border-0 bg-transparent p-0 text-xs leading-5 shadow-none focus-visible:ring-0 md:text-xs dark:bg-transparent"
+              className={cn(
+                "no-scrollbar max-h-40 min-h-5 overscroll-contain rounded-none border-0 bg-transparent p-0 text-xs leading-5 shadow-none focus-visible:ring-0 md:text-xs dark:bg-transparent",
+                scrollFade(fadeAbove, fadeBelow),
+              )}
             />
             <Input
               ref={fileInput}
