@@ -618,7 +618,8 @@ export function AgentPanel({
       }}
     >
       {/* With no model to ask, the conversation is behind the setup: hidden and
-          inert, with the way to add one over it. The input below stays, off. */}
+          inert, with the caption and the way to add one over it. The input
+          below stays, off. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
@@ -708,7 +709,9 @@ export function AgentPanel({
           Attached pictures ride above the line; the picture button, send and
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
       {onSetup && (
-        <div className="absolute inset-0 flex items-center justify-center px-4">
+        // What it is for still opens the panel; the way to add a model follows.
+        <div className="absolute inset-x-0 top-0 flex flex-col items-start gap-3 px-4 leading-[18px]">
+          <p className="text-muted-foreground">{text.empty}</p>
           <Button variant="bare" onClick={onSetup} className={cn(DETAIL_OUTLINED, "w-fit")}>
             {text.setup}
           </Button>
