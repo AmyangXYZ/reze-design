@@ -46,7 +46,18 @@ function read(): AiSettings {
   return current
 }
 
+// Another tab's change. Every editor tab shares these settings, and one
+// holding an old copy wrote it back over a model picked in another, which is
+// how a chosen model went missing.
+function reload() {
+  current = null
+  for (const l of listeners) l()
+}
+if (typeof window !== "undefined") window.addEventListener("storage", (e) => e.key === KEY && reload())
+
+/** Applied to what is stored NOW, never to this tab's copy of it. */
 export function updateAi(fn: (s: AiSettings) => AiSettings) {
+  current = null
   current = fn(read())
   try {
     window.localStorage.setItem(KEY, JSON.stringify(current))
@@ -117,7 +128,8 @@ export async function verifyModel(connectionId: string, model: string) {
   const [{ routeOf }, { verify }] = await Promise.all([providers(), import("@/lib/ai/verify")])
   const route = routeOf(viaOfConnection(c, model))
   if ("error" in route) return setEntry({ id: model, verdict: "error", error: route.error })
-  const out = await verify(route)
+  // A check that throws is a verdict too, rather than "checking" for good.
+  const out = await verify(route).catch((e: unknown) => ({ verdict: "error" as const, error: e instanceof Error ? e.message : String(e) }))
   setEntry({ id: model, verdict: out.verdict, ...(out.error ? { error: out.error } : {}) })
 }
 

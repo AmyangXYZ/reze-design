@@ -89,7 +89,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
+  const { drafts, create: createDraft, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
   const stock = useStock("graph")
   const community = useCommunity<GraphItem>("graph")
@@ -396,9 +396,16 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
           if (!target) return
           // A draft is local; there is nothing to report and nothing to refuse.
           if (target.draft) return removeDraft(target.id)
-          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
-            (ok) => ok && removeCommunityItem(target.id),
-          )
+          // Worn by the scene, it stays on: its copy becomes a draft, the one
+          // place a look that matches nothing published lives. Without it the
+          // scene wore a look with no entry to edit it from or publish.
+          const item = ROWS.find((r) => r.id === target.id)
+          const worn = !!item && used.has(nameKey(item.name))
+          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then((ok) => {
+            if (!ok) return
+            removeCommunityItem(target.id)
+            if (worn) createDraft({ name: item.name, payload: item.payload, author: item.author, description: item.description, tags: item.tags })
+          })
         }}
       />
     </LibraryDock>

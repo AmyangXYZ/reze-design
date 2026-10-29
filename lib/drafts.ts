@@ -122,8 +122,18 @@ export function createDraft(
 }
 
 /** Edits to an existing draft, by id. Silently ignores unknown ids so a stale
- *  editor can't resurrect a deleted draft. */
+ *  editor can't resurrect a deleted draft.
+ *
+ *  A write still queued for it (updateDraftSoon) lands first: it is older than
+ *  this one, and left queued it landed after, putting an editor's last state
+ *  back over what its close had just saved. */
 export function updateDraft(kind: DraftKind, id: string, patch: Partial<LibraryItem>): void {
+  const key = `${kind}:${id}`
+  const queued = pendingRuns.get(key)
+  if (queued) {
+    cancelDraftWrites(kind, id)
+    queued()
+  }
   const store = loadDrafts()
   save({ ...store, [kind]: store[kind].map((d) => (d.id === id ? { ...d, ...patch } : d)) })
 }

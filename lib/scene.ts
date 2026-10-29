@@ -136,6 +136,8 @@ export type SceneModel = {
   castShadow?: false
   /** Left out of the cast fill (settings.fill). Absent = lit by it. */
   fill?: false
+  /** Left out of the bloom: its own bright pixels do not glow. Absent = glows. */
+  bloom?: false
   /** Bundle path to a look.json: the game's own materials for this model, drawn
    *  by its translated shaders. See lib/unity-native. */
   look?: string
@@ -491,6 +493,8 @@ export type SceneModelDoc = {
   castShadow?: false
   /** Left out of the cast fill. Absent = lit by it. */
   fill?: false
+  /** Left out of the bloom. Absent = glows. */
+  bloom?: false
   /** Path to a look.json — the game's own materials for this model. */
   look?: string
   /** The tag of the scene patch it came in with. See SceneModel.origin. */
@@ -742,7 +746,7 @@ const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "fill" | "look" | "origin"
+    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "fill" | "bloom" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
@@ -763,6 +767,7 @@ function stageFieldsOf(
     ...visibilityFieldOf(m.visibility),
     ...(m.castShadow === false ? { castShadow: false as const } : {}),
     ...(m.fill === false ? { fill: false as const } : {}),
+    ...(m.bloom === false ? { bloom: false as const } : {}),
     // Here with the rest because it has the same three sites to survive.
     ...(typeof m.look === "string" && m.look ? { look: m.look } : {}),
     // And what brought it, for the next patch with the same tag to find.

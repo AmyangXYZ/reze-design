@@ -121,7 +121,7 @@ import { RangeRow, VALUE_BOX } from "@/components/scene/scene-sidebar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
-import { EffectLibrary } from "@/components/editor/effect-library"
+import { EffectLibrary, wears } from "@/components/editor/effect-library"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { GraphEditor } from "@/components/graph/graph-editor"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
@@ -215,7 +215,7 @@ import { useSession } from "@/lib/auth-client"
 import { useSceneHistory } from "@/hooks/use-scene-history"
 import { useSceneTools } from "@/hooks/use-scene-tools"
 import { useAgent } from "@/hooks/use-agent"
-import { AgentPanel } from "@/components/editor/agent-panel"
+import { AgentPanel, AgentRunLine } from "@/components/editor/agent-panel"
 import { AgentMenu } from "@/components/editor/agent-settings"
 import { AgentTabs } from "@/components/editor/agent-tabs"
 import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
@@ -1906,11 +1906,13 @@ function CastMemberRow({
   spawnGuess,
   castShadow,
   fill,
+  bloom,
   onPosition,
   onScale,
   onRotation,
   onCastShadow,
   onFill,
+  onBloom,
   onReset,
   onReplace,
   onRemove,
@@ -1935,11 +1937,14 @@ function CastMemberRow({
   castShadow: boolean
   /** Whether the cast fill lights them. */
   fill: boolean
+  /** Whether their own bright pixels feed the bloom. */
+  bloom: boolean
   onPosition: (position: [number, number, number]) => void
   onScale: (scale: number) => void
   onRotation: (rotation: [number, number, number]) => void
   onCastShadow: (on: boolean) => void
   onFill: (on: boolean) => void
+  onBloom: (on: boolean) => void
   /** Back to where the model rests: origin, unturned, life size. */
   onReset: () => void
   onReplace: () => void
@@ -2090,6 +2095,10 @@ function CastMemberRow({
         <div className="mt-1.5 flex items-center justify-between">
           <span className="text-2xs">{t.lab.ctl.castFill}</span>
           <Switch size="sm" checked={fill} onCheckedChange={onFill} />
+        </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          <span className="text-2xs">{t.lab.ctl.bloom}</span>
+          <Switch size="sm" checked={bloom} onCheckedChange={onBloom} />
         </div>
         </Cover>
       </PopoverContent>
@@ -2362,6 +2371,7 @@ function Lab() {
     setCastScale,
     setCastShadow,
     setCastFill,
+    setCastBloom,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -2584,7 +2594,7 @@ function Lab() {
    * here would give it two homes and two delete buttons. The shipped editor
    * filters by exactly this set.
    */
-  const { stageIds, cast, castIds: castIdList, unfilledIds, stageSuns: stageSunList } = useSceneCast(models, stages, props)
+  const { stageIds, cast, castIds: castIdList, unfilledIds, unbloomedIds, stageSuns: stageSunList } = useSceneCast(models, stages, props)
   /**
    * Cast rows still ON THE WAY — one skeleton each.
    *
@@ -3694,6 +3704,7 @@ function Lab() {
     // the first of them is the engine's subject 0.
     castIds: castIdList,
     unfilledIds,
+    unbloomedIds,
     stageSuns: stageSunList,
     onEffectSurface: setEffectSurface,
   })
@@ -3865,6 +3876,10 @@ function Lab() {
     savePrompt: string | null
   } | null>(null)
   const effectSessionRef = useRef(0)
+  /** The latest compile's ticket. Compiles finish out of order and after the
+   *  editor closes; only the latest one of the open session may write. Ending
+   *  a session takes a ticket too, so nothing from it writes after. */
+  const effectCommitRef = useRef(0)
   const {
     rect: effectPanelRect,
     update: updateEffectPanelRect,
@@ -3895,15 +3910,17 @@ function Lab() {
       const next = stampEffectUids(mergeEffect(base, { ...subject, wgsl }))
       // with their pictures, as the sync pass installs them: this install is
       // adopted as what is on screen, so one without them stays without them
+      const ticket = ++effectCommitRef.current
       const rs = await engine.setEffects(
         next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params), textures: effectTexturesFor(e.wgsl) })),
       )
+      const current = ticket === effectCommitRef.current
       const at = next.findIndex((e) => e.id === subject.id)
       // The subject's own result. Another layer failing is not this edit's
       // error to report, and reporting it would blame the panel you are typing
       // in for a shader you are not.
       const r = rs[at] ?? rs[0] ?? { ok: false, diagnostics: [t.lab.compileFailed] }
-      if (r.ok) {
+      if (r.ok && current) {
         // The sync pass keys on the WHOLE list, so what it must not recompile is
         // the whole list — handing it one shader left it reinstalling every
         // keystroke against a key that never matched. It also puts the strips
@@ -3961,6 +3978,7 @@ function Lab() {
    *  ends, and whatever was applied before the session comes back. */
   const requestCloseEffectEditor = async (code: string) => {
     if (!effectEditor) return
+    effectCommitRef.current += 1
     if (code === effectEditor.subject.wgsl) {
       setBgEffects(effectEditor.prior)
       setEffectEditor(null)
@@ -3984,6 +4002,7 @@ function Lab() {
   }
   const discardEffectEdit = () => {
     if (!effectEditor) return
+    effectCommitRef.current += 1
     // Discard UNDOES the as-you-go writes, not just stops them.
     if (isDraft("effect", effectEditor.subject.id)) {
       cancelDraftWrites("effect", effectEditor.subject.id)
@@ -3997,6 +4016,7 @@ function Lab() {
   const freeEffectName = (wanted: string, editingId?: string) => freeName("effect", wanted, editingId)
   const saveEffectEdit = async (wanted: string): Promise<string | null> => {
     if (!effectEditor?.savePrompt) return null
+    effectCommitRef.current += 1
     const { subject, savePrompt: code } = effectEditor
     // A broken shader must not land in the library — it would be auto-applied on
     // every future pick. Compiling IS applying, which is also what save wants.
@@ -7566,6 +7586,13 @@ function Lab() {
                   <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
                 )}
               </Button>
+              {/* A run whose door a right-hand column covers reports here, beside
+                  the export's, and leads back to the panel. */}
+              {agent.busy && agent.run && !agentOpen && (exportOpen || shareOpen || libraryUp) && (
+                <Button variant="bare" onClick={openAgent} className="ml-3 flex h-8 max-w-56 items-center text-xs text-foreground">
+                  <AgentRunLine live={agent.live} run={agent.run} />
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={openShare}
@@ -8029,19 +8056,20 @@ function Lab() {
           const fx = bgEffects.find((e) => e.id === id)
           if (fx?.uid) setSelectedEffect(fx.uid)
         }}
-        // Applying from the library APPENDS, and applying what is already on
-        // takes it off — the same membership rule as the dock's picker, since
-        // they are two doors onto one list.
-        // An effect put on here is the one the pane beside it chooses, at once.
+        // Applying from the library APPENDS; the library takes off what is
+        // already on (its `wears`). An effect put on here is the one the pane
+        // beside it chooses, at once.
         onApply={(e) => {
-          if (bgEffects.some((x) => x.id === e.id)) return setBgEffects((list) => list.filter((x) => x.id !== e.id))
           const uid = newSceneId()
           setBgEffects((list) => [...list, { ...e, uid }])
           setSelectedEffect(uid)
         }}
-        onRemove={(id) => setBgEffects((list) => list.filter((e) => e.id !== id))}
+        onRemove={(item) => setBgEffects((list) => list.filter((e) => !wears(e, item)))}
         onRenamed={(oldName, newName) =>
           setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
+        }
+        onRepoint={(item) =>
+          setBgEffects((list) => list.map((e) => (wears(e, item) ? { ...e, id: item.id, name: item.name } : e)))
         }
         onEdit={openEffectEditor}
       />
@@ -8257,14 +8285,17 @@ function Lab() {
               visibility,
             )
           }
-          // Published from that list under another name: the scene follows, the
-          // same re-pointing a rename in the library does.
-          onLookPublished={(kind, oldName, newName) => {
-            if (kind === "grade")
-              setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2))
-            else if (kind === "effect")
-              setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
-            else renameGroupLooks(oldName, newName)
+          // Published from that list: the scene follows the look to its entry.
+          // Grades and graphs are worn by name, so a new name is all they need;
+          // an effect takes the entry's id too, the library's own re-pointing.
+          onLookPublished={(kind, oldName, item) => {
+            if (kind === "effect") {
+              setBgEffects((list) => list.map((e) => (wears(e, item as EffectItem) ? { ...e, id: item.id, name: item.name } : e)))
+            } else if (item.name !== oldName) {
+              if (kind === "grade")
+                setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: item.name } } : s2))
+              else renameGroupLooks(oldName, item.name)
+            }
           }}
         />
       )}
@@ -8458,11 +8489,13 @@ function Lab() {
                   spawnGuess={m.spawnGuess}
                   castShadow={m.castShadow !== false}
                   fill={m.fill !== false}
+                  bloom={m.bloom !== false}
                   onPosition={(position) => setCastPosition(m.id, position)}
                   onScale={(v) => setCastScale(m.id, v)}
                   onRotation={(rotation) => setCastRotation(m.id, rotation)}
                   onCastShadow={(on) => setCastShadow(m.id, on)}
                   onFill={(on) => setCastFill(m.id, on)}
+                  onBloom={(on) => setCastBloom(m.id, on)}
                   onReset={() => {
                     setCastScale(m.id, 1)
                     setCastRotation(m.id, [0, 0, 0])
@@ -10484,9 +10517,16 @@ function Lab() {
         >
           {/* The ink zone is the word, not the door: the door's own fade
               must not give way to the ink's. */}
+          {/* A run reports at its door, as an export does at its own. */}
           <span data-ink-zone className="flex items-center gap-2 text-foreground">
-            <Astroid className="size-3.5" />
-            {t.lab.agent.short}
+            {agent.busy && agent.run ? (
+              <AgentRunLine live={agent.live} run={agent.run} />
+            ) : (
+              <>
+                <Astroid className="size-3.5" />
+                {t.lab.agent.short}
+              </>
+            )}
           </span>
         </Button>
       )}

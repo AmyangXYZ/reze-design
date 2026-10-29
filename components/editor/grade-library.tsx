@@ -89,7 +89,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // text and stay as written, exactly as the effects library already shows them.
   const nameOf = (g: GradeItem) => stockName("grade", g, locale)
 
-  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
+  const { drafts, create: createDraft, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
   const stock = useStock("grade")
   const community = useCommunity<GradeItem>("grade")
@@ -347,9 +347,16 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
           if (!target) return
           // A draft is local; there is nothing to report and nothing to refuse.
           if (target.draft) return removeDraft(target.id)
-          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
-            (ok) => ok && removeCommunityItem(target.id),
-          )
+          // Worn by the scene, it stays on: its copy becomes a draft, the one
+          // place a look that matches nothing published lives. Without it the
+          // scene wore a look with no entry to edit it from or publish.
+          const item = all.find((r) => r.id === target.id)
+          const worn = !!item && nameKey(item.name) === nameKey(grade.preset)
+          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then((ok) => {
+            if (!ok) return
+            removeCommunityItem(target.id)
+            if (worn) createDraft({ name: item.name, payload: item.payload, author: item.author, description: item.description, tags: item.tags })
+          })
         }}
       />
     </LibraryDock>

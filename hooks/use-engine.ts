@@ -1022,6 +1022,20 @@ export function useEngine(
     )
   }, [])
 
+  /** Whether a cast member feeds the bloom. Off is the only state written;
+   *  useSceneSync applies it. */
+  const setCastBloom = useCallback((id: string, on: boolean) => {
+    setModels((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        if (!on) return { ...m, bloom: false as const }
+        const rest = { ...m }
+        delete rest.bloom
+        return rest
+      }),
+    )
+  }, [])
+
   /**
    * The stretches a model is on stage for — its lane on the timeline. Any model:
    * a cast member's costume change, or a prop that is only there for a stretch.
@@ -1657,6 +1671,7 @@ export function useEngine(
     setCastRotation,
     setCastShadow,
     setCastFill,
+    setCastBloom,
     setCastVisibility,
     planes,
     addPlaneFromFile,

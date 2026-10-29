@@ -112,6 +112,31 @@ const elapsed = (ms: number) => {
   return s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`
 }
 
+/** What a run is doing: the tool at work, else writing, else a thinking word
+ *  that changes every few seconds so a long think moves. */
+const runVerb = (live: AgentLive, since: number) =>
+  live.retrying ? "Reconnecting" : (doingOf(live.tool) ?? (live.text ? "Writing" : THINKING_VERBS[Math.floor(since / 4000) % THINKING_VERBS.length]))
+
+/**
+ * A run in progress as one line: the spinner, what it is doing, for how long.
+ * The panel's status line, for the doors that lead back to it while it is shut.
+ */
+export function AgentRunLine({ live, run }: { live: AgentLive; run: AgentRun }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const since = Math.max(0, now - run.startedAt)
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <AstroidSpinner className="size-3.5 shrink-0" />
+      <span className="truncate">{runVerb(live, since)}…</span>
+      <span className="shrink-0 font-mono text-2xs tabular-nums">{elapsed(since)}</span>
+    </span>
+  )
+}
+
 /**
  * Every line of the transcript stands on the same grid: a 14px column for its
  * mark, then its text, all at the panel's one size (text-xs) and line height.
@@ -507,10 +532,13 @@ export function AgentPanel({
   }, [busy])
 
   // Follow the conversation as it grows — new text, a thought opening, an
-  // image landing — while you are at the bottom. Scrolled up to read, it
-  // leaves you there; a new request brings you back down.
+  // image landing — while you are at the bottom, and as the panel itself gets
+  // shorter. Scrolling UP lets go, however small the step: a trackpad scrolls a
+  // few pixels at a time, and a stream would pull each one back down. Reaching
+  // the bottom again takes hold. A new request brings you back down.
   const content = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
+  const lastTop = useRef(0)
   // Scrolled up away from the bottom: the token line offers the way back.
   const [away, setAway] = useState(false)
   const toLatest = () => {
@@ -528,6 +556,7 @@ export function AgentPanel({
       if (pinned.current) el.scrollTop = el.scrollHeight
     })
     follow.observe(inner)
+    follow.observe(el)
     return () => follow.disconnect()
   }, [])
   const requests = lines.filter((l) => l.kind === "user").length
@@ -545,10 +574,8 @@ export function AgentPanel({
     setRefs([])
   }
 
-  // What the status line says: the tool at work, else writing, else a
-  // thinking word that changes every few seconds so a long think moves.
   const since = run ? Math.max(0, now - run.startedAt) : 0
-  const verb = live.retrying ? "Reconnecting" : (doingOf(live.tool) ?? (live.text ? "Writing" : THINKING_VERBS[Math.floor(since / 4000) % THINKING_VERBS.length]))
+  const verb = runVerb(live, since)
   // The latest line of reasoning, while it is still forming.
   const thought = live.thinking.trim().split("\n").filter(Boolean).pop() ?? ""
 
@@ -566,7 +593,7 @@ export function AgentPanel({
         }
       }}
       onDragOver={(e) => {
-        if (![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return
+        if (onSetup || ![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return
         e.preventDefault()
         setDragging(true)
       }}
@@ -579,14 +606,22 @@ export function AgentPanel({
         void attach(e.dataTransfer.files)
       }}
     >
+      {/* With no model to ask, the conversation is behind the setup: hidden and
+          inert, with the way to add one over it. The input below stays, off. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
+        inert={!!onSetup}
         onScroll={(e) => {
           const el = e.currentTarget
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+          // Bottom first: content that shrinks clamps scrollTop down, which is
+          // not you scrolling up.
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 4
+          pinned.current = atBottom || (pinned.current && el.scrollTop >= lastTop.current)
+          lastTop.current = el.scrollTop
           if (away === pinned.current) setAway(!pinned.current)
         }}
-        className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text"
+        className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text", onSetup && "invisible")}
       >
         <div ref={content} className="space-y-2">
         {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
@@ -661,32 +696,14 @@ export function AgentPanel({
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
-      {/* Before there is any model to ask: what to do and the button that does
-          it, right above the input it unlocks. */}
       {onSetup && (
-        // An empty conversation: in the middle of the panel. One with history:
-        // just above the input, clear of the messages.
-        // On the cover it is a line of type, just above the input it unlocks.
-        <div
-          className={cn(
-            "flex",
-            cover
-              ? "shrink-0 px-4 pb-2"
-              : lines.length === 0
-                ? "pointer-events-none absolute inset-0 items-center justify-center pb-12 [&>*]:pointer-events-auto"
-                : "shrink-0 justify-center px-4 pb-2",
-          )}
-        >
-          <Button
-            variant="bare"
-            onClick={onSetup}
-            className={cover ? cn(COVER_ACTION, "text-foreground") : cn(DETAIL_OUTLINED, "w-fit")}
-          >
-            {cover && <ArrowDown className="size-3" />}
+        <div className="absolute inset-0 flex items-center justify-center px-4">
+          <Button variant="bare" onClick={onSetup} className={cn(DETAIL_OUTLINED, "w-fit")}>
             {text.setup}
           </Button>
         </div>
       )}
+      </div>
       {/* The request's tokens, in one place: live while it runs, the final
           count after — a line of its own above the input, so the chat ends
           above it rather than running underneath. Scrolled up, the way back

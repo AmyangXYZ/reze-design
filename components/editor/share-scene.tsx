@@ -152,7 +152,7 @@ export function ShareSceneDialog(props: {
   captureCover: () => Promise<Blob>
   unpublished: (visibility: Visibility) => UnpublishedUse[]
   /** A look this scene wears was published from here under `newName`. */
-  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, newName: string) => void
+  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, item: LibraryItem) => void
   /** Closes this dialog and opens the gallery — offered once the scene is up. */
   onGallery: () => void
 }) {
@@ -207,7 +207,7 @@ function ShareSceneForm({
    *  about to be published with. Publishing is blocked while this is non-empty
    *  — see lib/refs.ts for why. */
   unpublished: (visibility: Visibility) => UnpublishedUse[]
-  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, newName: string) => void
+  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, item: LibraryItem) => void
   onGallery: () => void
 }) {
   const t = useT()
@@ -577,7 +577,7 @@ function ShareSceneForm({
                                   addCommunityItem(item)
                                   noteItemPublished(item.id)
                                   if (u.draft) removeDraft(u.kind, u.draft.id)
-                                  if (item.name !== u.name) onLookPublished(u.kind, u.name, item.name)
+                                  onLookPublished(u.kind, u.name, item)
                                   setLooksPublished((n) => n + 1)
                                 }}
                               />

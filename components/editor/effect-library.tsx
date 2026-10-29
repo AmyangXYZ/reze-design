@@ -65,7 +65,11 @@ type LibraryProps = {
   onApply: (effect: AppliedEffect) => void
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
-  onRemove: (id: string) => void
+  /** This look's library entry is now `item` — published from a draft, or a
+   *  draft again after its published row was deleted. Re-point what the scene
+   *  wears of it (`wears`) to the entry's id and name. */
+  onRepoint?: (item: EffectItem) => void
+  onRemove: (item: EffectItem) => void
   /** The effect chosen in the Effect pane beside the library: shown when it changes. */
   focusId?: string | null
   /** The effect last picked from the dock's tabs: the shelf scrolls to it
@@ -86,14 +90,17 @@ export function EffectLibrary(props: LibraryProps) {
 }
 
 /** Seed the inspector's param draft */
+/** Whether an applied effect is this card's: its entry, or its code. By value
+ *  as the document pins it (lib/refs.ts) — an applied copy's id goes stale
+ *  when its draft is published, and the card has to know it all the same. */
+export const wears = (a: AppliedEffect, e: EffectItem) => a.id === e.id || a.wgsl === e.payload.wgsl
+
 /** The card's own applied entry when the scene wears it — so opening the editor
  *  on a card edits what is RUNNING rather than the library's pristine copy. */
-const appliedById = (applied: AppliedEffect[], id: string | undefined) => applied.find((e) => e.id === id) ?? null
-
 const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): AppliedEffect | null =>
-  selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
+  selected ? ({ ...(applied.find((a) => wears(a, selected)) ?? applyDefaults(selected)) }) : null
 
-function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null, revealId = null, onFocus }: LibraryProps) {
+function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onRepoint, onEdit, focusId = null, revealId = null, onFocus }: LibraryProps) {
   const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
@@ -121,7 +128,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     if (focusId && !removed) setSelectedId(focusId)
   }
 
-  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
+  const { drafts, create: createDraft, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
   const stock = useStock("effect")
   const community = useCommunity<EffectItem>("effect")
@@ -188,7 +195,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   }
 
   // The applied effect cannot be deleted — see the graph library's `inUse`.
-  const inUse = (e: EffectItem) => e.owner === "local" && applied.some((a) => a.id === e.id)
+  const inUse = (e: EffectItem) => e.owner === "local" && applied.some((a) => wears(a, e))
 
 
   // "New effect": open the floating editor on the template. Nothing is created —
@@ -199,7 +206,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // selection ring, the state badge — belongs to the shared results component.
   const meta = (e: EffectItem): CardMeta => ({
     preview: <EffectPreview wgsl={e.payload.wgsl} />,
-    applied: applied.some((a) => a.id === e.id),
+    applied: applied.some((a) => wears(a, e)),
     nameNode:
       renamingId === e.id ? (
         <RenameField
@@ -286,10 +293,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   }
   const toggle = (e: EffectItem) => {
     pick(e)
-    if (applied.some((a) => a.id === e.id)) onRemove(e.id)
+    if (applied.some((a) => wears(a, e))) onRemove(e)
     else onApply(seedDraft(e, applied)!)
   }
-  const selectedOn = !!selected && applied.some((a) => a.id === selected.id)
+  const selectedOn = !!selected && applied.some((a) => wears(a, selected))
 
   return (
     <LibraryDock
@@ -337,7 +344,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     addCommunityItem(item)
                     noteItemPublished(item.id)
                     removeDraft(selected.id)
-                    onRenamed?.(selected.name, item.name)
+                    onRepoint?.(item as EffectItem)
                   }}
                 />
               )
@@ -391,9 +398,24 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           // A draft lives on this device only, so there is nothing to report
           // and nothing that can refuse.
           if (target.draft) return removeDraft(target.id)
-          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
-            (ok) => ok && removeCommunityItem(target.id),
-          )
+          // Worn by the scene, it stays on: its copy becomes a draft, the one
+          // place a look that matches nothing published lives. Otherwise it
+          // stayed applied with no card to show it, take it off or publish it.
+          const item = all.find((e) => e.id === target.id)
+          const worn = item && applied.find((a) => wears(a, item))
+          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then((ok) => {
+            if (!ok) return
+            removeCommunityItem(target.id)
+            if (!worn || !item) return
+            const draft = createDraft({
+              name: item.name,
+              payload: { wgsl: worn.wgsl },
+              author: item.author,
+              description: item.description,
+              tags: item.tags,
+            })
+            onRepoint?.(draft)
+          })
         }}
       />
     </LibraryDock>
