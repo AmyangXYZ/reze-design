@@ -184,7 +184,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
         { source: "Floating Stars" },
         { source: "Hand Sparks" },
         { source: "Lyrics" },
-        { source: "Chicks", params: { ROAM: 2 } },
+        { source: "Pochita", params: { ROAM: 2 } },
       ],
     },
     grade: { preset: "Neutral", intensity: 1 },

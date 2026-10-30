@@ -1,7 +1,7 @@
 #particles @PARTICLES@
 #blend cutout
 #param float COUNT 4 1 16 — how many Pochitas
-#param float SIZE 1.0 0.5 2.0 — how big they are
+#param float SIZE 0.8 0.5 2.0 — how big they are
 #param float ROAM 1.0 0.3 6.0 — how far from her they wander
 #param float BEAT 1.0 0 2 — how high the resting ones bounce on the beat
 #param float OUTLINE 1.0 0 3 — how wide their outline is
