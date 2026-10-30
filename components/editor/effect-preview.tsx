@@ -25,9 +25,13 @@ const definesParticles = (wgsl: string) =>
   /\bfn\s+particleInit\s*\(/.test(wgsl) &&
   /\bfn\s+particleStep\s*\(/.test(wgsl) &&
   /\bfn\s+particleShade\s*\(/.test(wgsl)
+/** The effect places its own corners (`particleCorner`). */
+const meshed = (wgsl: string) => /\bfn\s+particleCorner\s*\(/.test(wgsl)
 /** `#particles N`, read the way the engine reads it. */
 const particleCount = (wgsl: string) => {
   const m = wgsl.match(/^[ \t]*#particles[ \t]+(\d+)/m)
+  // A pool that draws a mesh is its mesh: every slot is needed.
+  if (meshed(wgsl)) return Number(m?.[1] ?? 1024)
   // A card is two centimetres across: a tenth of the scene's pool reads the
   // same and costs a tenth as much, with a floor so a sparse effect still shows.
   return Math.max(192, Math.min(Math.round(Number(m?.[1] ?? 1024) / 4), 1500))
@@ -848,6 +852,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `
 
+/** The engine's corner order for an effect that places its own (`particleCorner`). */
+const PV_CORNERS = (wgsl: string) =>
+  meshed(wgsl)
+    ? /* wgsl */ `  let quad = array<vec2f, 4>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(1.0, 1.0));
+  let which = array<u32, 6>(0u, 1u, 2u, 2u, 1u, 3u)[vi];
+  let placed = rzProject(particleCorner(p, ii, which));
+  out.pos = vec4f(placed.xy * 2.0 - 1.0, 0.5, 1.0);
+  out.uv = quad[which];
+`
+    : ""
+
 const PARTICLE_RENDER = (wgsl: string) =>
   previewWorld(wgsl) +
   // Whether this pool would reach the bloom pyramid in the scene. The card has
@@ -907,7 +922,7 @@ struct PVOut {
   out.pos = vec4f(proj.xy * 2.0 - 1.0, 0.5, 1.0);
   out.uv = corner * 0.5 + 0.5;
   out.id = ii;
-  return out;
+${PV_CORNERS(wgsl)}  return out;
 }
 
 @fragment fn fs(in: PVOut) -> @location(0) vec4f {
