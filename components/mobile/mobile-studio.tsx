@@ -64,6 +64,7 @@ export function MobileStudio({
   onReplaceModel,
   onRemoveModel,
   motion,
+  morph,
   camera,
   music,
   background,
@@ -83,6 +84,8 @@ export function MobileStudio({
   onRemoveModel: (id: string) => void
   /** The lead's motion; null with no cast. */
   motion: MobileSlot | null
+  /** The lead's morph motion; null with no cast. */
+  morph: MobileSlot | null
   camera: MobileSlot
   music: MobileSlot
   background: { color: string; onColor: (hex: string) => void; image: MobileSlot }
@@ -273,6 +276,7 @@ export function MobileStudio({
         return (
           <Group>
             {motion && <SlotRow label={t.mobile.motion} slot={motion} pick={pick} />}
+            {morph && <SlotRow label={t.lab.kinds.morph} slot={morph} pick={pick} />}
             <SlotRow label={t.lab.rows.camera} slot={camera} pick={pick} />
             <SlotRow label={t.lab.groups.music} slot={music} pick={pick} />
           </Group>

@@ -10683,6 +10683,18 @@ function Lab() {
                 }
               : null
           }
+          morph={
+            cast[0]
+              ? {
+                  name: morphByModel[cast[0].id]?.name ?? null,
+                  onPick: (file) =>
+                    void loadMorphFile(cast[0].id, file).then((name) => {
+                      if (name) setMorphByModel((prev) => ({ ...prev, [cast[0].id]: { name, src: file } }))
+                    }),
+                  onRemove: () => removeMorph(cast[0].id),
+                }
+              : null
+          }
           camera={{ name: cameraClip, onPick: loadCameraFile, onRemove: removeCamera }}
           music={{ name: musicClip?.name ?? null, onPick: setMusicFile, onRemove: removeMusic }}
           background={{
