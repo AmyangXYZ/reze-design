@@ -361,15 +361,15 @@ export function releaseBundle(url: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** Expand any .zip files in a selection; everything else passes through. */
+/**
+ * A lone .zip is the upload itself, so it is opened. A zip among a folder's
+ * files is one of those files: opening it would offer every model inside it
+ * beside the folder's own, often the same model twice.
+ */
 export async function expandUploadFiles(files: File[]): Promise<File[]> {
-  const out: File[] = [];
-  for (const f of files) {
-    if (f.name.toLowerCase().endsWith(".zip"))
-      out.push(...(await unzipToFiles(f)));
-    else out.push(f);
-  }
-  return out;
+  if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip"))
+    return unzipToFiles(files[0]);
+  return files;
 }
 
 /** Drag & drop: traverse dropped items (files AND directories) into File[] with relative paths */
