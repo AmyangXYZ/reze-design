@@ -280,7 +280,7 @@ import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
+import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
@@ -3115,9 +3115,11 @@ function Lab() {
       const file =
         from === "music" && musicClip
           ? await lipSyncVmdFromMusic(musicClip.url, musicClip.name, under)
-          : lyrics
-            ? lipSyncVmdFile(parseLRC(await lyrics.text()), lyrics.name, under)
-            : null
+          : lyrics && musicClip
+            ? await lipSyncVmdFromLyricsAndMusic(parseLRC(await lyrics.text()), lyrics.name, musicClip.url, under)
+            : lyrics
+              ? lipSyncVmdFile(parseLRC(await lyrics.text()), lyrics.name, under)
+              : null
       if (!file) return
       const name = await loadMorphFile(id, file)
       if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))

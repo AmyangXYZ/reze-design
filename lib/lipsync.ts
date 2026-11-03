@@ -78,8 +78,8 @@ const MAX_MORA = 0.45
  * is the frozen look; a held NOTE is different, and ー expresses it by
  * EXTENDING the previous pulse rather than re-striking it.
  */
-const PULSE_FRACTION = 0.45
-const PULSE_MAX = 0.18
+const PULSE_FRACTION = 0.5
+const PULSE_MAX = 0.22
 
 const MORPH_NAME: Record<NonNullable<Mora["viseme"]>, string> = {
   a: "あ",
@@ -275,7 +275,7 @@ function morasOfLine(text: string): Mora[] {
 // ─── Keyframes ──────────────────────────────────────────────────────
 
 /** A span of one morph held at one weight, in seconds. */
-type Span = {
+export type Span = {
   viseme: NonNullable<Mora["viseme"]>
   t0: number
   t1: number
@@ -298,6 +298,23 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
   tracks: Map<string, MorphKeyframe[]>
   frameCount: number
 } {
+  const spans = lyricSpans(lines)
+  const tracks = new Map<string, MorphKeyframe[]>()
+  let frameCount = 0
+  for (const v of ["a", "i", "u", "e", "o"] as const) {
+    const keys = keysOf(MORPH_NAME[v], spans.filter((sp) => sp.viseme === v))
+    if (keys.length === 0) continue
+    tracks.set(MORPH_NAME[v], keys)
+    frameCount = Math.max(frameCount, keys.at(-1)?.frame ?? 0)
+  }
+  return { tracks, frameCount }
+}
+
+/** The lyric morph a viseme drives. */
+export const visemeMorph = (v: Span["viseme"]): string => MORPH_NAME[v]
+
+/** Each syllable's vowel and its slot, in seconds: the timing the lyrics alone give. */
+export function lyricSpans(lines: LyricLine[]): Span[] {
   // The title card is not sung. A karaoke .lrc conventionally opens with a
   // credits line at [00:00.xx], and syncing it mouths the song title through
   // the silent intro. parseLRC ends every line at the NEXT line's start, so
@@ -386,58 +403,53 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
         ? Math.max(next.t0 + Math.min(ATTACK, Math.max(next.t1 - next.t0, MIN_MORA)), sp.t1 + MIN_MORA)
         : sp.t1 + RELEASE
   }
+  return spans
+}
 
-  const tracks = new Map<string, MorphKeyframe[]>()
-  let frameCount = 0
-  for (const v of ["a", "i", "u", "e", "o"] as const) {
-    const name = MORPH_NAME[v]
-    const mine = spans.filter((sp) => sp.viseme === v)
-    if (mine.length === 0) continue
-    // Overlaps only — pulses that genuinely collide (rounding, bilabial
-    // shifts) fuse; everything else stays its own strike. The old gap-merge
-    // welded consecutive same-vowel syllables into one long hold, which is
-    // exactly the frozen mouth the reference never shows.
-    const merged: Span[] = []
-    for (const sp of mine) {
-      const last = merged.at(-1)
-      if (last && sp.t0 <= last.t1 && sp.weight === last.weight) last.t1 = Math.max(last.t1, sp.t1)
-      else merged.push({ ...sp })
-    }
-    const keys: MorphKeyframe[] = []
-    const frame = (t: number) => Math.max(0, Math.round(t * FPS))
-    for (const sp of merged) {
-      // STRIKE-ON-BEAT: the zero anchor sits ON the timestamp and the apex
-      // lands a ramp later. Two reasons, both learned the hard way. A karaoke
-      // .lrc already leads the vocal, so anticipating on top of it ran the
-      // lips ahead of the audio. And with anticipation, a vowel boundary put
-      // the outgoing apex and the incoming apex on the SAME instant — morphs
-      // are additive, the sum crested past the sculpted range, and the lower
-      // lip folded out over the gums. Rising while the neighbour falls keeps
-      // the sum near one shape.
-      const open = frame(sp.t0)
-      const prev = keys.at(-1)
-      // Anchor at zero on the strike — unless the previous release IS that
-      // anchor, or overlaps it (fast lines), in which case ride through.
-      if (!prev || prev.frame < open) keys.push({ morphName: name, frame: open, weight: 0 })
-      const apex = Math.min(sp.t0 + ATTACK, sp.t1)
-      keys.push({ morphName: name, frame: frame(apex), weight: sp.weight })
-      if (sp.t1 > apex) keys.push({ morphName: name, frame: frame(sp.t1), weight: sp.weight })
-      keys.push({ morphName: name, frame: frame(sp.relEnd ?? sp.t1 + RELEASE), weight: 0 })
-    }
-    // Strictly increasing frames — collapse any rounding ties, last value wins.
-    const clean: MorphKeyframe[] = []
-    for (const k of keys) {
-      const last = clean.at(-1)
-      if (last && k.frame <= last.frame) {
-        last.weight = k.weight
-        continue
-      }
-      clean.push(k)
-    }
-    tracks.set(name, clean)
-    frameCount = Math.max(frameCount, clean.at(-1)?.frame ?? 0)
+/** One vowel's spans as keyframes: a strike, an apex, a hold and a release each. */
+function keysOf(name: string, mine: Span[]): MorphKeyframe[] {
+  // Overlaps only — pulses that genuinely collide (rounding, bilabial
+  // shifts) fuse; everything else stays its own strike. The old gap-merge
+  // welded consecutive same-vowel syllables into one long hold, which is
+  // exactly the frozen mouth the reference never shows.
+  const merged: Span[] = []
+  for (const sp of mine) {
+    const last = merged.at(-1)
+    if (last && sp.t0 <= last.t1 && sp.weight === last.weight) last.t1 = Math.max(last.t1, sp.t1)
+    else merged.push({ ...sp })
   }
-  return { tracks, frameCount }
+  const keys: MorphKeyframe[] = []
+  const frame = (t: number) => Math.max(0, Math.round(t * FPS))
+  for (const sp of merged) {
+    // STRIKE-ON-BEAT: the zero anchor sits ON the timestamp and the apex
+    // lands a ramp later. Two reasons, both learned the hard way. A karaoke
+    // .lrc already leads the vocal, so anticipating on top of it ran the
+    // lips ahead of the audio. And with anticipation, a vowel boundary put
+    // the outgoing apex and the incoming apex on the SAME instant — morphs
+    // are additive, the sum crested past the sculpted range, and the lower
+    // lip folded out over the gums. Rising while the neighbour falls keeps
+    // the sum near one shape.
+    const open = frame(sp.t0)
+    const prev = keys.at(-1)
+    // Anchor at zero on the strike — unless the previous release IS that
+    // anchor, or overlaps it (fast lines), in which case ride through.
+    if (!prev || prev.frame < open) keys.push({ morphName: name, frame: open, weight: 0 })
+    const apex = Math.min(sp.t0 + ATTACK, sp.t1)
+    keys.push({ morphName: name, frame: frame(apex), weight: sp.weight })
+    if (sp.t1 > apex) keys.push({ morphName: name, frame: frame(sp.t1), weight: sp.weight })
+    keys.push({ morphName: name, frame: frame(sp.relEnd ?? sp.t1 + RELEASE), weight: 0 })
+  }
+  // Strictly increasing frames — collapse any rounding ties, last value wins.
+  const clean: MorphKeyframe[] = []
+  for (const k of keys) {
+    const last = clean.at(-1)
+    if (last && k.frame <= last.frame) {
+      last.weight = k.weight
+      continue
+    }
+    clean.push(k)
+  }
+  return clean
 }
 
 /**

@@ -11,8 +11,8 @@
 // the d of "da"), shut in the gaps. Every syllable is あ, which is what
 // "lalala / dadada" is; picking vowels from the spectrum is a later step.
 
-import { FPS, type MorphKeyframe } from "reze-engine"
-import { mouthVmdFile } from "./lipsync"
+import { FPS, type LyricLine, type MorphKeyframe } from "reze-engine"
+import { lyricSpans, mouthVmdFile, visemeMorph } from "./lipsync"
 import { fetchMedia } from "./net"
 
 const N = 4096
@@ -151,7 +151,7 @@ export function vocalEnergy(left: Float32Array, right: Float32Array, sampleRate:
 }
 
 /** The mouth's peak あ weight. */
-const CEIL = 0.5
+const CEIL = 0.7
 /** The voice gate: level to open, level to stay open, and the moving share it needs. */
 const GATE_ON = 0.28
 const GATE_OFF = 0.14
@@ -161,49 +161,69 @@ const ATTACK = 0.8
 const RELEASE = 0.35
 /** How fast a held note is learned (per frame, about 0.25s), and how much of it the mouth keeps. */
 const HOLD_RATE = 0.12
-const HOLD = 0.35
+const HOLD = 0.2
+/**
+ * The width curve: a square root, so a syllable sung at a quarter of the
+ * loudest still opens the mouth halfway. Zero stays zero, so every closure
+ * stays shut; a linear width left all but the loudest phrases a sliver.
+ */
+const LIFT = 0.5
 
-/** Per 30fps frame, the あ weight the vocal calls for. */
-export function mouthFromVocal(move: Float32Array, steady: Float32Array): Float32Array {
+/** The voice's level per 30fps frame, 0..1: the moving partials' energy, smoothed. */
+export function voiceLevel(move: Float32Array): Float32Array {
+  const top = percentile(move, 98) || 1
+  return median(move, 5).map((v) => Math.min(1, v / top))
+}
+
+/**
+ * Per 30fps frame, how wide the voice opens the mouth, 0..1.
+ *
+ * `sung` overrides the detector's gate where the timing is known some other
+ * way: the lyric lines, which say when she sings better than a dense mix does.
+ */
+export function voiceWidth(move: Float32Array, steady: Float32Array, sung?: Uint8Array): Float32Array {
   const n = move.length
   const mouth = new Float32Array(n)
   if (n === 0) return mouth
-  const top = percentile(move, 98) || 1
-  const level = median(move, 5).map((v) => Math.min(1, v / top))
+  const level = voiceLevel(move)
   const share = median(
     move.map((m, i) => m / (m + steady[i] + 1e-9)),
     9,
   )
   // Two followers on the level: a fast one that is the voice, and a slow one
   // that is the part of it being held. The mouth is the fast one less most of
-  // the slow one, so it opens on every rise, sinks to a low hold while a note
-  // is sustained, and shuts with the gate between phrases.
+  // the slow one, so it opens on every rise, sinks while a note is sustained,
+  // and shuts with the gate between phrases.
   const open = new Uint8Array(n)
   let gate = false
   let fast = 0
   let slow = 0
   for (let t = 0; t < n; t++) {
-    gate = gate ? level[t] > GATE_OFF : level[t] > GATE_ON && share[t] > SHARE
+    gate = sung ? sung[t] === 1 : gate ? level[t] > GATE_OFF : level[t] > GATE_ON && share[t] > SHARE
     open[t] = gate ? 1 : 0
     fast += (level[t] > fast ? ATTACK : RELEASE) * (level[t] - fast)
     slow = gate ? slow + HOLD_RATE * (fast - slow) : 0
     mouth[t] = gate ? Math.max(0, fast - (1 - HOLD) * slow) : 0
   }
-  // Scaled so a full-voiced syllable reaches the ceiling.
+  // Scaled so a full-voiced syllable reaches 1.
   const voiced = mouth.filter((_, t) => open[t])
   const peak = voiced.length ? percentile(voiced, 98) || 1 : 1
-  for (let t = 0; t < n; t++) mouth[t] = CEIL * Math.min(1, mouth[t] / peak)
+  for (let t = 0; t < n; t++) mouth[t] = Math.min(1, mouth[t] / peak) ** LIFT
   return steadyMouth(mouth)
 }
 
-/** A shut mouth is a weight below this. */
-const SHUT = 0.02 * CEIL
+/** Per 30fps frame, the あ weight the vocal calls for. */
+export function mouthFromVocal(move: Float32Array, steady: Float32Array): Float32Array {
+  return voiceWidth(move, steady).map((w) => CEIL * w)
+}
+
+/** A shut mouth is a width below this. */
+const SHUT = 0.02
 /** A closure shorter than this (frames) between two openings is bridged. */
 const MIN_CLOSE = 3
 /** An opening shorter than this (frames), or peaking below MIN_PEAK, is dropped. */
 const MIN_OPEN = 5
-const MIN_PEAK = 0.4 * CEIL
-
+const MIN_PEAK = 0.4
 /** The openings between closures, as [start, end) frame pairs. */
 function openings(mouth: Float32Array): [number, number][] {
   const out: [number, number][] = []
@@ -240,33 +260,107 @@ function steadyMouth(raw: Float32Array): Float32Array {
   return mouth
 }
 
+/** A weight curve as keys: one wherever it changes, so linear interpolation draws the same curve. */
+function keysOfCurve(name: string, curve: Float32Array): MorphKeyframe[] {
+  const keys: MorphKeyframe[] = []
+  const n = curve.length
+  for (let t = 0; t < n; t++) {
+    const w = curve[t]
+    const same = t > 0 && t < n - 1 && w === curve[t - 1] && w === curve[t + 1]
+    if (!same) keys.push({ morphName: name, frame: t, weight: Math.round(w * 1000) / 1000 })
+  }
+  return keys
+}
+
+function channels(buffer: AudioBuffer): [Float32Array, Float32Array] {
+  const left = buffer.getChannelData(0)
+  return [left, buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left]
+}
+
 /** The あ track for a decoded song. */
 export function lipSyncFromAudio(buffer: AudioBuffer): { tracks: Map<string, MorphKeyframe[]>; frameCount: number } {
-  const left = buffer.getChannelData(0)
-  const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left
+  const [left, right] = channels(buffer)
   const { move, steady, frames } = vocalEnergy(left, right, buffer.sampleRate)
   const mouth = mouthFromVocal(move, steady)
-  // A key wherever the weight changes, and the frames either side of a change,
-  // so the engine's linear interpolation draws the same curve.
-  const keys: MorphKeyframe[] = []
-  for (let t = 0; t < frames; t++) {
-    const w = mouth[t]
-    const same = t > 0 && t < frames - 1 && w === mouth[t - 1] && w === mouth[t + 1]
-    if (!same) keys.push({ morphName: "あ", frame: t, weight: Math.round(w * 1000) / 1000 })
-  }
   const tracks = new Map<string, MorphKeyframe[]>()
-  if (mouth.some((w) => w > 0)) tracks.set("あ", keys)
+  if (mouth.some((w) => w > 0)) tracks.set("あ", keysOfCurve("あ", mouth))
   return { tracks, frameCount: frames }
+}
+
+/** Seconds either side of a lyric syllable where the voice may open the mouth. */
+const LYRIC_PAD = 0.2
+/** Frames over which one vowel's shape turns into the next. */
+const VOWEL_BLEND = 3
+/** A lyric vowel's weight at full voice, as a multiple of its lyric-only peak. */
+const LYRIC_SCALE = 1.4
+
+/**
+ * Lip sync from the lyrics AND the music: the lyrics say which vowel and when a
+ * line is sung, the voice says when each syllable opens and how wide. A line's
+ * syllables are spread evenly across it, which lands within a beat of the
+ * singing; the voice's own rises land on the syllable.
+ */
+export function lipSyncFromLyricsAndAudio(
+  lines: LyricLine[],
+  buffer: AudioBuffer,
+): { tracks: Map<string, MorphKeyframe[]>; frameCount: number } {
+  const [left, right] = channels(buffer)
+  const { move, steady, frames } = vocalEnergy(left, right, buffer.sampleRate)
+  const spans = lyricSpans(lines)
+  const frame = (t: number) => Math.max(0, Math.min(frames, Math.round(t * FPS)))
+  // The mouth may open where a lyric line is sung.
+  const sung = new Uint8Array(frames)
+  for (const sp of spans) sung.fill(1, frame(sp.t0 - LYRIC_PAD), frame((sp.relEnd ?? sp.t1) + LYRIC_PAD))
+  const width = voiceWidth(move, steady, sung)
+  // Each frame wears the vowel of the syllable it falls in: the latest to start.
+  const tracks = new Map<string, MorphKeyframe[]>()
+  const by = new Map<string, Float32Array>()
+  let i = 0
+  for (let t = 0; t < frames; t++) {
+    while (i + 1 < spans.length && spans[i + 1].t0 * FPS <= t) i++
+    const sp = spans[i]
+    if (!sp) break
+    const name = visemeMorph(sp.viseme)
+    const curve = by.get(name) ?? new Float32Array(frames)
+    curve[t] = Math.min(1, sp.weight * LYRIC_SCALE)
+    by.set(name, curve)
+  }
+  for (const [name, peak] of by) {
+    // Blended across vowel changes, then opened by the voice.
+    const blended = new Float32Array(frames)
+    const h = VOWEL_BLEND >> 1
+    for (let t = 0; t < frames; t++) {
+      let sum = 0
+      for (let k = t - h; k <= t + h; k++) sum += peak[Math.max(0, Math.min(frames - 1, k))]
+      blended[t] = (sum / VOWEL_BLEND) * width[t]
+    }
+    if (blended.some((w) => w > 0)) tracks.set(name, keysOfCurve(name, blended))
+  }
+  return { tracks, frameCount: frames }
+}
+
+async function decode(url: string): Promise<AudioBuffer> {
+  const ac = new AudioContext()
+  try {
+    return await ac.decodeAudioData(await (await fetchMedia(url)).arrayBuffer())
+  } finally {
+    void ac.close()
+  }
 }
 
 /** The music at `url` as a mouth VMD named after `name`, merged over `existing`. */
 export async function lipSyncVmdFromMusic(url: string, name: string, existing?: ArrayBuffer): Promise<File | null> {
-  const ac = new AudioContext()
-  try {
-    const buffer = await ac.decodeAudioData(await (await fetchMedia(url)).arrayBuffer())
-    const { tracks, frameCount } = lipSyncFromAudio(buffer)
-    return mouthVmdFile(tracks, frameCount, name.replace(/\.[^.]+$/, ""), existing)
-  } finally {
-    void ac.close()
-  }
+  const { tracks, frameCount } = lipSyncFromAudio(await decode(url))
+  return mouthVmdFile(tracks, frameCount, name.replace(/\.[^.]+$/, ""), existing)
+}
+
+/** The lyrics, timed by the music at `url`, as a mouth VMD named after the lyrics. */
+export async function lipSyncVmdFromLyricsAndMusic(
+  lines: LyricLine[],
+  lyricsName: string,
+  url: string,
+  existing?: ArrayBuffer,
+): Promise<File | null> {
+  const { tracks, frameCount } = lipSyncFromLyricsAndAudio(lines, await decode(url))
+  return mouthVmdFile(tracks, frameCount, lyricsName.replace(/\.lrc$/i, ""), existing)
 }
