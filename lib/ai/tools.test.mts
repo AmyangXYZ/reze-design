@@ -424,8 +424,11 @@ await test("remove_effect by name, and a missing one is an error", async () => {
   await runSceneTool("add_effect", { name: "Snow" }, h)
   await runSceneTool("remove_effect", { effect: "Snow" }, h)
   assert.equal(state.effects.length, 0)
+  // Snow is still in the library, and the error says to add it
   const r = await runSceneTool("remove_effect", { effect: "Snow" }, h)
-  assert.match((r.data as { error: string }).error, /no effect/)
+  assert.match((r.data as { error: string }).error, /in the library but not in the scene — add_effect/)
+  const none = await runSceneTool("remove_effect", { effect: "Nothing Here" }, h)
+  assert.match((none.data as { error: string }).error, /no effect/)
 })
 
 await test("effects target characters by name", async () => {

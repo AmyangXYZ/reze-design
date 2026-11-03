@@ -75,6 +75,20 @@ function findEffect(h: SceneToolHandles, ref: unknown): AppliedEffect | undefine
   return h.effects.find((e) => e.uid === r) ?? h.effects.find((e) => e.name.toLowerCase() === r.toLowerCase())
 }
 
+/** A library effect by its English or its Chinese name. */
+export function libraryEffect(h: SceneToolHandles, ref: unknown) {
+  const r = String(ref ?? "").trim().toLowerCase()
+  return h.effectLibrary.find((e) => e.name.toLowerCase() === r) ?? h.effectLibrary.find((e) => stockName("effect", e, "zh").toLowerCase() === r)
+}
+
+/** Why a scene effect was not found: absent, or in the library and not added yet. */
+function notInScene(h: SceneToolHandles, ref: unknown) {
+  const lib = libraryEffect(h, ref)
+  return lib
+    ? `"${lib.name}" is in the library but not in the scene — add_effect it first, or read_effect_source and write_effect to make a new one from it`
+    : `no effect "${ref}" in the scene — get_effects lists the scene, list_effects the library`
+}
+
 /** Dials from the agent: numbers clamped to the author's range, colours from hex. */
 function paramsIn(wgsl: string, args: unknown): { params: Record<string, EffectParamValue>; errors: string[] } {
   const params: Record<string, EffectParamValue> = {}
@@ -259,7 +273,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
       required: ["name"],
     },
     run: async (args, h) => {
-      const def = h.effectLibrary.find((e) => e.name.toLowerCase() === String(args.name ?? "").toLowerCase())
+      const def = libraryEffect(h, args.name)
       if (!def) return { data: { error: `no effect named "${args.name}" — see list_effects` } }
       const { params, errors } = paramsIn(def.wgsl, args.dials)
       const window = windowsIn(args.clips)
@@ -292,7 +306,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
     },
     run: async (args, h) => {
       const e = findEffect(h, args.effect)
-      if (!e?.uid) return { data: { error: `no effect "${args.effect}" in the scene` } }
+      if (!e?.uid) return { data: { error: notInScene(h, args.effect) } }
       const part: Partial<AppliedEffect> = {}
       const errors: string[] = []
       if (Array.isArray(args.clips)) part.window = windowsIn(args.clips) ?? []
@@ -313,7 +327,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
     parameters: { type: "object", properties: { effect: { type: "string" } }, required: ["effect"] },
     run: async (args, h) => {
       const e = findEffect(h, args.effect)
-      if (!e?.uid) return { data: { error: `no effect "${args.effect}" in the scene` } }
+      if (!e?.uid) return { data: { error: notInScene(h, args.effect) } }
       h.removeEffect(e.uid)
       return { data: { removed: e.name } }
     },

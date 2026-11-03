@@ -20,6 +20,7 @@
 import { compileGraph, parseDirectives, type ShaderGraph } from "reze-engine"
 import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 import { guardLoops } from "@/lib/ai/wgsl-guard"
+import { libraryEffect } from "@/lib/ai/timeline-tools"
 import { EFFECTS_GUIDE, GRAPHS_GUIDE } from "@/lib/ai/authoring-guides"
 
 /** A character and one of her groups from the agent's words. */
@@ -67,7 +68,7 @@ export const AUTHOR_TOOLS: SceneTool[] = [
     run: async (args, h) => {
       const want = String(args.effect ?? "")
       const key = want.toLowerCase()
-      const hit = h.effects.find((e) => e.uid === want || e.name.toLowerCase() === key) ?? h.effectLibrary.find((e) => e.name.toLowerCase() === key)
+      const hit = h.effects.find((e) => e.uid === want || e.name.toLowerCase() === key) ?? libraryEffect(h, want)
       if (!hit) return { data: { error: `no effect "${want}" — list_effects names the library` } }
       const all = hit.wgsl.split("\n")
       const from = Math.max(1, Math.floor(Number(args.from) || 1))
