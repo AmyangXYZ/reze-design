@@ -634,6 +634,7 @@ const en = {
     uploadAnimation: "Upload animation",
     uploadMorph: "Upload morph",
     lipSyncFromLyrics: "Lip sync from lyrics",
+    lipSyncFromMusic: "Lip sync from music",
     footsteps: "Footsteps",
     /** The footstep sounds, as the row's gear menu lists them. */
     footstepSound: { heel: "Heels", boots: "Boots" },
@@ -1765,6 +1766,7 @@ const zh: Dictionary = {
     uploadAnimation: "上传动作",
     uploadMorph: "上传表情",
     lipSyncFromLyrics: "由歌词生成口型",
+    lipSyncFromMusic: "由音乐生成口型",
     footsteps: "脚步声",
     footstepSound: { heel: "高跟鞋", boots: "靴子" },
     footstepSoundMenu: "脚步声音色",

@@ -132,6 +132,8 @@ const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; pre
 // there, not making one first. Ids are the engine's preset ids, so a group the
 // auto-grouping did make is never doubled; stockings keep the engine preset's
 // hashed alpha, so a sheer weave dropped in draws as it would have auto-grouped.
+let loadedInstances = 0
+
 export function infoFor(
   id: string,
   file: string,
@@ -142,6 +144,7 @@ export function infoFor(
 ): EngineModelInfo {
   return {
     id,
+    instance: ++loadedInstances,
     file,
     ...(visibility?.length ? { visibility } : {}),
     ...(placement
@@ -885,9 +888,14 @@ export type MaterialRow = {
   visible: boolean
 }
 
+/** Where a model's clip stands, as getAnimationProgress reports it. */
+export type TransportClock = { current: number; playing: boolean; paused: boolean }
+
 export type EngineModelInfo = {
   /** Engine instance key — unique per loaded model, internal. */
   id: string
+  /** Which load this row is: a replacement can keep the id on a new engine Model. */
+  instance: number
   /** The .pmx filename to show the user. */
   file: string
   stats: { vertices: number; bones: number; materials: number }

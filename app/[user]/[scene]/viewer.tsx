@@ -15,6 +15,7 @@ import { useEngine } from "@/hooks/use-engine"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useSceneMedia } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
+import { useFallbackClock } from "@/hooks/use-fallback-clock"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
 import { useFootstepSource, useFootsteps } from "@/hooks/use-footsteps"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
@@ -622,6 +623,16 @@ function SceneStage({
   const audioSrc = musicClip?.url || null
 
   const audioElRef = useRef<HTMLAudioElement>(null)
+  // No clip on anyone: the camera VMD's length, else the music's.
+  const fallbackClock = useFallbackClock({
+    engineRef,
+    modelId: scene.assets.models.find((e) => !e.stage)?.model.id ?? null,
+    clocked: animated.length > 0,
+    camera: !!scene.assets.cameraAnimation,
+    audioRef: audioElRef,
+    musicUrl: audioSrc,
+  })
+  const transport = useMemo(() => (animated.length ? animated : fallbackClock ? [fallbackClock] : []), [animated, fallbackClock])
   // The clock — the SAME one the editor runs (hooks/use-audio-clock): the first
   // animated model's clip is the master, and the track, the rzAudio*/MIDI
   // clocks, the lyric pages, moving cards and the backdrop all follow it. The
@@ -629,7 +640,7 @@ function SceneStage({
   // arrival, so sound may not wait for a press of play.
   useAudioClock({
     engineRef,
-    masterId: animated[0] ?? null,
+    masterId: transport[0] ?? null,
     audioRef: audioElRef,
     drawBackdrop: drawnBackdrop.draw,
     videoRef: bgVideoRef,
@@ -678,7 +689,7 @@ function SceneStage({
           <div className="pointer-events-auto max-w-full compact:w-full compact:max-w-xs">
             <AnimPlayer
               engineRef={engineRef}
-              modelNames={animated}
+              modelNames={transport}
               timeline={timeline}
               // No camera switch: the scene plays as its maker shot it.
               hasCamera={false}

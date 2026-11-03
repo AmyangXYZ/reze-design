@@ -440,7 +440,6 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
   return { tracks, frameCount }
 }
 
-/** The tracks as a real .vmd, named after the lyrics that produced it. */
 /**
  * Every morph this writes, and the only ones it may take over.
  *
@@ -448,6 +447,9 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
  * blinks, brows, blush, a smile — none of them here, all of them worth keeping.
  */
 const LIPSYNC_MORPHS = new Set(Object.values(MORPH_NAME))
+/** A vowel or a numbered copy of one (あ２, お2): every morph the mouth answers to. */
+const isMouthMorph = (name: string): boolean =>
+  LIPSYNC_MORPHS.has(name) || (LIPSYNC_MORPHS.has(name[0]) && /^[0-9０-９]+$/.test(name.slice(1)))
 
 /**
  * The lip sync as a VMD, OVER an expression track rather than instead of one.
@@ -464,6 +466,16 @@ const LIPSYNC_MORPHS = new Set(Object.values(MORPH_NAME))
  */
 export function lipSyncVmdFile(lines: LyricLine[], lyricsName: string, existing?: ArrayBuffer): File | null {
   const { tracks, frameCount } = lipSyncMorphTracks(lines)
+  return mouthVmdFile(tracks, frameCount, lyricsName.replace(/\.lrc$/i, ""), existing)
+}
+
+/** Mouth tracks as a VMD named `<base>.reze-design-lipsync.vmd`, merged over `existing`. */
+export function mouthVmdFile(
+  tracks: Map<string, MorphKeyframe[]>,
+  frameCount: number,
+  base: string,
+  existing?: ArrayBuffer,
+): File | null {
   if (tracks.size === 0) return null
   let frames = frameCount
   if (existing) {
@@ -471,7 +483,7 @@ export function lipSyncVmdFile(lines: LyricLine[], lyricsName: string, existing?
       for (const kf of VMDLoader.loadFromBuffer(existing)) {
         for (const mf of kf.morphFrames) {
           // The mouth is the lip sync's. Anything else the artist keyed stays.
-          if (LIPSYNC_MORPHS.has(mf.morphName)) continue
+          if (isMouthMorph(mf.morphName)) continue
           const track = tracks.get(mf.morphName) ?? []
           track.push({ morphName: mf.morphName, frame: mf.frame, weight: mf.weight })
           tracks.set(mf.morphName, track)
@@ -496,6 +508,5 @@ export function lipSyncVmdFile(lines: LyricLine[], lyricsName: string, existing?
   const stamped = new Uint8Array(bytes)
   const brand = "reze-design"
   for (let i = 0; i < 20; i++) stamped[30 + i] = i < brand.length ? brand.charCodeAt(i) : 0
-  const base = lyricsName.replace(/\.lrc$/i, "")
   return new File([stamped], `${base}.reze-design-lipsync.vmd`)
 }

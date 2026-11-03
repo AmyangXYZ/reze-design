@@ -867,17 +867,19 @@ export function useSceneSync({
  * Stages and props ride in `models` because their materials take the same
  * style-group path; the cast is everything else. `castIds` is memoised on its
  * CONTENTS: useSceneSync depends on it, and a fresh array every render would
- * reinstall the effect layer sixty times a second.
+ * reinstall the effect layer sixty times a second. The contents include each
+ * row's `instance`: a model replaced by a file of the same name keeps its id on
+ * a new engine Model, which holds none of what was pushed to the old one.
  */
-export function useSceneCast<M extends { id: string; fill?: false; bloom?: false }>(
+export function useSceneCast<M extends { id: string; instance: number; fill?: false; bloom?: false }>(
   models: M[],
   stages: { id: string; partOf?: string; sun?: { color: string; strength: number } | null }[],
   props: { id: string }[],
 ) {
   const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
   const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
-  const castKey = cast.map((m) => m.id).join("\u0000")
-  const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  const castKey = cast.map((m) => `${m.instance}:${m.id}`).join("\u0000")
+  const castIds = useMemo(() => (castKey ? castKey.split("\u0000").map((k) => k.slice(k.indexOf(":") + 1)) : []), [castKey])
   const unfilledKey = cast.filter((m) => m.fill === false).map((m) => m.id).join("\u0000")
   const unfilledIds = useMemo(() => (unfilledKey ? unfilledKey.split("\u0000") : []), [unfilledKey])
   const unbloomedKey = cast.filter((m) => m.bloom === false).map((m) => m.id).join("\u0000")

@@ -2619,11 +2619,15 @@ export function Timeline({
    * during it.
    */
   const measurable = useRef(false)
+  // Latches true at the first settled open: the fit below waits for it, since
+  // the width measured at mount is the shut pill's.
+  const [settled, setSettled] = useState(false)
   useEffect(() => {
     measurable.current = false
     if (!open) return
     const t = setTimeout(() => {
       measurable.current = true
+      setSettled(true)
       const el = timelineAreaRef.current
       if (el) setTrackWidth(el.clientWidth)
     }, FOLD_SETTLE_MS)
@@ -2670,14 +2674,14 @@ export function Timeline({
    */
   const fitOnce = useRef(initialView === undefined)
   useEffect(() => {
-    if (fitOnce.current && fc > 0 && trackWidth > LABEL_W + 1) {
+    if (fitOnce.current && settled && fc > 0 && trackWidth > LABEL_W + 1) {
       fitOnce.current = false
       setPxPerFrame(minPxPerFrame)
       setScrollX(0)
       return
     }
     setPxPerFrame((p) => Math.min(MAX_PX, Math.max(minPxPerFrame, p)))
-  }, [minPxPerFrame, trackWidth, fc])
+  }, [minPxPerFrame, trackWidth, fc, settled])
 
   // Reset local view state when a DIFFERENT clip is loaded, or the editor reset.
   //

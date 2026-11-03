@@ -123,7 +123,13 @@ export function useSceneClips({
           ? loadMorphFile(entry.model.id, packed)
           : loadMorphUrl(entry.model.id, expr.name, expr.url))
         if (stale()) return
-        if (name) callbacks.current.onMorph?.(entry.model.id, expr, packed ?? expr.url)
+        if (name) {
+          callbacks.current.onMorph?.(entry.model.id, expr, packed ?? expr.url)
+          // A morph track with no motion is the model's clip, and a clock.
+          setLoaded((prev) =>
+            prev.scene === scene ? { scene, ids: new Set([...prev.ids, entry.model.id]) } : { scene, ids: new Set([entry.model.id]) },
+          )
+        }
         else console.warn(`[scene] morph failed to load for ${entry.model.id}, keeping its claim:`, expr.name)
       }
     }).catch((e) => {

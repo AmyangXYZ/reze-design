@@ -47,6 +47,7 @@ import type {
   PropInfo,
   StageInfo,
   StageTransform,
+  TransportClock,
   ViewportHandlers,
   NativeStageInfo,
   NativeStageProgress,
@@ -1069,7 +1070,7 @@ export function useEngine(
 
   /** REPLACE one model with an upload, keeping its slot (list position + scene transform). */
   const replaceModelFromFiles = useCallback(
-    async (targetId: string, files: File[] | FileList, pmxFile: File): Promise<string> => {
+    async (targetId: string, files: File[] | FileList, pmxFile: File): Promise<{ id: string; clock?: TransportClock }> => {
       const engine = engineRef.current
       if (!engine) throw new Error("engine not ready")
       const id = uniqueModelId(pmxFile.name, targetId)
@@ -1077,10 +1078,16 @@ export function useEngine(
       const transform = engine.getModelTransform(targetId)
       // The outgoing model's game look goes with it; the upload is a new model.
       undress(engine, targetId)
-      if (id === targetId) engine.removeModel(targetId)
+      // Its clock goes with it too, and may be the only one the scene has.
+      let clock: TransportClock | undefined
+      const retire = () => {
+        clock = engine.getModel(targetId)?.getAnimationProgress()
+        engine.removeModel(targetId)
+      }
+      if (id === targetId) retire()
       const model = await engine.loadModel(id, { files, pmxFile })
       retainModelFiles(id, pmxFile, Array.from(files), model)
-      if (id !== targetId) engine.removeModel(targetId)
+      if (id !== targetId) retire()
       if (transform) engine.setModelTransform(id, { position: transform.position })
       const at: [number, number, number] | undefined = transform
         ? [transform.position.x, transform.position.y, transform.position.z]
@@ -1102,7 +1109,7 @@ export function useEngine(
         next[id] = groups
         return next
       })
-      return id
+      return { id, clock }
     },
     [],
   )
@@ -1143,16 +1150,37 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, position: [0, 0, 0], spawnGuess: false } : m)))
   }, [])
 
-  /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
-  const loadVmdFile = useCallback(async (modelId: string, file: File): Promise<string | null> => {
+  /**
+   * A clip that has just landed takes the transport's place: the time the cast
+   * stands at, playing or paused as they are. Read at the landing, because a
+   * model is on no transport until then. With nobody else holding a clip the
+   * clock is `from`, the model this one replaced, or the clip stays at frame 0.
+   */
+  const joinTransport = useCallback((modelId: string, from?: TransportClock) => {
+    const engine = engineRef.current
+    const model = engine?.getModel(modelId)
+    if (!engine || !model) return
+    const peers = modelsRef.current
+      .filter((m) => m.id !== modelId)
+      .map((m) => engine.getModel(m.id)?.getAnimationProgress())
+    const clock = peers.find((p) => p && p.duration > 0) ?? from
+    if (!clock) return
+    model.seek(clock.current)
+    if (clock.playing) model.play()
+    else if (clock.paused) model.pause()
+  }, [])
+
+  /** Load a local .vmd onto ONE model (object URL), joining the transport */
+  const loadVmdFile = useCallback(async (modelId: string, file: File, from?: TransportClock): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
     const url = URL.createObjectURL(file)
     try {
       await model.loadVmd(file.name, url)
-      model.show(file.name) // activate + pose frame 0, paused (user presses play)
+      model.show(file.name)
+      joinTransport(modelId, from)
       centerModel(modelId) // the clip places this model from here on
-      // Frame 0 of a new clip is an arbitrary jump from whatever pose was held
+      // A new clip is an arbitrary jump from whatever pose was held
       engineRef.current?.resetPhysics()
       return file.name
     } catch {
@@ -1160,7 +1188,7 @@ export function useEngine(
     } finally {
       URL.revokeObjectURL(url)
     }
-  }, [centerModel])
+  }, [centerModel, joinTransport])
 
   /**
    * Lay an morph VMD (表情モーション) over a model's motion.
@@ -1384,20 +1412,21 @@ export function useEngine(
    *  else's — which would break the moment they deleted theirs. */
   const bundleFiles = useCallback((): BundleFile[] => bundleRef.current ?? [], [])
 
-  /** Load a VMD from a URL (a bundled default clip) onto one model, posed at frame 0 but PAUSED */
-  const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string): Promise<string | null> => {
+  /** Load a VMD from a URL (a bundled default clip) onto one model, joining the transport */
+  const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string, from?: TransportClock): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
     try {
       await model.loadVmd(name, url)
-      model.show(name) // activate + pose frame 0, paused (user presses play)
+      model.show(name)
+      joinTransport(modelId, from)
       centerModel(modelId) // same handover to the clip as loadVmdFile
-      engineRef.current?.resetPhysics() // same arbitrary jump to frame 0 as loadVmdFile
+      engineRef.current?.resetPhysics() // same arbitrary jump as loadVmdFile
       return name
     } catch {
       return null
     }
-  }, [centerModel])
+  }, [centerModel, joinTransport])
 
   // ── Style-group mutators (host owns the set; these mirror to state + engine). ──
 

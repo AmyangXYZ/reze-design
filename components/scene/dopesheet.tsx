@@ -483,11 +483,12 @@ export function Dopesheet({
                 visibleBones={visibleBones}
                 blank={kind === "effect" || kind === "visibility"}
                 parentHolds={kind === "object" ? parentHolds : null}
-                // The cast's lanes run on the SCENE's clock rather than the
-                // edited clip's: a model can leave the stage after its own
-                // motion has finished, exactly as a prop can be thrown after
-                // its own ends.
-                spanFrames={kind === "object" || kind === "visibility" ? spanFrames : 0}
+                // The cast's lanes and the effects' run on the SCENE's clock
+                // rather than the edited clip's: a model can leave the stage
+                // after its own motion has finished, exactly as a prop can be
+                // thrown after its own ends, and an unscheduled effect plays
+                // to the end of the scene.
+                spanFrames={kind === "object" || kind === "visibility" || kind === "effect" ? spanFrames : 0}
                 // Baselined, so the FIRST clip to arrive does not count as a
                 // swap. The timeline resets its zoom and scroll whenever this
                 // changes, and the first change is the clip loading into an

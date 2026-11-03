@@ -154,6 +154,7 @@ import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
+import { FALLBACK_CLIP, useFallbackClock } from "@/hooks/use-fallback-clock"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
@@ -252,7 +253,7 @@ import {
 } from "@/lib/materials"
 import { shaderLookFor, stageLookFor, SURFACE_LOOKS } from "@/lib/stage-style"
 import { autoStyleModel } from "@/lib/auto-style"
-import { isFigureModel, withSpecialGroups } from "@/lib/scene-host"
+import { isFigureModel, withSpecialGroups, type TransportClock } from "@/lib/scene-host"
 import {
   compileGraph,
   DEFAULT_GRAPH,
@@ -279,6 +280,7 @@ import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
+import { lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
@@ -1069,6 +1071,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.lipSyncFromLyrics,
       altLabels: [alt.lipSyncFromLyrics],
       keywords: ["lip", "lyrics", "mouth", "sync", "vmd", "口型", "歌词", "口パク", "リップシンク"],
+    },
+    {
+      id: "lipsync-music",
+      repeatable: true,
+      section: "command",
+      icon: Smile,
+      label: l.lipSyncFromMusic,
+      altLabels: [alt.lipSyncFromMusic],
+      keywords: ["lip", "music", "song", "audio", "mouth", "sync", "vmd", "口型", "音乐", "口パク", "リップシンク"],
     },
     {
       id: "footsteps",
@@ -2485,6 +2496,10 @@ function Lab() {
       delete next[id]
       return next
     })
+    // Clearing the motion clears every clip, the morph track laid over it too.
+    // A morph the model still wears goes back on alone, as its clip and clock.
+    const worn = morphByModel[id]
+    if (worn) void (typeof worn.src === "string" ? loadMorphUrl(id, worn.name, worn.src) : loadMorphFile(id, worn.src))
   }
   const morphTarget = useRef<string | null>(null)
   const pickMorph = (id: string) => {
@@ -2624,14 +2639,52 @@ function Lab() {
    * That is the "the VMD duration is sometimes 0" report, and the "sometimes"
    * was only ever whether something clip-less happened to sort first.
    */
+  // The slots themselves — this, the HDRI and the music — are the shared
+  // loader's (hooks/use-scene-media), the same one a published scene is shown
+  // through, so the two pages cannot disagree about what a document holds. The
+  // editor adds only the bookkeeping a save needs: the packed bytes, kept.
+  const { bgImage, swapBgImage, hdri, swapHdri, musicClip, setMusicClip } = useSceneMedia({
+    scene,
+    bundleReady,
+    bundleFile,
+    onPacked: {
+      camera: (file) => {
+        sceneFiles.camera = file
+      },
+      // Declared further down; only ever called from the loader's effect, by
+      // which point it exists.
+      audio: (file) => setMusicFile(file),
+    },
+  })
+  // The scene document's cameraAnimation slot. Seeded from the document like the
+  // motion rows: useEngine has already handed the clip to the engine by the time
+  // the chrome renders, so the name is known and there is nothing to wait for.
+  const [cameraClip, setCameraClip] = useState<string | null>(scene.assets.cameraAnimation?.name ?? null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  // A clip is a motion, or a morph track worn with none (it becomes the clip).
+  const hasClip = (id: string) => !!(animByModel[id] || morphByModel[id])
+  // THE PRIMARY MODEL: the first cast member — who a command lands on when it
+  // has to land on someone and cannot ask (the palette's motion, morph and lip
+  // sync). The same rule as firstCastId.
+  const primaryId = models.find((m) => !stageIds.has(m.id))?.id ?? null
+  // No clip on anyone: the primary model carries a blank one as long as the
+  // camera VMD, else the music (hooks/use-fallback-clock).
+  const fallbackClock = useFallbackClock({
+    engineRef,
+    modelId: primaryId,
+    clocked: models.some((m) => !stageIds.has(m.id) && hasClip(m.id)),
+    camera: cameraClip !== null,
+    audioRef,
+    musicUrl: musicClip?.url ?? null,
+  })
   const modelNames = useMemo(
     () => [
-      ...models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
+      ...models.filter((m) => !stageIds.has(m.id) && (animByModel[m.id] || morphByModel[m.id] || m.id === fallbackClock)).map((m) => m.id),
       // Props with a clip of their own play on the same transport, after the
       // cast, so the first name is still a performer's clock.
       ...props.filter((p) => animByModel[p.id]).map((p) => p.id),
     ],
-    [models, stageIds, animByModel, props],
+    [models, stageIds, animByModel, morphByModel, fallbackClock, props],
   )
   // First model carrying a clip — the clock for audio AND the export.
   //
@@ -2640,11 +2693,7 @@ function Lab() {
   // uploaded FIRST put it at the head of this list, and the audio and the export
   // then followed a clip that is not the dance — the transport reading 0:00 over
   // a cast that is posed and ready to play.
-  const masterId = models.find((m) => !stageIds.has(m.id) && animByModel[m.id])?.id ?? null
-  // THE PRIMARY MODEL: the first cast member — who a command lands on when it
-  // has to land on someone and cannot ask (the palette's motion, morph and lip
-  // sync). The same rule as firstCastId.
-  const primaryId = models.find((m) => !stageIds.has(m.id))?.id ?? null
+  const masterId = models.find((m) => !stageIds.has(m.id) && hasClip(m.id))?.id ?? fallbackClock
   // Clip duration, polled until the engine reports it (main's approach — meta
   // arrives whenever the VMD finishes parsing, so a one-shot read races it).
   // Keyed by owner instead of reset-on-change: a stale value simply stops
@@ -2653,7 +2702,9 @@ function Lab() {
     owner: string | null
     value: number
   }>({ owner: null, value: 0 })
-  const masterClipName = masterId ? (animByModel[masterId]?.name ?? null) : null
+  const masterClipName = masterId
+    ? (animByModel[masterId]?.name ?? morphByModel[masterId]?.name ?? (masterId === fallbackClock ? FALLBACK_CLIP : null))
+    : null
   const durationOwner = masterId && masterClipName ? masterId + "\0" + masterClipName : null
   const animDuration = duration.owner !== null && duration.owner === durationOwner ? duration.value : 0
   useEffect(() => {
@@ -2682,23 +2733,6 @@ function Lab() {
    * code path exists in which two are set at once.
    */
   //
-  // The slots themselves — this, the HDRI and the music — are the shared
-  // loader's (hooks/use-scene-media), the same one a published scene is shown
-  // through, so the two pages cannot disagree about what a document holds. The
-  // editor adds only the bookkeeping a save needs: the packed bytes, kept.
-  const { bgImage, swapBgImage, hdri, swapHdri, musicClip, setMusicClip } = useSceneMedia({
-    scene,
-    bundleReady,
-    bundleFile,
-    onPacked: {
-      camera: (file) => {
-        sceneFiles.camera = file
-      },
-      // Declared further down; only ever called from the loader's effect, by
-      // which point it exists.
-      audio: (file) => setMusicFile(file),
-    },
-  })
   // Export framing: letterbox preview, green screen, exporting — the shared
   // hook, because an export in flight must survive whatever the chrome does.
   //
@@ -2926,7 +2960,6 @@ function Lab() {
    */
   const backdropInShot = !!bgImage && bgImage.slot !== "dome" && !isCompositingBackground(framing.liveBackground)
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   /** The video backdrop, which plays natively — see useAudioClock. */
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   useAudioClock({
@@ -2989,10 +3022,6 @@ function Lab() {
   // Open, the timeline is a surface like the docks: it comes to the front when
   // it opens or is touched, and Escape folds it when it is on top.
   const timelineZ = useZOrder(timelineUnfolded, timelineUnfolded ? () => setTimelineOpen(false) : undefined)
-  // The scene document's cameraAnimation slot. Seeded from the document like the
-  // motion rows: useEngine has already handed the clip to the engine by the time
-  // the chrome renders, so the name is known and there is nothing to wait for.
-  const [cameraClip, setCameraClip] = useState<string | null>(scene.assets.cameraAnimation?.name ?? null)
   /** How many times the timeline has written a clip back into the scene. Feeds
    *  `assetFingerprint`, which is otherwise blind to a file whose name did not
    *  change — see there. */
@@ -3062,10 +3091,9 @@ function Lab() {
    * MMD tool can read — regenerate any time the lyrics change.
    */
   const generateLipSync = useCallback(
-    async (id: string) => {
+    async (id: string, from: "lyrics" | "music" = "lyrics") => {
       const lyrics = sceneFiles.lyrics
-      if (!lyrics) return
-      const lines = parseLRC(await lyrics.text())
+      if (from === "lyrics" ? !lyrics : !musicClip) return
       // THE EXPRESSION TRACK THIS MODEL ALREADY HAS, so the lip sync lands on
       // top of it instead of replacing it. Artists ship blinks as their own
       // morph .vmd, and generating a lip sync used to hand a clean file to the
@@ -3074,7 +3102,8 @@ function Lab() {
       // A File when it was picked here; a URL when it came with the scene (a
       // published or forked one, where the artist's blinks live) — fetched the
       // way the engine loaded it, or the lip sync replaced them there.
-      const worn = morphByModel[id]?.src
+      // With no morph file, the motion's own morph tracks are the face to keep.
+      const worn = morphByModel[id]?.src ?? animByModel[id]?.src
       const under =
         worn instanceof File
           ? await worn.arrayBuffer()
@@ -3083,7 +3112,12 @@ function Lab() {
                 .then((r) => (r.ok ? r.arrayBuffer() : undefined))
                 .catch(() => undefined)
             : undefined
-      const file = lipSyncVmdFile(lines, lyrics.name, under)
+      const file =
+        from === "music" && musicClip
+          ? await lipSyncVmdFromMusic(musicClip.url, musicClip.name, under)
+          : lyrics
+            ? lipSyncVmdFile(parseLRC(await lyrics.text()), lyrics.name, under)
+            : null
       if (!file) return
       const name = await loadMorphFile(id, file)
       if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
@@ -3098,7 +3132,7 @@ function Lab() {
     // is wearing, and a missing dep here is not a stale value that catches up —
     // it is the FIRST render's, which is no track at all. The lip sync would
     // have gone on quietly replacing exactly what it was written to preserve.
-    [loadMorphFile, morphByModel],
+    [loadMorphFile, morphByModel, animByModel, musicClip],
   )
   const musicInput = useRef<HTMLInputElement | null>(null)
   // THE OLD URL IS REVOKED BY useSceneMedia's EFFECT, not in here.
@@ -5487,8 +5521,8 @@ function Lab() {
         setSelectedProp(id)
         setObjectTab("prop")
       } else if (target.mode === "replace") {
-        const newId = await replaceModelFromFiles(target.id, files, pmx)
-        adoptReplacedModel(target.id, newId)
+        const { id: newId, clock } = await replaceModelFromFiles(target.id, files, pmx)
+        adoptReplacedModel(target.id, newId, clock)
         noteStyled(target.id)
         noteArrival(newId)
       } else
@@ -5604,7 +5638,7 @@ function Lab() {
    * landed.
    */
   const adoptReplacedModel = useCallback(
-    (oldId: string, newId: string) => {
+    (oldId: string, newId: string, clock?: TransportClock) => {
       const clip = animRef.current[oldId]
       const expr = morphRef.current[oldId]
       setAnimByModel((prev) => {
@@ -5646,7 +5680,7 @@ function Lab() {
         // bundled clip replaced before boot had upgraded it silently did not.
         const packed = typeof clip.src === "string" ? await bundleFile(clip.src) : null
         const src = packed ?? clip.src
-        void (typeof src === "string" ? loadVmdUrl(newId, clip.name, src) : loadVmdFile(newId, src)).then((loaded) => {
+        void (typeof src === "string" ? loadVmdUrl(newId, clip.name, src, clock) : loadVmdFile(newId, src, clock)).then((loaded) => {
           if (loaded) {
             // Bank the resolved File, so a second replace does not have to find
             // it again from a seed that has since been overwritten.
@@ -7061,6 +7095,10 @@ function Lab() {
         const target = primaryId
         if (target && lyricsClip) void generateLipSync(target)
         else if (target) lyricsInput.current?.click()
+      } else if (item.id === "lipsync-music") {
+        const target = primaryId
+        if (target && musicClip) void generateLipSync(target, "music")
+        else if (target) musicInput.current?.click()
       } else if (item.id === "footsteps") patch("audio", { footsteps: true })
       else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
@@ -7184,6 +7222,7 @@ function Lab() {
       models,
       lyricsClip,
       generateLipSync,
+      musicClip,
       patch,
       setLangOpen,
       openExport,
@@ -8549,6 +8588,12 @@ function Lab() {
                             label: t.lab.lipSyncFromLyrics,
                             disabled: !lyricsClip,
                             onPick: () => void generateLipSync(clipModel.id),
+                          },
+                          {
+                            key: "lipsync-music",
+                            label: t.lab.lipSyncFromMusic,
+                            disabled: !musicClip,
+                            onPick: () => void generateLipSync(clipModel.id, "music"),
                           },
                         ]
                       : []

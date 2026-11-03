@@ -1086,6 +1086,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
               canLike={signedIn}
               onLike={(id) => void toggleLike(id)}
               onFork={requestFork}
+              onEdit={editScene}
               onTag={(tag) => go(`tag:${tag}`)}
             />
           </div>
@@ -1149,6 +1150,7 @@ function PreviewLayer({
   canLike,
   onLike,
   onFork,
+  onEdit,
   onTag,
 }: {
   ref: React.Ref<PreviewApi>
@@ -1162,6 +1164,7 @@ function PreviewLayer({
   canLike: boolean
   onLike: (id: string) => void
   onFork: (s: GalleryScene) => void
+  onEdit: (s: GalleryScene) => void
   onTag: (tag: string) => void
 }) {
   const t = useT()
@@ -1306,6 +1309,11 @@ function PreviewLayer({
             </Button>
           )}
           <LibraryLike likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
+          {s.mine && (
+            <Button variant="bare" onClick={() => onEdit(s)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+              {t.gallery.editPublished}
+            </Button>
+          )}
           <VideoLink url={s.video} className="ml-auto h-7 px-2 text-2xs [&_svg]:size-3.5" />
         </div>
         <h3 className="mt-3 truncate text-sm font-medium text-foreground">{s.name}</h3>
