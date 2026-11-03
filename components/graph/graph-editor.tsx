@@ -55,7 +55,7 @@ const snapshotSig = (s: Snapshot) =>
       g: n.data.graphNode,
     })),
     e: s.edges.map((e) => [e.source, e.sourceHandle, e.target, e.targetHandle]),
-    b: { output: s.base.output, params: s.base.params },
+    b: { output: s.base.output, opacity: s.base.opacity, params: s.base.params },
   })
 
 export function GraphEditor({
@@ -277,6 +277,14 @@ export function GraphEditor({
     setNodes((cur) => cur.filter((n) => !gone.has(n.id)))
     setEdges((cur) => cur.filter((e) => !gone.has(e.source) && !gone.has(e.target)))
     setPreviewId((p) => (p && gone.has(p) ? null : p))
+    // The opacity socket and the exposed params point at nodes too; one left on
+    // a deleted node exports as an id with nothing behind it.
+    setBase((b) => {
+      const opacity = b.opacity && gone.has(b.opacity.node) ? undefined : b.opacity
+      const params = b.params?.filter((p) => !gone.has(p.target.node))
+      if (opacity === b.opacity && params?.length === b.params?.length) return b
+      return { ...b, opacity, params }
+    })
   }, [])
 
   // Break every link touching these nodes (Unreal's "Break All Pin Links").
@@ -353,7 +361,15 @@ export function GraphEditor({
         return { ...e, source, target, id: `${source}.${e.sourceHandle}→${target}.${e.targetHandle}` }
       }),
     )
-    setBase((b) => (b.output.node === oldId ? { ...b, output: { ...b.output, node: next } } : b))
+    // Every reference to the node moves with it: the output, the opacity socket
+    // and the exposed params' targets.
+    const moved = <R extends { node: string }>(r: R): R => (r.node === oldId ? { ...r, node: next } : r)
+    setBase((b) => ({
+      ...b,
+      output: moved(b.output),
+      opacity: b.opacity && moved(b.opacity),
+      params: b.params?.map((p) => (p.target.node === oldId ? { ...p, target: moved(p.target) } : p)),
+    }))
     setPreviewId((p) => (p === oldId ? next : p))
   }, [])
 
