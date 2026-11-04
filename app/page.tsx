@@ -3094,47 +3094,59 @@ function Lab() {
     async (id: string, from: "lyrics" | "music" = "lyrics") => {
       const lyrics = sceneFiles.lyrics
       if (from === "lyrics" ? !lyrics : !musicClip) return
-      // THE EXPRESSION TRACK THIS MODEL ALREADY HAS, so the lip sync lands on
-      // top of it instead of replacing it. Artists ship blinks as their own
-      // morph .vmd, and generating a lip sync used to hand a clean file to the
-      // same slot — the blinks went, and nothing said so, because the slot
-      // still held a morph track and the mouth still moved.
-      // A File when it was picked here; a URL when it came with the scene (a
-      // published or forked one, where the artist's blinks live) — fetched the
-      // way the engine loaded it, or the lip sync replaced them there.
-      // With no morph file, the motion's own morph tracks are the face to keep.
-      const worn = morphByModel[id]?.src ?? animByModel[id]?.src
-      const under =
-        worn instanceof File
-          ? await worn.arrayBuffer()
-          : typeof worn === "string"
-            ? await fetch(worn)
-                .then((r) => (r.ok ? r.arrayBuffer() : undefined))
-                .catch(() => undefined)
-            : undefined
-      const file =
-        from === "music" && musicClip
-          ? await lipSyncVmdFromMusic(musicClip.url, musicClip.name, under)
-          : lyrics && musicClip
-            ? await lipSyncVmdFromLyricsAndMusic(parseLRC(await lyrics.text()), lyrics.name, musicClip.url, under)
-            : lyrics
-              ? lipSyncVmdFile(parseLRC(await lyrics.text()), lyrics.name, under)
-              : null
-      if (!file) return
-      const name = await loadMorphFile(id, file)
-      if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
-      const url = URL.createObjectURL(file)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = file.name
-      a.click()
-      URL.revokeObjectURL(url)
+      // Decoding and analysing a song takes a second or two: say so, and say
+      // how it ended, every time.
+      const toastId = toast.loading(t.lab.lipSyncWorking)
+      try {
+        // THE EXPRESSION TRACK THIS MODEL ALREADY HAS, so the lip sync lands on
+        // top of it instead of replacing it. Artists ship blinks as their own
+        // morph .vmd, and generating a lip sync used to hand a clean file to the
+        // same slot — the blinks went, and nothing said so, because the slot
+        // still held a morph track and the mouth still moved.
+        // A File when it was picked here; a URL when it came with the scene (a
+        // published or forked one, where the artist's blinks live) — fetched the
+        // way the engine loaded it, or the lip sync replaced them there.
+        // With no morph file, the motion's own morph tracks are the face to keep.
+        const worn = morphByModel[id]?.src ?? animByModel[id]?.src
+        const under =
+          worn instanceof File
+            ? await worn.arrayBuffer()
+            : typeof worn === "string"
+              ? await fetch(worn)
+                  .then((r) => (r.ok ? r.arrayBuffer() : undefined))
+                  .catch(() => undefined)
+              : undefined
+        const file =
+          from === "music" && musicClip
+            ? await lipSyncVmdFromMusic(musicClip.url, musicClip.name, under)
+            : lyrics && musicClip
+              ? await lipSyncVmdFromLyricsAndMusic(parseLRC(await lyrics.text()), lyrics.name, musicClip.url, under)
+              : lyrics
+                ? lipSyncVmdFile(parseLRC(await lyrics.text()), lyrics.name, under)
+                : null
+        if (!file) {
+          toast.message(t.lab.lipSyncNothing, { id: toastId })
+          return
+        }
+        const name = await loadMorphFile(id, file)
+        if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+        const url = URL.createObjectURL(file)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = file.name
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(t.lab.lipSyncDone(file.name), { id: toastId })
+      } catch (e) {
+        console.error("[lipsync]", e)
+        toast.error(t.lab.lipSyncFailed, { id: toastId, description: e instanceof Error ? e.message : String(e), duration: 12000 })
+      }
     },
     // `morphByModel` IS a dependency now: the merge reads the track this model
     // is wearing, and a missing dep here is not a stale value that catches up —
     // it is the FIRST render's, which is no track at all. The lip sync would
     // have gone on quietly replacing exactly what it was written to preserve.
-    [loadMorphFile, morphByModel, animByModel, musicClip],
+    [loadMorphFile, morphByModel, animByModel, musicClip, t],
   )
   const musicInput = useRef<HTMLInputElement | null>(null)
   // THE OLD URL IS REVOKED BY useSceneMedia's EFFECT, not in here.

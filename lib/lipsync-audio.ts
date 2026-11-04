@@ -81,7 +81,9 @@ function percentile(v: Float32Array, p: number): number {
 /** Per 30fps frame: the energy of centred partials that move, and of those that hold. */
 export function vocalEnergy(left: Float32Array, right: Float32Array, sampleRate: number) {
   const hop = sampleRate / FPS
-  const frames = Math.max(0, Math.floor((left.length - N) / hop) + 1)
+  // Each frame's window is CENTRED on the frame's own time. Starting it there put
+  // frame t's energy N/2 samples (46ms) into the future, and the mouth ran early.
+  const frames = Math.max(0, Math.floor(left.length / hop))
   const win = new Float32Array(N)
   for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1))
   const lo = Math.floor((F_LO * N) / sampleRate)
@@ -94,10 +96,12 @@ export function vocalEnergy(left: Float32Array, right: Float32Array, sampleRate:
   const peaks: { f: Float32Array; a: Float32Array }[] = []
 
   for (let t = 0; t < frames; t++) {
-    const o = Math.round(t * hop)
+    const o = Math.round(t * hop) - N / 2
     for (let i = 0; i < N; i++) {
-      lr[i] = left[o + i] * win[i]
-      rr[i] = right[o + i] * win[i]
+      const s = o + i
+      const inside = s >= 0 && s < left.length
+      lr[i] = inside ? left[s] * win[i] : 0
+      rr[i] = inside ? right[s] * win[i] : 0
     }
     li.fill(0)
     ri.fill(0)
@@ -296,9 +300,8 @@ const LYRIC_SCALE = 1.4
 
 /**
  * Lip sync from the lyrics AND the music: the lyrics say which vowel and when a
- * line is sung, the voice says when each syllable opens and how wide. A line's
- * syllables are spread evenly across it, which lands within a beat of the
- * singing; the voice's own rises land on the syllable.
+ * line is sung, the voice says when the mouth opens and how wide. The vowel on
+ * each frame is the lyric syllable whose slot it falls in (lyricSpans).
  */
 export function lipSyncFromLyricsAndAudio(
   lines: LyricLine[],
