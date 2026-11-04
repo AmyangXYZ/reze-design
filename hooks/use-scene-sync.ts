@@ -533,6 +533,18 @@ export function useSceneSync({
       })
   }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface, texturesVersion])
 
+  // ── Who is the first character ──
+  //
+  // The cast's rows, in their order, are the effects' subjects 0, 1, ...: an
+  // effect dial that picks a character by number (Iron Chains' source) counts
+  // the rows. Left to itself the engine counts in load order, which parallel
+  // loads and a model replaced by a new file both scramble.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    engine.setCastOrder(castIds)
+  }, [engineRef, ready, castIds])
+
   // ── Eyes on the camera ──
   //
   // Per cast model, and again as models land: the list is what changes when
