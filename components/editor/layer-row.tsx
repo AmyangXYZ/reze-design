@@ -8,6 +8,7 @@
 // pane that adds to itself ("Add model") ends its list with that action.
 
 import { Button } from "@/components/ui/button"
+import { FileDropArea } from "@/components/editor/file-drop-area"
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
@@ -72,11 +73,14 @@ export function StackGroup({
   domId,
   action,
   open = true,
+  onDropFiles,
   children,
 }: {
   /** Addressable for go-to, like LayerRow's. */
   domId?: string
   action?: ReactNode
+  /** Files or a folder dragged onto the action's line — the upload it offers. */
+  onDropFiles?: (files: File[]) => void
   open?: boolean
   children: ReactNode
 }) {
@@ -87,7 +91,12 @@ export function StackGroup({
     <section id={domId} className="group/stack -mt-2 flex min-h-0 flex-col pb-3">
       <div className="no-scrollbar cover-enter flex min-h-0 flex-col overflow-y-auto">
         {children}
-        {action && <div className="mx-4 mt-1 flex">{action}</div>}
+        {/* px, not mx: a drop target's bound spans the row, like a clip row's. */}
+        {action && (
+          <FileDropArea onFiles={onDropFiles} className="mt-1 flex px-4">
+            {action}
+          </FileDropArea>
+        )}
       </div>
     </section>
   )

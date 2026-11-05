@@ -122,9 +122,12 @@ export function clipRetainedForModel(
     }
     if (ikTracks.size === 0) ikTracks = undefined
   }
+  // So does the motion's show/hide track (VMD's 表示 flag): it is the whole
+  // model's, so no bone filter applies — only a copy.
+  const visibility = clip.visibility?.length ? clip.visibility.map((k) => ({ ...k })) : undefined
   const empty = boneTracks.size === 0 && morphTracks.size === 0
   const end = empty ? Math.max(clip.frameCount, DEFAULT_STUDIO_CLIP_FRAMES) : Math.max(clip.frameCount, inferred)
-  return { boneTracks, morphTracks, ikTracks, frameCount: end }
+  return { boneTracks, morphTracks, ikTracks, visibility, frameCount: end }
 }
 
 // ─── Keyframe insert + engine pose read/write ────────────────────────────

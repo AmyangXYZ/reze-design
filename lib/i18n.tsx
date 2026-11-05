@@ -630,7 +630,9 @@ const en = {
     compileFailed: "Compile failed",
     engineNotReady: "Engine not ready",
     // One phrase per intake, shared by the empty slot and the palette command.
-    addModel: "Add model",
+    addModel: "Add model (PMX folder)",
+    // A file dragged onto a slot that does not take its kind.
+    dropRefused: (kind: string) => `Not a ${kind} file`,
     uploadAnimation: "Upload animation",
     uploadMorph: "Upload morph",
     lipSyncFromLyrics: "Lip sync from lyrics",
@@ -1766,7 +1768,8 @@ const zh: Dictionary = {
     },
     compileFailed: "编译失败",
     engineNotReady: "引擎未就绪",
-    addModel: "添加模型",
+    addModel: "添加模型（PMX 文件夹）",
+    dropRefused: (kind: string) => `不是${kind}文件`,
     uploadAnimation: "上传动作",
     uploadMorph: "上传表情",
     lipSyncFromLyrics: "由歌词生成口型",

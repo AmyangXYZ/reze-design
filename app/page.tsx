@@ -95,6 +95,8 @@ import { prefetchGallery } from "@/components/editor/scene-gallery"
 import { useRouter } from "next/navigation"
 import { useCoverInk } from "@/hooks/use-cover-ink"
 import { useLeaving } from "@/hooks/use-leaving"
+import { DROP_BOUND, useFileDrop, useRefuseStrayDrops } from "@/hooks/use-file-drop"
+import { FileDropArea } from "@/components/editor/file-drop-area"
 import { WORDMARK } from "@/components/wordmark"
 import { FpsReadout } from "@/components/scene/fps-readout"
 import { MobileStudio } from "@/components/mobile/mobile-studio"
@@ -1690,6 +1692,11 @@ function CastAction({
  */
 const clipLabel = (name: string) => name.split("/").pop() || name
 
+/** What a dropped file has to be named to land in a slot — the pickers'
+ *  `accept`, which a drop does not go through. */
+const VMD_FILE = /\.vmd$/i
+const MUSIC_FILE = /\.(mp3|m4a|mp4|aac|wav|ogg|opus|flac)$/i
+
 /**
  * A scene-wide clip in the stack — the camera motion, the music. One line in
  * the cast row's language: same hover reveal, same action pair, an icon where
@@ -1711,6 +1718,8 @@ function ClipRow({
   volume,
   onVolume,
   menu,
+  onDropFile,
+  accept,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Loaded clip name, or null. */
@@ -1738,8 +1747,22 @@ function ClipRow({
   onVolume?: (v: number) => void
   /** Settings for what the row plays, behind a gear — the footsteps' sound. */
   menu?: { label: string; items: { key: string; label: string; checked?: boolean; onPick: () => void }[] }
+  /** A file dragged onto the row — the same handler its picker feeds. The
+   *  first dropped file `accept` matches wins; none matching says so. */
+  onDropFile?: (file: File) => void
+  /** The picker's `accept`, as a test on the file name. */
+  accept?: RegExp
 }) {
   const t = useT()
+  const drop = useFileDrop(
+    onDropFile
+      ? (files) => {
+          const file = files.find((f) => !accept || accept.test(f.name))
+          if (file) onDropFile(file)
+          else toast.error(files[0].name.split("/").pop() ?? files[0].name, { description: t.lab.dropRefused(kind) })
+        }
+      : undefined,
+  )
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
   const [confirming, setConfirming] = useState(false)
   const [volumeOpen, setVolumeOpen] = useState(false)
@@ -1757,7 +1780,14 @@ function ClipRow({
         {/* A size-3.5 icon at gap-2.5: the column of the pane's other line
             starts (the cast's numbers, the Add action's plus), so every name in
             the pane starts at one x. */}
-        <div className="flex items-center gap-2.5 px-4 py-1">
+        <div
+          {...drop.props}
+          className={cn(
+            "flex items-center gap-2.5 px-4 py-1",
+            onDropFile && DROP_BOUND,
+            onDropFile && (drop.over ? "outline-foreground" : "outline-transparent"),
+          )}
+        >
           <Icon className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="flex min-w-0 flex-1 flex-col">
             {/* One differentiator, the underline: a filled name is muted plain
@@ -2506,6 +2536,16 @@ function Lab() {
     morphTarget.current = id
     morphInput.current?.click()
   }
+  /** A morph .vmd onto a model — from its picker or dropped on its row. */
+  const wearMorphFile = (id: string, file: File) => {
+    void loadMorphFile(id, file).then((name) => {
+      if (name)
+        setMorphByModel((prev) => ({
+          ...prev,
+          [id]: { name, src: file },
+        }))
+    })
+  }
   const removeMorph = (id: string) => {
     setMorphByModel((prev) => {
       const next = { ...prev }
@@ -2677,47 +2717,68 @@ function Lab() {
     audioRef,
     musicUrl: musicClip?.url ?? null,
   })
-  const modelNames = useMemo(
-    () => [
-      ...models.filter((m) => !stageIds.has(m.id) && (animByModel[m.id] || morphByModel[m.id] || m.id === fallbackClock)).map((m) => m.id),
+  // Who may be THE CLOCK — for the transport, the audio AND the export — in
+  // tiers: the cast members wearing a motion; with none, those wearing only a
+  // morph track; with neither, the one carrying the fallback clock (as long as
+  // the camera VMD, else the music). Stages excluded: scenery has no motion, so
+  // a stage holding one is already wrong; but a scene whose stage was uploaded
+  // FIRST used to head the transport, and the audio and the export followed a
+  // clip that is not the dance.
+  const clockCandidates = useMemo(() => {
+    const cast = models.filter((m) => !stageIds.has(m.id))
+    const moving = cast.filter((m) => animByModel[m.id]).map((m) => m.id)
+    if (moving.length) return moving
+    const faces = cast.filter((m) => morphByModel[m.id]).map((m) => m.id)
+    if (faces.length) return faces
+    return fallbackClock ? [fallbackClock] : []
+  }, [models, stageIds, animByModel, morphByModel, fallbackClock])
+  const clipNameOf = (id: string) =>
+    animByModel[id]?.name ?? morphByModel[id]?.name ?? (id === fallbackClock ? FALLBACK_CLIP : null)
+  // Each candidate's clip length, polled until the engine reports it (meta
+  // arrives whenever the VMD finishes parsing, so a one-shot read races it).
+  // Keyed by a signature of who wears what instead of reset-on-change: a stale
+  // reading simply stops matching, so the effect never needs a zeroing write.
+  const clockSig = clockCandidates.map((id) => id + "\0" + (clipNameOf(id) ?? "")).join("\n")
+  const [clipLengths, setClipLengths] = useState<{ sig: string; value: Record<string, number> }>({ sig: "", value: {} })
+  const lengths = clipLengths.sig === clockSig ? clipLengths.value : null
+  useEffect(() => {
+    if (!clockSig) return
+    const ids = clockSig.split("\n").map((line) => line.split("\0")[0])
+    const timer = setInterval(() => {
+      const value: Record<string, number> = {}
+      for (const id of ids) value[id] = engineRef.current?.getModel(id)?.getAnimationProgress().duration ?? 0
+      if (ids.some((id) => value[id] > 0)) {
+        setClipLengths((prev) =>
+          prev.sig === clockSig && ids.every((id) => prev.value[id] === value[id]) ? prev : { sig: clockSig, value },
+        )
+      }
+      if (ids.every((id) => value[id] > 0)) clearInterval(timer)
+    }, 300)
+    return () => clearInterval(timer)
+  }, [clockSig, engineRef])
+  // The LONGEST clip in the tier is the clock. A duet's two motions rarely end
+  // together, and following the first cast member's ended the playback and the
+  // recording with hers, cutting the other dancer off. The shorter ones hold
+  // their last pose to the end. A tie goes to cast order.
+  const masterId = clockCandidates.reduce<string | null>(
+    (best, id) => (best === null || (lengths?.[id] ?? 0) > (lengths?.[best] ?? 0) ? id : best),
+    null,
+  )
+  const masterClipName = masterId ? clipNameOf(masterId) : null
+  const animDuration = masterId ? (lengths?.[masterId] ?? 0) : 0
+  const modelNames = useMemo(() => {
+    const cast = models
+      .filter((m) => !stageIds.has(m.id) && (animByModel[m.id] || morphByModel[m.id] || m.id === fallbackClock))
+      .map((m) => m.id)
+    // The clock first: the transport follows the first name.
+    if (masterId && cast.includes(masterId)) cast.unshift(...cast.splice(cast.indexOf(masterId), 1))
+    return [
+      ...cast,
       // Props with a clip of their own play on the same transport, after the
       // cast, so the first name is still a performer's clock.
       ...props.filter((p) => animByModel[p.id]).map((p) => p.id),
-    ],
-    [models, stageIds, animByModel, morphByModel, fallbackClock, props],
-  )
-  // First model carrying a clip — the clock for audio AND the export.
-  //
-  // Stages excluded, exactly as modelNames above excludes them. Scenery has no
-  // motion, so a stage holding one is already wrong; but a scene whose stage was
-  // uploaded FIRST put it at the head of this list, and the audio and the export
-  // then followed a clip that is not the dance — the transport reading 0:00 over
-  // a cast that is posed and ready to play.
-  const masterId = models.find((m) => !stageIds.has(m.id) && hasClip(m.id))?.id ?? fallbackClock
-  // Clip duration, polled until the engine reports it (main's approach — meta
-  // arrives whenever the VMD finishes parsing, so a one-shot read races it).
-  // Keyed by owner instead of reset-on-change: a stale value simply stops
-  // matching, so the effect never needs a synchronous zeroing write.
-  const [duration, setDuration] = useState<{
-    owner: string | null
-    value: number
-  }>({ owner: null, value: 0 })
-  const masterClipName = masterId
-    ? (animByModel[masterId]?.name ?? morphByModel[masterId]?.name ?? (masterId === fallbackClock ? FALLBACK_CLIP : null))
-    : null
-  const durationOwner = masterId && masterClipName ? masterId + "\0" + masterClipName : null
-  const animDuration = duration.owner !== null && duration.owner === durationOwner ? duration.value : 0
-  useEffect(() => {
-    if (!durationOwner || !masterId) return
-    const timer = setInterval(() => {
-      const d = engineRef.current?.getModel(masterId)?.getAnimationProgress().duration ?? 0
-      if (d > 0) {
-        setDuration({ owner: durationOwner, value: d })
-        clearInterval(timer)
-      }
-    }, 300)
-    return () => clearInterval(timer)
-  }, [durationOwner, masterId, engineRef])
+    ]
+  }, [models, stageIds, animByModel, morphByModel, fallbackClock, props, masterId])
 
   // ONE settings object, applied by the SAME hook main and the viewer use.
   // The per-section local applies this replaces were honest scaffolding while
@@ -2737,6 +2798,8 @@ function Lab() {
   // hook, because an export in flight must survive whatever the chrome does.
   //
   const framing = useRenderFraming()
+  // A file dropped beside a slot must not navigate away from the scene.
+  useRefuseStrayDrops()
   const [exportOpen, setExportOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   // A phone (or a tablet) gets the scene and its transport, play only
@@ -4896,6 +4959,12 @@ function Lab() {
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
     folderInput.current?.click()
+  }
+
+  /** The same upload, from files or a folder dragged onto its line. */
+  const dropModel = (target: ModelTarget, files: File[]) => {
+    modelTarget.current = target
+    void onModelPicked(files)
   }
 
   /** The same upload, from the one file a Blender stage is. */
@@ -7986,13 +8055,7 @@ function Lab() {
           const id = morphTarget.current
           e.target.value = ""
           if (!file || !id) return
-          void loadMorphFile(id, file).then((name) => {
-            if (name)
-              setMorphByModel((prev) => ({
-                ...prev,
-                [id]: { name, src: file },
-              }))
-          })
+          wearMorphFile(id, file)
         }}
       />
 
@@ -8500,6 +8563,7 @@ function Lab() {
             <StackGroup
               domId="group-cast"
               open={pane === "cast"}
+              onDropFiles={ready ? (files) => dropModel({ mode: "add" }, files) : undefined}
               // On the label's line rather than under the rows: a full-width
               // button is a row's worth of height spent on an action taken
               // once or twice a scene, and the dock is one column deep.
@@ -8644,6 +8708,8 @@ function Lab() {
                     kind={t.lab.kinds.motion}
                     of={displayName(clipModel.file)}
                     onPick={() => pickAnimation(clipModel.id)}
+                    onDropFile={(file) => loadMotionFile(clipModel.id, file)}
+                    accept={VMD_FILE}
                     onRemove={() => removeAnimation(clipModel.id)}
                     onEdit={timelineRoom ? () => editClip(clipModel.id, "motion") : undefined}
                     onDownload={() => downloadClip(animByModel[clipModel.id]?.src, animByModel[clipModel.id]?.name ?? "motion.vmd")}
@@ -8659,6 +8725,8 @@ function Lab() {
                     kind={t.lab.kinds.morph}
                     of={displayName(clipModel.file)}
                     onPick={() => pickMorph(clipModel.id)}
+                    onDropFile={(file) => wearMorphFile(clipModel.id, file)}
+                    accept={VMD_FILE}
                     onRemove={() => removeMorph(clipModel.id)}
                     onEdit={timelineRoom ? () => editClip(clipModel.id, "morph") : undefined}
                     onDownload={() => downloadClip(morphByModel[clipModel.id]?.src, morphByModel[clipModel.id]?.name ?? "morphs.vmd")}
@@ -8724,6 +8792,8 @@ function Lab() {
                 empty={t.lab.uploadMusic}
                 kind={t.lab.kinds.music}
                 onPick={() => musicInput.current?.click()}
+                onDropFile={setMusicFile}
+                accept={MUSIC_FILE}
                 onRemove={removeMusic}
                 onDownload={() => downloadClip(sceneFiles.audio ?? musicClip?.url, musicClip?.name ?? "music")}
                 volume={audio.volume}
@@ -8736,6 +8806,8 @@ function Lab() {
                   empty={t.lab.uploadMidi}
                   kind={t.lab.kinds.midi}
                   onPick={() => midiInput.current?.click()}
+                  onDropFile={(file) => void installMidiFile(file)}
+                  accept={/\.midi?$/i}
                   onRemove={clearMidi}
                   onDownload={() => downloadClip(sceneFiles.score ?? scene.assets.midi?.url, midiClip)}
                 />
@@ -8747,6 +8819,8 @@ function Lab() {
                   empty={t.lab.uploadLyrics}
                   kind={t.lab.kinds.lyrics}
                   onPick={() => lyricsInput.current?.click()}
+                  onDropFile={(file) => void installLyricsFile(file)}
+                  accept={/\.lrc$/i}
                   onRemove={clearLyrics}
                   onDownload={() => downloadClip(sceneFiles.lyrics ?? scene.assets.lyrics?.url, lyricsClip)}
                 />
@@ -9099,7 +9173,10 @@ function Lab() {
 
                             ALWAYS HERE: an upload ADDS a stage beside the ones
                             there, and the same file again replaces its own. */}
-                        <div className={cn("flex flex-col", (stage || nativeStage) && "mt-2")}>
+                        <FileDropArea
+                          onFiles={(files) => dropModel({ mode: "stage" }, files)}
+                          className={cn("-mx-4 flex flex-col px-4", (stage || nativeStage) && "mt-2")}
+                        >
                           <Button
                             variant="bare"
                             onClick={() => pickModel({ mode: "stage" })}
@@ -9141,7 +9218,7 @@ function Lab() {
                               </PopoverContent>
                             </Popover>
                           </div>
-                        </div>
+                        </FileDropArea>
                       </TabsContent>
                       <TabsContent value="ground">
                         {stage && <p className="mb-2 text-xs">{t.lab.stageOverridesGround}</p>}
@@ -9488,21 +9565,26 @@ function Lab() {
                               adding a card are the same act on a different
                               kind of thing. */}
                           {props.length === 0 && (
-                            <Button
-                              variant="bare"
-                              onClick={() => {
-                                modelTarget.current = { mode: "prop" }
-                                folderInput.current?.click()
-                              }}
-                              className={LINE_ACTION}
-                            >
-                              <Plus className="size-3.5" />
-                              {t.lab.uploadProp}
-                            </Button>
+                            <FileDropArea onFiles={(files) => dropModel({ mode: "prop" }, files)} className="-mx-4 flex px-4">
+                              <Button
+                                variant="bare"
+                                onClick={() => {
+                                  modelTarget.current = { mode: "prop" }
+                                  folderInput.current?.click()
+                                }}
+                                className={LINE_ACTION}
+                              >
+                                <Plus className="size-3.5" />
+                                {t.lab.uploadProp}
+                              </Button>
+                            </FileDropArea>
                           )}
                           {shownProp && (
                             <>
-                              <div className="flex flex-wrap items-center gap-1.5">
+                              <FileDropArea
+                                onFiles={(files) => dropModel({ mode: "prop" }, files)}
+                                className="-mx-4 flex flex-wrap items-center gap-1.5 px-4"
+                              >
                                 {props.map((prop) => {
                                   const on = prop.id === shownProp.id
                                   return (
@@ -9542,7 +9624,7 @@ function Lab() {
                                 >
                                   <Plus className="size-3.5" />
                                 </Button>
-                              </div>
+                              </FileDropArea>
                               {(() => {
                                 const prop = shownProp
                                 const att = prop.attach
@@ -10287,6 +10369,8 @@ function Lab() {
                       empty={t.lab.uploadCameraMotion}
                       kind={t.lab.kinds.cameraMotion}
                       onPick={() => cameraInput.current?.click()}
+                      onDropFile={loadCameraFile}
+                      accept={VMD_FILE}
                       onRemove={removeCamera}
                       // sceneFiles first: boot resolves the document's camera to a
                       // File there, and the timeline re-encodes into the same slot,
