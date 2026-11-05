@@ -14,7 +14,7 @@
 // overlapping windows. Deleting the last block on a row removes the effect.
 //
 // While the tab shows, the band owns the timeline's keys: Delete, ⌘C, ⌘X, ⌘V,
-// Escape and ⌘Z act on blocks wherever in the band focus is, so a click on bare
+// S (split at the playhead), Escape and ⌘Z act on blocks wherever in the band focus is, so a click on bare
 // track to place the playhead is followed by a paste there.
 
 import {
@@ -43,6 +43,8 @@ import { cn } from "@/lib/utils"
 export const LANE_H = 24
 /** How close to an end grabs the end rather than the block, in pixels. */
 const EDGE = 6
+/** A ramp knob's hit box, in pixels. */
+const KNOB = 10
 /** Snapping reach in pixels, so it pulls the same at every zoom. Generous
  *  enough that butting one clip against the next is the easy outcome rather
  *  than a thing you fight the pointer for. */
@@ -82,20 +84,29 @@ export type EffectLanesData<T extends LaneRow = LaneRow> = {
 export type EffectLanesApi = {
   /** Whether the press that opened the menu was on a block, and whether
    *  anything is copied. */
-  menu: () => { clip: boolean; paste: boolean }
+  menu: () => { clip: boolean; paste: boolean; split: boolean }
   cut: () => void
+  /** Cut the picked clips the playhead is inside in two, at the playhead. */
+  split: () => void
   copy: () => void
   paste: () => void
   remove: () => void
-  /** Which ramp the picked clips already carry, or null for none. */
-  ramped: () => string | null
-  /** Put a ramp of this shape on both edges of the picked clips, or take it
-   *  off. Passing the shape they already have takes it off. */
-  ramp: (curve: "ease" | "steps" | null) => void
+  /** Which ends of the picked clips dissolve, and whether stepped: each true
+   *  only when every picked clip has it. */
+  ramped: () => Ramped
+  /** Turn one end's dissolve on for the picked clips, or off if all have it. */
+  fade: (end: "in" | "out") => void
+  /** Make the picked clips' dissolves stepped, or smooth if all already are. */
+  stepped: () => void
 }
 
+type Ramped = { in: boolean; out: boolean; steps: boolean; any: boolean }
+
 type Span = { start: number; end: number }
-type Grab = "move" | "in" | "out"
+/** Ramp lengths in frames, as a block draws them. */
+type Fade = { in: number; out: number }
+/** A block's body, either end, or the knob of either ramp. */
+type Grab = "move" | "in" | "out" | "fadeIn" | "fadeOut"
 
 const keyOf = (uid: string, index: number) => `${uid}#${index}`
 
@@ -105,6 +116,26 @@ const blocksOf = (e: LaneRow): LaneWindow[] => (e.window?.length ? e.window : [{
 const endOf = (w: EffectWindow, frameCount: number) => w.end ?? Math.max(frameCount, w.start + 1)
 const spanOf = (w: EffectWindow, frameCount: number): Span => ({ start: w.start, end: endOf(w, frameCount) })
 const sortWindows = (lane: EffectWindow[]) => [...lane].sort((a, b) => a.start - b.start)
+const fadeOf = (w: EffectWindow): Fade => ({ in: Math.max(0, w.blendIn ?? 0), out: Math.max(0, w.blendOut ?? 0) })
+
+/**
+ * The window with these ramps, each held inside the block and the two never
+ * overlapping. An out ramp closes an open end where it stands: it needs an end
+ * to measure back from. With no ramp left, the shape goes too.
+ */
+function withFade(w: LaneWindow, fade: Fade, frameCount: number): LaneWindow {
+  const length = endOf(w, frameCount) - w.start
+  const fin = Math.max(0, Math.min(length, Math.round(fade.in)))
+  const fout = Math.max(0, Math.min(length - fin, Math.round(fade.out)))
+  const end = fout > 0 && w.end === undefined ? endOf(w, frameCount) : w.end
+  return {
+    start: w.start,
+    ...(end === undefined ? {} : { end }),
+    ...(fin ? { blendIn: fin } : {}),
+    ...(fout ? { blendOut: fout } : {}),
+    ...((fin || fout) && w.curve ? { curve: w.curve } : {}),
+  }
+}
 const uidsOf = (effects: readonly LaneRow[]) => effects.map((e) => e.uid ?? "").join("|")
 
 /**
@@ -150,7 +181,7 @@ function snap(frame: number, targets: number[], reach: number): { frame: number;
 
 /** Copied blocks, kept outside React so a copy survives the editor closing.
  *  Each remembers its row and where it sat against the earliest one copied. */
-type Copied = { uid: string; rel: number; length: number; blendIn?: number; blendOut?: number }
+type Copied = { uid: string; rel: number; length: number; blendIn?: number; blendOut?: number; curve?: FadeCurve }
 let clipboard: Copied[] = []
 
 type Step<T extends LaneRow> = { before: T[]; after: T[] }
@@ -212,7 +243,7 @@ export function EffectLanes<T extends LaneRow>({
     effectsRef.current = effects
   })
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [preview, setPreview] = useState<{ uid: string; index: number; span: Span } | null>(null)
+  const [preview, setPreview] = useState<{ uid: string; index: number; span: Span; fade?: Fade } | null>(null)
   const previewRef = useRef(preview)
   /** Whether the last press in the band was on a block, for what the menu enables. */
   const menuOnClip = useRef(false)
@@ -222,10 +253,13 @@ export function EffectLanes<T extends LaneRow>({
     index: number
     x0: number
     from: Span
+    fade: Fade
     others: Span[]
     targets: number[]
     additive: boolean
     started: boolean
+    /** The frame under the press, where a click puts the playhead. */
+    at: number
   } | null>(null)
 
   // ── History ─────────────────────────────────────────────────────────────
@@ -292,11 +326,19 @@ export function EffectLanes<T extends LaneRow>({
     return out
   }
 
+  /** The frame under a pointer, on the scene's range. */
+  const frameAt = (clientX: number) => {
+    const box = containerRef.current?.getBoundingClientRect()
+    const f = box && pxPerFrame > 0 ? Math.round((clientX - box.left + scrollX) / pxPerFrame) : 0
+    return Math.max(0, Math.min(frameCount, f))
+  }
+
   const down = (uid: string, index: number, grab: Grab) => (e: ReactPointerEvent<HTMLElement>) => {
     const key = keyOf(uid, index)
-    if (e.button === 2) {
-      // A right-click picks the block for the menu, keeping a selection it is
-      // already part of.
+    // A right-click, or a Mac's control-click, which arrives as the left
+    // button: it picks the block for the menu, keeping a selection it is
+    // already part of.
+    if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
       e.stopPropagation()
       menuOnClip.current = true
       setSelected((s) => (s.has(key) ? s : new Set([key])))
@@ -320,9 +362,11 @@ export function EffectLanes<T extends LaneRow>({
       index,
       x0: e.clientX,
       from: spanOf(blocks[index], frameCount),
+      fade: fadeOf(blocks[index]),
       others: blocks.filter((_, j) => j !== index).map((w) => spanOf(w, frameCount)),
       targets: targetsExcept(key),
       additive,
+      at: frameAt(e.clientX),
       started: false,
     }
   }
@@ -338,6 +382,17 @@ export function EffectLanes<T extends LaneRow>({
     const df = px / pxPerFrame
     const reach = SNAP_PX / pxPerFrame
     const { from, others, targets } = d
+    if (d.grab === "fadeIn" || d.grab === "fadeOut") {
+      // A knob sets its own ramp's length, up to whatever the other leaves.
+      const length = from.end - from.start
+      const fade =
+        d.grab === "fadeIn"
+          ? { in: Math.max(0, Math.min(length - d.fade.out, Math.round(d.fade.in + df))), out: d.fade.out }
+          : { in: d.fade.in, out: Math.max(0, Math.min(length - d.fade.in, Math.round(d.fade.out - df))) }
+      previewRef.current = { uid: d.uid, index: d.index, span: from, fade }
+      setPreview(previewRef.current)
+      return
+    }
     let span: Span
     if (d.grab === "move") {
       // Either edge may be the one that lands on something; the nearer wins.
@@ -369,21 +424,30 @@ export function EffectLanes<T extends LaneRow>({
     setPreview(null)
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     if (!d) return
-    // A click, not a drag: the playhead goes to where the block starts, so what
-    // it shows is what you picked and a paste lands right behind it.
+    // A click, not a drag: the playhead goes where you pressed, so a split
+    // (S) cuts there and a paste lands right behind the block.
     if (!d.started) {
-      if (d.grab === "move" && !d.additive) onSeek(d.from.start)
+      if (d.grab === "move" && !d.additive) onSeek(d.at)
       return
     }
-    if (!p || (p.span.start === d.from.start && p.span.end === d.from.end)) return
+    if (!p) return
+    const fading = d.grab === "fadeIn" || d.grab === "fadeOut"
+    if (fading ? !p.fade || (p.fade.in === d.fade.in && p.fade.out === d.fade.out) : p.span.start === d.from.start && p.span.end === d.from.end)
+      return
     const effect = effectsRef.current.find((x) => x.uid === d.uid)
     if (!effect) return
     const blocks = blocksOf(effect)
     const old = blocks[d.index]
     // An open end stays open when only the start moved: it still runs to the
-    // end of the scene.
-    const moved: EffectWindow =
-      d.grab === "in" && old.end === undefined ? { ...old, start: p.span.start } : { ...old, start: p.span.start, end: p.span.end }
+    // end of the scene. A trim keeps the ramps, held inside what is left.
+    const moved: LaneWindow =
+      fading && p.fade
+        ? withFade(old, p.fade, frameCount)
+        : withFade(
+            d.grab === "in" && old.end === undefined ? { ...old, start: p.span.start } : { ...old, start: p.span.start, end: p.span.end },
+            fadeOf(old),
+            frameCount,
+          )
     const lane = sortWindows(blocks.map((w, j) => (j === d.index ? moved : w)))
     commit(effectsRef.current.map((x) => (x.uid === d.uid ? { ...x, window: lane } : x)))
     setSelected(new Set([keyOf(d.uid, lane.indexOf(moved))]))
@@ -412,6 +476,7 @@ export function EffectLanes<T extends LaneRow>({
       length: endOf(w, frameCount) - w.start,
       ...(w.blendIn ? { blendIn: w.blendIn } : {}),
       ...(w.blendOut ? { blendOut: w.blendOut } : {}),
+      ...(w.curve ? { curve: w.curve } : {}),
     }))
     return true
   }
@@ -436,8 +501,8 @@ export function EffectLanes<T extends LaneRow>({
   const paste = () => {
     if (!clipboard.length) return
     const base = Math.max(0, Math.round(playhead))
-    const lanes = new Map<string, EffectWindow[]>()
-    const landed: { uid: string; w: EffectWindow }[] = []
+    const lanes = new Map<string, LaneWindow[]>()
+    const landed: { uid: string; w: LaneWindow }[] = []
     for (const c of clipboard) {
       const effect = effectsRef.current.find((x) => x.uid === c.uid)
       if (!effect) continue
@@ -450,11 +515,12 @@ export function EffectLanes<T extends LaneRow>({
         "after",
       )
       if (at === null) continue
-      const w: EffectWindow = {
+      const w: LaneWindow = {
         start: at,
         end: at + c.length,
         ...(c.blendIn ? { blendIn: c.blendIn } : {}),
         ...(c.blendOut ? { blendOut: c.blendOut } : {}),
+        ...(c.curve ? { curve: c.curve } : {}),
       }
       lane.push(w)
       lanes.set(c.uid, lane)
@@ -472,18 +538,12 @@ export function EffectLanes<T extends LaneRow>({
   }
 
   /**
-   * Put a ramp on both edges of the picked clips, or take it off.
-   *
-   * The only editor these two numbers have, which is why it lives in the menu
-   * rather than in a panel: on a model's lane they ARE the dissolve — she
-   * assembles over the first frames of a clip and comes apart over the last —
-   * and on an effect's they are the fade it already drew but nothing could set.
-   *
-   * Half the clip at most, so a short clip ramps for as long as it can rather
-   * than refusing. An open end never ramps out: there is no moment to measure
-   * back from.
+   * The dissolve, from the menu: which ends, and their shape. Their lengths
+   * are the knobs' (one at each top corner of a block). On a model's lane the
+   * ramps ARE the dissolve — she assembles over the first frames of a clip and
+   * comes apart over the last — and on an effect's they are its fade.
    */
-  const rampSelected = (curve: "ease" | "steps" | null) => {
+  const editPicked = (edit: (w: LaneWindow) => LaneWindow) => {
     const items = picked()
     if (!items.length) return
     const byRow = new Map<string, Set<number>>()
@@ -492,16 +552,77 @@ export function EffectLanes<T extends LaneRow>({
       effectsRef.current.map((row) => {
         const hit = row.uid ? byRow.get(row.uid) : undefined
         if (!hit) return row
-        const lane = blocksOf(row).map((w, i) => {
-          if (!hit.has(i)) return w
-          // Stripped back to a hard cut: the ramp AND its shape go, so the clip
-          // reads in the document exactly as one that was never ramped.
-          if (!curve) return { start: w.start, ...(w.end === undefined ? {} : { end: w.end }) }
-          const len = Math.max(1, Math.min(FX_FRAMES, Math.floor((endOf(w, frameCount) - w.start) / 2)))
-          return { ...w, blendIn: len, ...(w.end === undefined ? {} : { blendOut: len }), curve }
-        })
-        return { ...row, window: lane }
+        return { ...row, window: blocksOf(row).map((w, i) => (hit.has(i) ? edit(w) : w)) }
       }),
+    )
+  }
+  const rampedNow = (): Ramped => {
+    const items = picked()
+    const all = (f: (w: LaneWindow) => boolean) => items.length > 0 && items.every((b) => f(b.w))
+    return {
+      in: all((w) => fadeOf(w).in > 0),
+      out: all((w) => fadeOf(w).out > 0),
+      steps: all((w) => w.curve === "steps"),
+      any: items.some((b) => fadeOf(b.w).in > 0 || fadeOf(b.w).out > 0),
+    }
+  }
+  /** One end on at the default length (half the clip at most, so a short clip
+   *  ramps for as long as it can), keeping one already there; or off. */
+  const fadeSelected = (end: "in" | "out") => {
+    const on = !rampedNow()[end]
+    editPicked((w) => {
+      const fade = fadeOf(w)
+      const len = Math.max(1, Math.min(FX_FRAMES, Math.floor((endOf(w, frameCount) - w.start) / 2)))
+      return withFade(w, { ...fade, [end]: on ? fade[end] || len : 0 }, frameCount)
+    })
+  }
+  const stepSelected = () => {
+    const steps = !rampedNow().steps
+    editPicked((w) => {
+      const fade = fadeOf(w)
+      if (!fade.in && !fade.out) return w
+      const next: LaneWindow = { ...w, curve: "steps" }
+      if (!steps) delete next.curve
+      return next
+    })
+  }
+
+  /**
+   * The picked clips the playhead is inside, each cut in two there: the left
+   * keeps the start's dissolve, the right the end's, and both keep the shape.
+   * The right one is a clip of its own, so an effect's clock starts again at
+   * its left edge.
+   */
+  const splittable = (at: number) => picked().filter(({ w }) => w.start < at && at < endOf(w, frameCount))
+  const splitSelected = (frame?: number) => {
+    const at = frame ?? Math.round(playhead)
+    const items = splittable(at)
+    if (!items.length) return
+    const byRow = new Map<string, Set<number>>()
+    for (const b of items) byRow.set(b.uid, (byRow.get(b.uid) ?? new Set<number>()).add(b.index))
+    const halves: { uid: string; w: LaneWindow }[] = []
+    const next = effectsRef.current.map((row) => {
+      const hit = row.uid ? byRow.get(row.uid) : undefined
+      if (!hit || !row.uid) return row
+      const uid = row.uid
+      const lane = blocksOf(row).flatMap((w, i) => {
+        if (!hit.has(i)) return [w]
+        const fade = fadeOf(w)
+        const shape = w.curve ? { curve: w.curve } : {}
+        const left = withFade({ start: w.start, end: at, ...shape }, { in: fade.in, out: 0 }, frameCount)
+        const right = withFade(
+          { start: at, ...(w.end === undefined ? {} : { end: w.end }), ...shape },
+          { in: 0, out: fade.out },
+          frameCount,
+        )
+        halves.push({ uid, w: left }, { uid, w: right })
+        return [left, right]
+      })
+      return { ...row, window: sortWindows(lane) }
+    })
+    commit(next)
+    setSelected(
+      new Set(halves.map(({ uid, w }) => keyOf(uid, next.find((x) => x.uid === uid)?.window?.indexOf(w) ?? 0))),
     )
   }
 
@@ -522,6 +643,9 @@ export function EffectLanes<T extends LaneRow>({
     } else if (mod && key === "v") {
       e.preventDefault()
       paste()
+    } else if (!mod && !e.altKey && key === "s") {
+      e.preventDefault()
+      splitSelected()
     } else if (e.key === "Escape" && selected.size > 0) {
       // Only when there is a selection to let go of; otherwise Escape keeps
       // closing surfaces as everywhere else.
@@ -534,7 +658,12 @@ export function EffectLanes<T extends LaneRow>({
     keysRef.current = onKeys
     if (apiRef)
       apiRef.current = {
-        menu: () => ({ clip: menuOnClip.current, paste: clipboard.length > 0 }),
+        menu: () => ({
+          clip: menuOnClip.current,
+          paste: clipboard.length > 0,
+          split: menuOnClip.current && splittable(Math.round(playhead)).length > 0,
+        }),
+        split: () => splitSelected(),
         cut: () => {
           if (copySelected()) removeSelected()
         },
@@ -543,14 +672,9 @@ export function EffectLanes<T extends LaneRow>({
         },
         paste,
         remove: removeSelected,
-        ramped: () => {
-          const items = picked()
-          if (!items.length || !items.every((b) => (b.w.blendIn ?? 0) > 0)) return null
-          // A clip ramped before there was a choice carries no shape; that is
-          // the smooth one, which is what it has always played as.
-          return items[0].w.curve ?? "ease"
-        },
-        ramp: rampSelected,
+        ramped: rampedNow,
+        fade: fadeSelected,
+        stepped: stepSelected,
       }
   })
 
@@ -602,6 +726,8 @@ export function EffectLanes<T extends LaneRow>({
               {blocksOf(effect).map((w, i) => {
                 const live = preview && preview.uid === uid && preview.index === i ? preview.span : spanOf(w, frameCount)
                 const length = Math.max(1, live.end - live.start)
+                const fade = preview && preview.uid === uid && preview.index === i && preview.fade ? preview.fade : fadeOf(w)
+                const width = Math.max(3, length * pxPerFrame)
                 const isSelected = selected.has(keyOf(uid, i))
                 return (
                   <div
@@ -611,7 +737,9 @@ export function EffectLanes<T extends LaneRow>({
                     onPointerUp={up}
                     onPointerCancel={up}
                     className={cn(
-                      "pointer-events-auto absolute inset-y-[3px] flex touch-none cursor-grab items-center overflow-hidden rounded-chip border px-1.5 active:cursor-grabbing",
+                      "group pointer-events-auto absolute inset-y-[3px] flex touch-none cursor-grab items-center overflow-hidden rounded-chip border px-1.5",
+                      // Grabbing only once it moves: a click is a click.
+                      preview?.uid === uid && preview.index === i && "cursor-grabbing",
                       // Selection has to survive a band of neighbours that are
                       // already blue, so it changes what the EDGE is made of
                       // rather than how blue the fill is: white outline, deeper
@@ -621,18 +749,18 @@ export function EffectLanes<T extends LaneRow>({
                         ? "border-white/75 bg-blue-400/60"
                         : "border-blue-400/40 bg-blue-400/15 hover:bg-blue-400/25",
                     )}
-                    style={{ left: live.start * pxPerFrame - scrollX, width: Math.max(3, length * pxPerFrame) }}
+                    style={{ left: live.start * pxPerFrame - scrollX, width }}
                   >
-                    {(w.blendIn ?? 0) > 0 && (
+                    {fade.in > 0 && (
                       <span
                         className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-black/50 to-transparent"
-                        style={{ width: `${Math.min(100, ((w.blendIn ?? 0) / length) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (fade.in / length) * 100)}%` }}
                       />
                     )}
-                    {(w.blendOut ?? 0) > 0 && (
+                    {fade.out > 0 && (
                       <span
                         className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-black/50 to-transparent"
-                        style={{ width: `${Math.min(100, ((w.blendOut ?? 0) / length) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (fade.out / length) * 100)}%` }}
                       />
                     )}
                     <span className="pointer-events-none relative min-w-0 truncate text-2xs leading-none text-foreground">
@@ -648,6 +776,26 @@ export function EffectLanes<T extends LaneRow>({
                       className="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
                       style={{ width: EDGE }}
                     />
+                    {/* The ramps' knobs, at the top corners: each drags its own
+                        end's ramp in from the edge, and back to zero takes it off. */}
+                    {width >= KNOB * 3 &&
+                      (["fadeIn", "fadeOut"] as const).map((grab) => {
+                        const px = (grab === "fadeIn" ? fade.in : fade.out) * pxPerFrame
+                        const at = Math.max(0, Math.min(width - KNOB, px - KNOB / 2))
+                        return (
+                          <span
+                            key={grab}
+                            onPointerDown={down(uid, i, grab)}
+                            className={cn(
+                              "absolute top-0 z-20 flex cursor-ew-resize items-start justify-center",
+                              px > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                            )}
+                            style={{ width: KNOB, height: KNOB, [grab === "fadeIn" ? "left" : "right"]: at }}
+                          >
+                            <span className="mt-px size-1.5 rounded-full bg-foreground" />
+                          </span>
+                        )
+                      })}
                   </div>
                 )
               })}
@@ -674,18 +822,20 @@ export function EffectLanesMenu({
   children: ReactElement
 }) {
   const t = useT()
-  const [can, setCan] = useState<{ clip: boolean; paste: boolean; ramped: string | null }>({
+  const none: Ramped = { in: false, out: false, steps: false, any: false }
+  const [can, setCan] = useState<{ clip: boolean; paste: boolean; split: boolean; ramped: Ramped }>({
     clip: false,
     paste: false,
-    ramped: null,
+    split: false,
+    ramped: none,
   })
   return (
     <ContextMenu
       onOpenChange={(open) => {
         if (open)
           setCan({
-            ...(apiRef.current?.menu() ?? { clip: false, paste: false }),
-            ramped: apiRef.current?.ramped() ?? null,
+            ...(apiRef.current?.menu() ?? { clip: false, paste: false, split: false }),
+            ramped: apiRef.current?.ramped() ?? none,
           })
       }}
     >
@@ -702,18 +852,18 @@ export function EffectLanesMenu({
         <ContextMenuItem disabled={!can.paste} onSelect={() => apiRef.current?.paste()}>
           {t.lab.timeline.paste}
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        {/* Each names a SHAPE, and choosing the one a clip already has takes it
-            off — so the pair is two looks and an off switch rather than three
-            states nobody can predict. */}
-        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.ramp(can.ramped === "ease" ? null : "ease")}>
-          {can.ramped === "ease" ? `✓ ${t.lab.timeline.fxDissolve}` : t.lab.timeline.fxDissolve}
+        <ContextMenuItem disabled={!can.split} onSelect={() => apiRef.current?.split()}>
+          {t.lab.timeline.split}
         </ContextMenuItem>
-        <ContextMenuItem
-          disabled={!can.clip}
-          onSelect={() => apiRef.current?.ramp(can.ramped === "steps" ? null : "steps")}
-        >
-          {can.ramped === "steps" ? `✓ ${t.lab.timeline.fxSteps}` : t.lab.timeline.fxSteps}
+        <ContextMenuSeparator />
+        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.fade("in")}>
+          {can.ramped.in ? `✓ ${t.lab.timeline.fxDissolveIn}` : t.lab.timeline.fxDissolveIn}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.fade("out")}>
+          {can.ramped.out ? `✓ ${t.lab.timeline.fxDissolveOut}` : t.lab.timeline.fxDissolveOut}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!can.clip || !can.ramped.any} onSelect={() => apiRef.current?.stepped()}>
+          {can.ramped.steps ? `✓ ${t.lab.timeline.fxSteps}` : t.lab.timeline.fxSteps}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="danger" disabled={!can.clip} onSelect={() => apiRef.current?.remove()}>

@@ -80,10 +80,21 @@ const Y_ZOOM_MAX = 8
 /** The fold's own 300ms, plus a frame — see `measurable`. */
 const FOLD_SETTLE_MS = 340
 
+/** The zoom that shows the whole scene, however long: the furthest out the
+ *  editor goes. MIN_PX only stands in until the track has a width. */
 function minPxPerFrameForViewport(trackWidthPx: number, frameCount: number): number {
   if (frameCount <= 0 || trackWidthPx <= LABEL_W + 1) return MIN_PX
-  const fit = (trackWidthPx - LABEL_W) / frameCount
-  return Math.max(MIN_PX, Math.min(fit, MAX_PX))
+  return Math.min((trackWidthPx - LABEL_W) / frameCount, MAX_PX)
+}
+
+/** Frames between ruler ticks: 1, 5 and 10 close up, then whole seconds and
+ *  minutes as a long scene zooms out, keeping ticks at least 5px apart. */
+const TICK_STEPS = [30, 60, 150, 300, 900, 1800]
+function tickStep(pxPerFrame: number): number {
+  if (pxPerFrame >= 12) return 1
+  if (pxPerFrame >= 6) return 5
+  if (pxPerFrame >= 0.5) return 10
+  return TICK_STEPS.find((n) => n * pxPerFrame >= 5) ?? TICK_STEPS[TICK_STEPS.length - 1]
 }
 
 // 127-space wrapper over the engine's VMD bezier evaluator.
@@ -857,7 +868,7 @@ function TimelineCanvas({
     ctx.fillStyle = C.ruler
     ctx.fillRect(0, 0, w, RULER_H)
 
-    const fStep = pxPerFrame >= 12 ? 1 : pxPerFrame >= 6 ? 5 : 10
+    const fStep = tickStep(pxPerFrame)
     const fMajor = fStep * 10
     const rulerFontPx = 9
     ctx.font = `${rulerFontPx}px ${FONT}`
@@ -2673,9 +2684,25 @@ export function Timeline({
    * fires once, on the first width worth fitting to, and never again.
    */
   const fitOnce = useRef(initialView === undefined)
+  /**
+   * Whether the view is zoomed all the way out, and so should STAY showing the
+   * whole range as it changes. The range is not final when the first fit
+   * fires: the longest motion's length and the camera's keys land after it,
+   * and a fit to the shorter range then showed nine tenths of the scene with
+   * the last clips' ends out of reach. Zooming in lets go; zooming back out,
+   * or the range shrinking under the zoom, takes hold again.
+   */
+  const fitted = useRef(false)
+  const minPxRef = useRef(minPxPerFrame)
   useEffect(() => {
-    if (fitOnce.current && settled && fc > 0 && trackWidth > LABEL_W + 1) {
+    minPxRef.current = minPxPerFrame
+    if (!settled || fc <= 0 || trackWidth <= LABEL_W + 1) return
+    if (fitOnce.current) {
       fitOnce.current = false
+      fitted.current = true
+    }
+    if (pxRef.current <= minPxPerFrame) fitted.current = true
+    if (fitted.current) {
       setPxPerFrame(minPxPerFrame)
       setScrollX(0)
       return
@@ -2704,7 +2731,8 @@ export function Timeline({
       return
     }
     setScrollX(0)
-    setPxPerFrame(4)
+    fitted.current = true
+    setPxPerFrame(minPxRef.current)
     setYZoom(1)
     setEndDraft(null)
   }, [clipVersion])
@@ -2857,6 +2885,7 @@ export function Timeline({
   const zoomTo = useCallback(
     (newPx: number) => {
       const clamped = Math.max(minPxPerFrame, Math.min(MAX_PX, newPx))
+      fitted.current = clamped <= minPxPerFrame
       const oldPx = pxRef.current
       if (clamped === oldPx) return
       const viewable = trackWidth - LABEL_W
@@ -2883,7 +2912,7 @@ export function Timeline({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       if (e.ctrlKey || e.metaKey) {
-        zoomTo(pxRef.current - e.deltaY * 0.02)
+        zoomTo(pxRef.current * Math.exp(-e.deltaY * 0.005))
       } else if (e.shiftKey) {
         // macOS remaps shift+wheel vertical delta onto deltaX — take whichever is non-zero.
         const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX

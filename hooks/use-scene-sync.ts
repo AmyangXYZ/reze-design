@@ -561,7 +561,9 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const id of castIds) engine.setModelJellyEyes(id, settings.jelly.enabled ? {} : null)
+    const { enabled, strength, motion, idle } = settings.jelly
+    const options = { strength, motion, idle }
+    for (const id of castIds) engine.setModelJellyEyes(id, enabled ? options : null)
   }, [engineRef, ready, castIds, settings.jelly])
 
   // ── The cast takes the sky flat ──

@@ -7307,7 +7307,7 @@ function Lab() {
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "hideUi") setUiHidden(true)
       else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
-      else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { enabled: !s2.jelly.enabled } }))
+      else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { ...s2.jelly, enabled: !s2.jelly.enabled } }))
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
       // pose they are already in, and the next frame simulates forward from
       // there. Running it when nothing is wrong costs one settle and changes
@@ -10327,13 +10327,45 @@ function Lab() {
                     </Tabs>
                   ) : l.id === "eyes" ? (
                     <>
-                      <div className="flex h-7 items-center justify-between">
+                      <div className="flex items-center justify-between">
                         <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
                         <Switch size="sm" checked={settings.eyes.enabled} onCheckedChange={(v) => patch("eyes", { enabled: v })} />
                       </div>
-                      <div className="flex h-7 items-center justify-between">
+                      {/* Jelly eyes, past a hairline: its switch, then its two
+                          dials, always there and inert while off. */}
+                      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
                         <span className="text-xs">{t.lab.ctl.jellyEyes}</span>
                         <Switch size="sm" checked={settings.jelly.enabled} onCheckedChange={(v) => patch("jelly", { enabled: v })} />
+                      </div>
+                      <SliderRow
+                        label={t.lab.ctl.jellyStrength}
+                        value={settings.jelly.strength}
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        inputMin={0}
+                        inputMax={2}
+                        disabled={!settings.jelly.enabled}
+                        onChange={(v) => patch("jelly", { strength: v })}
+                        fmt={(v) => v.toFixed(2)}
+                      />
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.jellyMotion}</span>
+                        <Switch
+                          size="sm"
+                          checked={settings.jelly.motion}
+                          disabled={!settings.jelly.enabled}
+                          onCheckedChange={(v) => patch("jelly", { motion: v })}
+                        />
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.jellyIdle}</span>
+                        <Switch
+                          size="sm"
+                          checked={settings.jelly.idle}
+                          disabled={!settings.jelly.enabled}
+                          onCheckedChange={(v) => patch("jelly", { idle: v })}
+                        />
                       </div>
                     </>
                   ) : l.id === "physics" ? (

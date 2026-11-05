@@ -254,11 +254,17 @@ export type SceneSettings = {
   }
   /**
    * Jelly eyes (果冻眼). Live in the engine (Engine.setModelJellyEyes): the
-   * irises squash on a blink and swell as she moves, then wobble back. A toggle,
-   * reached from the palette only; the engine owns how much they give.
+   * irises squash on a blink and swell as she moves, then wobble back.
    */
   jelly: {
     enabled: boolean
+    /** How much they give: 0 still, 1 the intended bounce, up to 2. */
+    strength: number
+    /** Whether her head's motion knocks them, or only her blinks do. */
+    motion: boolean
+    /** The breathing between blinks: a ripple every 4–8 s and the highlight's
+     *  tremble. */
+    idle: boolean
   }
 }
 
@@ -369,7 +375,7 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
 export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false }
 
 /** Same for jelly eyes: every scene before them had still ones. */
-export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false }
+export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false, strength: 1, motion: true, idle: true }
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the
  *  variation derived from them cannot drift apart. */

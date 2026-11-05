@@ -1,9 +1,9 @@
 "use client"
 
 // Published scenes, as a streaming service sets its home: a spotlight of what
-// is trending, then rows of covers that scroll sideways; a pause on a cover
-// grows it into a preview in place (open, fork, like, who and what), and a
-// click opens the scene. A section, a row, a tag or a maker seen whole is a
+// is trending, then rows of covers that scroll sideways; a pause or a click
+// on a cover grows it into a preview in place (open, fork, like, who and
+// what), whose Open opens the scene. A section, a row, a tag or a maker seen whole is a
 // grid of the same covers.
 //
 // Opening one IS a navigation — a scene is a whole document, and the address
@@ -29,7 +29,6 @@ import {
 import { Cover } from "@/components/ui/cover"
 import { Input } from "@/components/ui/input"
 import { useLibraryStats } from "@/hooks/use-library-stats"
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SignInDialog } from "@/components/editor/account-panel"
 import { useReport } from "@/hooks/use-report"
@@ -638,13 +637,6 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     if (typeof window !== "undefined" && window.location.pathname === "/") window.location.reload()
   }
 
-  const openScene = (s: GalleryScene) => {
-    // Client-side, in this tab. A second tab would mean a second live WebGPU
-    // device and a second copy of the models in VRAM — and since the viewer's
-    // "open in editor" navigates as well, browsing that way stacks up editors.
-    // The route is prefetched on select, so this is usually a paint.
-    router.push(sceneHref(s))
-  }
 
 
   const remove = (s: GalleryScene) => setConfirming(s)
@@ -880,24 +872,25 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   }, [hidePreview])
 
   /** One cover: the picture, its name and maker under it. A pause over it, a
-   *  click or focus grows the preview, whose Open opens the scene; Enter opens
-   *  it from the keyboard. Your own keep
-   *  their menu: open, edit, delete. */
-  const card = (s: GalleryRow, wide?: boolean) => {
-    const node = (
+   *  click, or arriving on it from the keyboard grows the preview, whose Open
+   *  opens the scene; Enter opens it from the keyboard. The cover is neither
+   *  dragged nor right-clicked: the preview holds everything it offers. */
+  const card = (s: GalleryRow, wide?: boolean) => (
       <div key={s.id} className={cn("flex shrink-0 flex-col gap-2", wide ? "w-full" : "w-[calc((100vw-10.75rem)/6.3)] compact:w-[44vw]")}>
         <Link
           href={sceneHref(s)}
           data-card={s.id}
+          draggable={false}
+          onContextMenu={(e) => e.preventDefault()}
           onMouseEnter={(e) => showPreview(s, e.currentTarget)}
           onMouseLeave={() => hidePreview()}
-          onFocus={(e) => showPreview(s, e.currentTarget)}
-          onBlur={() => hidePreview()}
+          onFocus={(e) => {
+            if (e.currentTarget.matches(":focus-visible")) showPreview(s, e.currentTarget)
+          }}
           onPointerDown={() => router.prefetch(sceneHref(s))}
-          // The cover is a picture, not a door: a click (or a phone's tap, with
-          // no hover) grows the preview at once, before its pause is up, and
-          // its Open opens. Enter still opens, and a modified click still
-          // opens a new tab.
+          // The cover is a picture, not a door: a click grows the preview at
+          // once, before its pause is up, and its Open opens. Enter still
+          // opens, and a modified click still opens a new tab.
           onClick={(e) => {
             if (e.detail === 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
             e.preventDefault()
@@ -915,23 +908,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           </span>
         </div>
       </div>
-    )
-    if (!s.mine) return node
-    return (
-      <ContextMenu key={s.id}>
-        <ContextMenuTrigger asChild>{node}</ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
-          <ContextMenuItem onSelect={() => openScene(s)}>{t.gallery.open}</ContextMenuItem>
-          {/* YOUR OWN SCENE, BACK IN THE EDITOR TO CORRECT IT: publishing from
-              there updates this row, so the link, likes and pin stay with it. */}
-          <ContextMenuItem onSelect={() => editScene(s)}>{t.gallery.editPublished}</ContextMenuItem>
-          <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
-            {t.library.deletePublished}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-    )
-  }
+  )
 
   const sectionWord = (key: NonNullable<typeof section>, label: string) => (
     <Button
@@ -1087,6 +1064,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
               onLike={(id) => void toggleLike(id)}
               onFork={requestFork}
               onEdit={editScene}
+              onRemove={remove}
               onTag={(tag) => go(`tag:${tag}`)}
             />
           </div>
@@ -1130,14 +1108,18 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
 const CLOSE_MS = 233
 /** A pause on a cover before it grows; longer while another is closing. */
 const DWELL_MS = 200
+/** How long after the last scroll a pause starts counting again: a cover
+ *  sliding under a still pointer is not one being looked at. */
+const SETTLE_MS = 200
 
 type PreviewApi = { show: (s: GalleryRow, card: HTMLElement, now?: boolean) => void; hide: (now?: boolean) => void }
 
 /**
  * The preview a cover grows into. It starts ON the card (same place, size and
  * picture, so the hand-off is invisible), then opens to its size; it shrinks
- * back onto its card before it goes, and before another one opens. Its state
- * is its own, so none of this re-renders the page.
+ * back onto its card before it goes, and before another one opens. The
+ * pointer leaving it, a click elsewhere, Esc, any scroll or a resize lets it
+ * go. Its state is its own, so none of this re-renders the page.
  */
 function PreviewLayer({
   ref,
@@ -1151,10 +1133,11 @@ function PreviewLayer({
   onLike,
   onFork,
   onEdit,
+  onRemove,
   onTag,
 }: {
   ref: React.Ref<PreviewApi>
-  /** A phone or tablet: a tap opens it, a tap anywhere else lets it go. */
+  /** A phone or tablet: it opens to a little past its card. */
   touch: boolean
   contentRef: React.RefObject<HTMLDivElement | null>
   scrollRef: React.RefObject<HTMLDivElement | null>
@@ -1165,6 +1148,7 @@ function PreviewLayer({
   onLike: (id: string) => void
   onFork: (s: GalleryScene) => void
   onEdit: (s: GalleryScene) => void
+  onRemove: (s: GalleryScene) => void
   onTag: (tag: string) => void
 }) {
   const t = useT()
@@ -1175,6 +1159,10 @@ function PreviewLayer({
   /** The transform that lays the preview on its card. */
   const onCard = useRef("")
   const open = useRef<HTMLElement | null>(null)
+  /** When the page last scrolled, and until when its scrolling is the
+   *  preview's own (bringing its foot on screen). */
+  const scrolledAt = useRef(0)
+  const ownScroll = useRef(0)
 
   useEffect(
     () => () => {
@@ -1183,20 +1171,21 @@ function PreviewLayer({
     },
     [],
   )
+  /** Back down onto its card, then gone. */
+  const shut = useCallback(() => {
+    const pop = popRef.current
+    open.current = null
+    if (!pop || !onCard.current) return setCur(null)
+    pop.setAttribute("data-closing", "")
+    pop.removeAttribute("data-open")
+    pop.style.transform = onCard.current
+    leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
+  }, [])
   useImperativeHandle(ref, () => {
-    // Back down onto its card, then gone.
-    const shut = () => {
-      const pop = popRef.current
-      open.current = null
-      if (!pop || !onCard.current) return setCur(null)
-      pop.setAttribute("data-closing", "")
-      pop.removeAttribute("data-open")
-      pop.style.transform = onCard.current
-      leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
-    }
     return {
       show: (s: GalleryRow, card: HTMLElement, now = false) => {
         clearTimeout(dwell.current)
+        if (!now && performance.now() - scrolledAt.current < SETTLE_MS) return
         if (open.current === card) return clearTimeout(leaving.current)
         // Another is open: it closes first, then this one grows.
         const busy = open.current !== null
@@ -1218,7 +1207,7 @@ function PreviewLayer({
         else leaving.current = window.setTimeout(shut, 120)
       },
     }
-  }, [])
+  }, [shut])
 
   useLayoutEffect(() => {
     const pop = popRef.current
@@ -1248,49 +1237,69 @@ function PreviewLayer({
     pop.setAttribute("data-open", "")
     // Whole on screen: if its foot falls below the window, the page comes up.
     const below = top + pop.offsetHeight + 16 - window.innerHeight
-    if (below > 0) scrollRef.current?.scrollBy({ top: below, behavior: "smooth" })
+    if (below > 0) {
+      ownScroll.current = performance.now() + 800
+      scrollRef.current?.scrollBy({ top: below, behavior: "smooth" })
+    }
   }, [cur, contentRef, scrollRef, touch])
 
-  // On a phone a tap elsewhere lets it go: there is no pointer to leave it.
+  // Any scroll, the page's or a row's, lets it go and holds new ones back until
+  // it settles: a wheel moves covers under a pointer that never left, and no
+  // leave fires for that. The preview's own scroll into view is not one.
   useEffect(() => {
-    if (!touch || !cur) return
+    const scrolled = (e: Event) => {
+      const at = e.target as Node | null
+      if (popRef.current?.contains(at)) return
+      if (at === scrollRef.current && performance.now() < ownScroll.current) return
+      scrolledAt.current = performance.now()
+      clearTimeout(dwell.current)
+      if (open.current) shut()
+    }
+    document.addEventListener("scroll", scrolled, true)
+    return () => document.removeEventListener("scroll", scrolled, true)
+  }, [shut, scrollRef])
+
+  // A press anywhere else lets it go; a press on a cover is that cover's own
+  // click. A resize leaves it off its card.
+  useEffect(() => {
+    if (!cur) return
     const away = (e: PointerEvent) => {
       const at = e.target as Element | null
       if (popRef.current?.contains(at) || at?.closest?.("[data-card]")) return
-      open.current = null
-      setCur(null)
+      clearTimeout(dwell.current)
+      shut()
+    }
+    const resized = () => {
+      if (open.current) shut()
     }
     document.addEventListener("pointerdown", away)
-    return () => document.removeEventListener("pointerdown", away)
-  }, [touch, cur])
+    window.addEventListener("resize", resized)
+    return () => {
+      document.removeEventListener("pointerdown", away)
+      window.removeEventListener("resize", resized)
+    }
+  }, [cur, shut])
 
   if (!cur) return null
   const s = cur.s
   const keep = () => clearTimeout(leaving.current)
   const leave = () => {
     clearTimeout(dwell.current)
-    leaving.current = window.setTimeout(() => {
-      const pop = popRef.current
-      open.current = null
-      if (!pop) return setCur(null)
-      pop.setAttribute("data-closing", "")
-      pop.removeAttribute("data-open")
-      pop.style.transform = onCard.current
-      leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
-    }, 120)
+    leaving.current = window.setTimeout(shut, 120)
   }
   return (
     <div
       ref={popRef}
       onMouseEnter={keep}
       onMouseLeave={leave}
+      onContextMenu={(e) => e.preventDefault()}
       className="gallery-pop absolute z-20 overflow-hidden rounded-interior"
     >
       {/* A picture, not a door: Open is the one way into the scene. */}
       <div className="aspect-video overflow-hidden">
         {s.poster && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={s.poster} alt="" className="size-full object-cover object-[50%_20%]" />
+          <img src={s.poster} alt="" draggable={false} className="size-full object-cover object-[50%_20%]" />
         )}
       </div>
       <div data-pop-body className="px-3.5 pt-3 pb-3.5">
@@ -1310,9 +1319,14 @@ function PreviewLayer({
           )}
           <LibraryLike likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
           {s.mine && (
-            <Button variant="bare" onClick={() => onEdit(s)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
-              {t.gallery.editPublished}
-            </Button>
+            <>
+              <Button variant="bare" onClick={() => onEdit(s)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+                {t.gallery.editPublished}
+              </Button>
+              <Button variant="bare" onClick={() => onRemove(s)} className="h-8 text-xs text-muted-foreground hover:text-red-400">
+                {t.library.deletePublished}
+              </Button>
+            </>
           )}
           <VideoLink url={s.video} className="ml-auto h-7 px-2 text-2xs [&_svg]:size-3.5" />
         </div>
@@ -1379,6 +1393,7 @@ function CardCover({ src, root }: { src: string; root: React.RefObject<HTMLDivEl
       src={near ? src : undefined}
       alt=""
       decoding="async"
+      draggable={false}
       onLoad={(e) => e.currentTarget.setAttribute("data-loaded", "")}
       className="size-full object-cover object-[50%_20%] opacity-0 transition-opacity duration-233 data-loaded:opacity-100"
     />
