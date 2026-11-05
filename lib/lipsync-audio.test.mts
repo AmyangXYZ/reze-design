@@ -55,6 +55,13 @@ function curve(keys: MorphKeyframe[] | undefined, frames: number): Float32Array 
   return c
 }
 
+/** How open the mouth is per frame: every vowel track, summed. */
+function mouthOf(tracks: Map<string, MorphKeyframe[]>, frames: number): Float32Array {
+  const m = new Float32Array(frames)
+  for (const keys of tracks.values()) curve(keys, frames).forEach((w, f) => (m[f] += w))
+  return m
+}
+
 /** The first and last frame the mouth is open. */
 function openSpan(c: Float32Array): [number, number] | null {
   let first = -1
@@ -72,20 +79,21 @@ function openSpan(c: Float32Array): [number, number] | null {
 
 {
   const { tracks, frameCount } = lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }]))
-  const span = openSpan(curve(tracks.get("あ"), frameCount))
+  const span = openSpan(mouthOf(tracks, frameCount))
   check("a sung second opens the mouth", span !== null)
   // The window is centred on each frame's time: the mouth opens ON the voice.
   // Before that fix it opened a frame and a half early.
   check("it opens on the frame the voice starts", !!span && Math.abs(span[0] - 2 * FPS) <= 1, `frame ${span?.[0]}, voice at ${2 * FPS}`)
-  check("and closes within two frames of it stopping", !!span && Math.abs(span[1] - 3 * FPS) <= 2, `frame ${span?.[1]}, voice ends ${3 * FPS}`)
+  // It closes as a hand-keyed mouth does: over a fifth of a second once she stops.
+  check("and is shut within 0.3 s of it stopping", !!span && span[1] >= 3 * FPS && span[1] - 3 * FPS <= 9, `frame ${span?.[1]}, voice ends ${3 * FPS}`)
   check("the track spans the song", frameCount === 5 * FPS, `${frameCount} frames`)
 }
 
 {
-  const r48 = openSpan(curve(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }])).tracks.get("あ"), 150))
-  const r44 = openSpan(curve(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }], 44100)).tracks.get("あ"), 150))
+  const r48 = openSpan(mouthOf(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }])).tracks, 150))
+  const r44 = openSpan(mouthOf(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }], 44100)).tracks, 150))
   check("44.1 kHz times it the same", !!r48 && !!r44 && Math.abs(r48[0] - r44[0]) <= 1, `${r44?.[0]} vs ${r48?.[0]}`)
-  const mono = openSpan(curve(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }], 48000, 1)).tracks.get("あ"), 150))
+  const mono = openSpan(mouthOf(lipSyncFromAudio(song(5, [{ t0: 2, t1: 3, vibrato: true }], 48000, 1)).tracks, 150))
   check("a mono file times it the same", !!r48 && !!mono && Math.abs(r48[0] - mono[0]) <= 1, `${mono?.[0]} vs ${r48?.[0]}`)
 }
 
@@ -94,6 +102,22 @@ function openSpan(c: Float32Array): [number, number] | null {
   check("silence opens nothing", tracks.size === 0)
   const steady = lipSyncFromAudio(song(4, [{ t0: 1, t1: 3, vibrato: false }])).tracks
   check("a held steady tone opens nothing", steady.size === 0, `${[...steady.keys()].join(", ")}`)
+}
+
+{
+  // Syllables of one phrase, 0.2 s apart: the mouth sinks between them and does
+  // not shut; a second phrase after a full second's rest starts from shut.
+  const parts: Part[] = []
+  for (let i = 0; i < 6; i++) parts.push({ t0: 1 + i * 0.4, t1: 1.2 + i * 0.4, vibrato: true })
+  parts.push({ t0: 4.4, t1: 4.8, vibrato: true })
+  const { tracks, frameCount } = lipSyncFromAudio(song(6, parts))
+  const m = mouthOf(tracks, frameCount)
+  const inside = m.slice(1.25 * FPS, 3.0 * FPS)
+  check("inside a phrase the mouth stays open between syllables", inside.every((w) => w > 0.02), `lowest ${Math.min(...inside).toFixed(3)}`)
+  check("between phrases it shuts", m.slice(3.6 * FPS, 4.2 * FPS).some((w) => w <= 0.02))
+  check("syllables wear more than one vowel", tracks.size > 1, [...tracks.keys()].join(" "))
+  const again = lipSyncFromAudio(song(6, parts)).tracks
+  check("the same song gets the same mouth", JSON.stringify([...again]) === JSON.stringify([...tracks]))
 }
 
 // ── Lip sync from the lyrics and the music ──
