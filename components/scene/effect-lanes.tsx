@@ -18,6 +18,7 @@
 // track to place the playhead is followed by a paste there.
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -36,7 +37,8 @@ import {
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 import type { EffectWindow } from "@/lib/effect-schedule"
-import { FX_FRAMES, type FadeCurve } from "@/lib/timeline"
+import { FPS } from "@/lib/clip"
+import type { FadeCurve } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 /** One row, the Effects list's `h-6`, so the list and the lanes scroll as one. */
@@ -91,16 +93,13 @@ export type EffectLanesApi = {
   copy: () => void
   paste: () => void
   remove: () => void
-  /** Which ends of the picked clips dissolve, and whether stepped: each true
-   *  only when every picked clip has it. */
+  /** Whether any picked clip dissolves, and whether every one is stepped. */
   ramped: () => Ramped
-  /** Turn one end's dissolve on for the picked clips, or off if all have it. */
-  fade: (end: "in" | "out") => void
   /** Make the picked clips' dissolves stepped, or smooth if all already are. */
   stepped: () => void
 }
 
-type Ramped = { in: boolean; out: boolean; steps: boolean; any: boolean }
+type Ramped = { steps: boolean; any: boolean }
 
 type Span = { start: number; end: number }
 /** Ramp lengths in frames, as a block draws them. */
@@ -243,7 +242,7 @@ export function EffectLanes<T extends LaneRow>({
     effectsRef.current = effects
   })
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [preview, setPreview] = useState<{ uid: string; index: number; span: Span; fade?: Fade } | null>(null)
+  const [preview, setPreview] = useState<{ uid: string; index: number; span: Span; fade?: Fade; knob?: "fadeIn" | "fadeOut" } | null>(null)
   const previewRef = useRef(preview)
   /** Whether the last press in the band was on a block, for what the menu enables. */
   const menuOnClip = useRef(false)
@@ -389,7 +388,7 @@ export function EffectLanes<T extends LaneRow>({
         d.grab === "fadeIn"
           ? { in: Math.max(0, Math.min(length - d.fade.out, Math.round(d.fade.in + df))), out: d.fade.out }
           : { in: d.fade.in, out: Math.max(0, Math.min(length - d.fade.in, Math.round(d.fade.out - df))) }
-      previewRef.current = { uid: d.uid, index: d.index, span: from, fade }
+      previewRef.current = { uid: d.uid, index: d.index, span: from, fade, knob: d.grab }
       setPreview(previewRef.current)
       return
     }
@@ -538,10 +537,10 @@ export function EffectLanes<T extends LaneRow>({
   }
 
   /**
-   * The dissolve, from the menu: which ends, and their shape. Their lengths
-   * are the knobs' (one at each top corner of a block). On a model's lane the
-   * ramps ARE the dissolve — she assembles over the first frames of a clip and
-   * comes apart over the last — and on an effect's they are its fade.
+   * The dissolve's shape, from the menu. Which ends and how long are the
+   * knobs' (one at each top corner of a block). On a model's lane the ramps
+   * ARE the dissolve — she assembles over the first frames of a clip and comes
+   * apart over the last — and on an effect's they are its fade.
    */
   const editPicked = (edit: (w: LaneWindow) => LaneWindow) => {
     const items = picked()
@@ -560,21 +559,9 @@ export function EffectLanes<T extends LaneRow>({
     const items = picked()
     const all = (f: (w: LaneWindow) => boolean) => items.length > 0 && items.every((b) => f(b.w))
     return {
-      in: all((w) => fadeOf(w).in > 0),
-      out: all((w) => fadeOf(w).out > 0),
       steps: all((w) => w.curve === "steps"),
       any: items.some((b) => fadeOf(b.w).in > 0 || fadeOf(b.w).out > 0),
     }
-  }
-  /** One end on at the default length (half the clip at most, so a short clip
-   *  ramps for as long as it can), keeping one already there; or off. */
-  const fadeSelected = (end: "in" | "out") => {
-    const on = !rampedNow()[end]
-    editPicked((w) => {
-      const fade = fadeOf(w)
-      const len = Math.max(1, Math.min(FX_FRAMES, Math.floor((endOf(w, frameCount) - w.start) / 2)))
-      return withFade(w, { ...fade, [end]: on ? fade[end] || len : 0 }, frameCount)
-    })
   }
   const stepSelected = () => {
     const steps = !rampedNow().steps
@@ -673,7 +660,6 @@ export function EffectLanes<T extends LaneRow>({
         paste,
         remove: removeSelected,
         ramped: rampedNow,
-        fade: fadeSelected,
         stepped: stepSelected,
       }
   })
@@ -727,6 +713,7 @@ export function EffectLanes<T extends LaneRow>({
                 const live = preview && preview.uid === uid && preview.index === i ? preview.span : spanOf(w, frameCount)
                 const length = Math.max(1, live.end - live.start)
                 const fade = preview && preview.uid === uid && preview.index === i && preview.fade ? preview.fade : fadeOf(w)
+                const knobbing = preview && preview.uid === uid && preview.index === i ? preview.knob : undefined
                 const width = Math.max(3, length * pxPerFrame)
                 const isSelected = selected.has(keyOf(uid, i))
                 return (
@@ -763,7 +750,12 @@ export function EffectLanes<T extends LaneRow>({
                         style={{ width: `${Math.min(100, (fade.out / length) * 100)}%` }}
                       />
                     )}
-                    <span className="pointer-events-none relative min-w-0 truncate text-2xs leading-none text-foreground">
+                    <span
+                      className={cn(
+                        "pointer-events-none relative min-w-0 truncate text-2xs leading-none text-foreground",
+                        knobbing && "invisible",
+                      )}
+                    >
                       {effect.name}
                     </span>
                     <span
@@ -780,20 +772,34 @@ export function EffectLanes<T extends LaneRow>({
                         end's ramp in from the edge, and back to zero takes it off. */}
                     {width >= KNOB * 3 &&
                       (["fadeIn", "fadeOut"] as const).map((grab) => {
-                        const px = (grab === "fadeIn" ? fade.in : fade.out) * pxPerFrame
+                        const frames = grab === "fadeIn" ? fade.in : fade.out
+                        const px = frames * pxPerFrame
                         const at = Math.max(0, Math.min(width - KNOB, px - KNOB / 2))
+                        const side = grab === "fadeIn" ? "left" : "right"
+                        // While it drags, its length reads out beside it in
+                        // seconds and frames, inward of the knob.
+                        const reading = knobbing === grab
                         return (
-                          <span
-                            key={grab}
-                            onPointerDown={down(uid, i, grab)}
-                            className={cn(
-                              "absolute top-0 z-20 flex cursor-ew-resize items-start justify-center",
-                              px > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                          <Fragment key={grab}>
+                            <span
+                              onPointerDown={down(uid, i, grab)}
+                              className={cn(
+                                "absolute top-0 z-20 flex cursor-ew-resize items-start justify-center",
+                                px > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                              )}
+                              style={{ width: KNOB, height: KNOB, [side]: at }}
+                            >
+                              <span className="mt-px size-1.5 rounded-full bg-foreground" />
+                            </span>
+                            {reading && (
+                              <span
+                                className="pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 font-mono text-2xs whitespace-nowrap text-foreground tabular-nums"
+                                style={{ [side]: at + KNOB + 2 }}
+                              >
+                                {(frames / FPS).toFixed(2)}s · {frames}f
+                              </span>
                             )}
-                            style={{ width: KNOB, height: KNOB, [grab === "fadeIn" ? "left" : "right"]: at }}
-                          >
-                            <span className="mt-px size-1.5 rounded-full bg-foreground" />
-                          </span>
+                          </Fragment>
                         )
                       })}
                   </div>
@@ -822,7 +828,7 @@ export function EffectLanesMenu({
   children: ReactElement
 }) {
   const t = useT()
-  const none: Ramped = { in: false, out: false, steps: false, any: false }
+  const none: Ramped = { steps: false, any: false }
   const [can, setCan] = useState<{ clip: boolean; paste: boolean; split: boolean; ramped: Ramped }>({
     clip: false,
     paste: false,
@@ -856,12 +862,6 @@ export function EffectLanesMenu({
           {t.lab.timeline.split}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.fade("in")}>
-          {can.ramped.in ? `✓ ${t.lab.timeline.fxDissolveIn}` : t.lab.timeline.fxDissolveIn}
-        </ContextMenuItem>
-        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.fade("out")}>
-          {can.ramped.out ? `✓ ${t.lab.timeline.fxDissolveOut}` : t.lab.timeline.fxDissolveOut}
-        </ContextMenuItem>
         <ContextMenuItem disabled={!can.clip || !can.ramped.any} onSelect={() => apiRef.current?.stepped()}>
           {can.ramped.steps ? `✓ ${t.lab.timeline.fxSteps}` : t.lab.timeline.fxSteps}
         </ContextMenuItem>
