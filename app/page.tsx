@@ -1695,6 +1695,10 @@ const clipLabel = (name: string) => name.split("/").pop() || name
 /** What a dropped file has to be named to land in a slot — the pickers'
  *  `accept`, which a drop does not go through. */
 const VMD_FILE = /\.vmd$/i
+/** A media card or a flat backdrop: a still, an animated image or a video. */
+const MEDIA_FILE = /\.(png|jpe?g|webp|gif|apng|mp4|webm|mov)$/i
+/** A custom footstep sound: any sound, the audio of a video included. */
+const SOUND_FILE = /\.(mp3|m4a|mp4|aac|wav|ogg|opus|flac|webm|mov)$/i
 const MUSIC_FILE = /\.(mp3|m4a|mp4|aac|wav|ogg|opus|flac)$/i
 
 /**
@@ -1956,6 +1960,7 @@ function CastMemberRow({
   onBloom,
   onReset,
   onReplace,
+  onReplaceFiles,
   onRemove,
 }: {
   /** 1-based, as the row prints it. */
@@ -1989,11 +1994,14 @@ function CastMemberRow({
   /** Back to where the model rests: origin, unturned, life size. */
   onReset: () => void
   onReplace: () => void
+  /** A model folder dragged onto the row: the same replace, without the picker. */
+  onReplaceFiles?: (files: File[]) => void
   onRemove: () => void
 }) {
   const t = useT()
   const cover = useCover()
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const drop = useFileDrop(onReplaceFiles)
   const at = position ?? [0, 0, 0]
   const turn = rotation ?? [0, 0, 0]
   // Whether this scene has moved the model — the same question the effect
@@ -2008,11 +2016,18 @@ function CastMemberRow({
     <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
       <PopoverAnchor asChild>
         <div
+          {...drop.props}
           // Not a button: materials open from the palette alone, so a whole-row
           // click target would promise an edit surface the row does not own. The
           // tint still marks which model the open panel is editing; on the
           // cover the name's weight does.
-          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && !cover && "bg-white/5")}
+          className={cn(
+            "flex h-8 items-center gap-2.5 px-4 outline-1 -outline-offset-1 transition-[outline-color,background-color]",
+            inspected && !cover && "bg-white/5",
+            // Rounded only while it is a target, so the inspected tint keeps
+            // its square ends.
+            drop.over ? "rounded-chip outline-foreground" : "outline-transparent",
+          )}
         >
           <span className="w-3.5 shrink-0 text-center font-mono text-xs text-muted-foreground">{slot}</span>
           <span className="flex min-w-0 flex-1 flex-col">
@@ -2997,6 +3012,21 @@ function Lab() {
   // Music follows the model clock — the exact mirror main uses, shared. Silent
   // while an export runs; the export mixes its own audio.
   const planeInput = useRef<HTMLInputElement | null>(null)
+  /** Images and videos dropped on the media line: a card each, the last one
+   *  selected, as a pick selects the card it made. */
+  const dropPlanes = (files: File[]) => {
+    const media = files.filter((f) => MEDIA_FILE.test(f.name))
+    if (!media.length) {
+      toast.error(files[0].name.split("/").pop() ?? files[0].name, { description: t.lab.dropRefused(t.lab.kinds.plane) })
+      return
+    }
+    void (async () => {
+      for (const file of media) {
+        const id = await addPlaneFromFile(file)
+        if (id) setSelectedPlane(id)
+      }
+    })()
+  }
   /** Which card's controls the section is showing. */
   const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
   const [selectedProp, setSelectedProp] = useState<string | null>(null)
@@ -3357,6 +3387,24 @@ function Lab() {
       }),
     [],
   )
+  /** A custom footstep sound — from its picker or dropped on the footsteps
+   *  row. Checked against lib/footsteps' limits before it is worn. */
+  const takeFootstepFile = (file: File) => {
+    void checkFootstepFile(file).then((r) => {
+      if (r.error) {
+        const why =
+          r.error === "size"
+            ? t.lab.footstepRefused.size(CUSTOM_FOOTSTEP_MAX_BYTES / (1024 * 1024))
+            : r.error === "length"
+              ? t.lab.footstepRefused.length(CUSTOM_FOOTSTEP_MAX_SECONDS)
+              : t.lab.footstepRefused.decode
+        toast.error(file.name, { description: why })
+        return
+      }
+      installFootstepFile(file)
+      patch("audio", { footstepsSound: "custom" })
+    })
+  }
   const { sun, world, bloom, dof, grade, ground, physics, view, audio } = settings
   // The track's analysis (rzAudio*) and its mixed level — the shared half of
   // playing a scene's music, the same one the viewer runs.
@@ -8082,21 +8130,7 @@ function Lab() {
         onChange={(e) => {
           const file = e.target.files?.[0]
           e.target.value = ""
-          if (!file) return
-          void checkFootstepFile(file).then((r) => {
-            if (r.error) {
-              const why =
-                r.error === "size"
-                  ? t.lab.footstepRefused.size(CUSTOM_FOOTSTEP_MAX_BYTES / (1024 * 1024))
-                  : r.error === "length"
-                    ? t.lab.footstepRefused.length(CUSTOM_FOOTSTEP_MAX_SECONDS)
-                    : t.lab.footstepRefused.decode
-              toast.error(file.name, { description: why })
-              return
-            }
-            installFootstepFile(file)
-            patch("audio", { footstepsSound: "custom" })
-          })
+          if (file) takeFootstepFile(file)
         }}
       />
 
@@ -8619,6 +8653,7 @@ function Lab() {
                     setCastPosition(m.id, [0, 0, 0])
                   }}
                   onReplace={() => pickModel({ mode: "replace", id: m.id })}
+                  onReplaceFiles={ready ? (files) => dropModel({ mode: "replace", id: m.id }, files) : undefined}
                   onRemove={() => removeCastMember(m.id)}
                 />
               ))}
@@ -8858,6 +8893,9 @@ function Lab() {
                     ],
                   }}
                   onRemove={() => patch("audio", { footsteps: false })}
+                  // A sound dropped on the row is the menu's "upload".
+                  onDropFile={takeFootstepFile}
+                  accept={SOUND_FILE}
                   volume={footstepsVolume}
                   onVolume={(v) => patch("audio", { footstepsVolume: v })}
                 />
@@ -8961,8 +8999,22 @@ function Lab() {
                         const filled = isWorld ? hdri : bgImage?.slot === row.slot ? bgImage : null
                         const pick = () => (row.slot === "world" ? pickHdri() : pickBgImage(row.slot))
                         const clear = () => (isWorld ? swapHdri(null) : swapBgImage(null))
+                        // A dropped file goes where the row's picker would send
+                        // it; the pickers' handlers refuse what the slot cannot use.
+                        const dropOn = (files: File[]) => {
+                          const file = files.find((f) => (isWorld ? /\.hdr$/i.test(f.name) : MEDIA_FILE.test(f.name) || /\.hdr$/i.test(f.name)))
+                          if (!file) {
+                            toast.error(files[0].name.split("/").pop() ?? files[0].name, { description: t.lab.dropRefused(row.kind) })
+                            return
+                          }
+                          if (isWorld) void onHdriPicked(file)
+                          else {
+                            bgImageSlot.current = row.slot
+                            void onBgImagePicked(file)
+                          }
+                        }
                         return (
-                          <div key={row.label} className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
+                          <FileDropArea key={row.label} onFiles={dropOn} className="-mx-4 mt-2.5 flex h-5 min-w-0 items-center gap-2 px-4">
                             <span className="shrink-0 text-xs">{row.label}</span>
                             {filled ? (
                               <>
@@ -8998,7 +9050,7 @@ function Lab() {
                                 />
                               </span>
                             )}
-                          </div>
+                          </FileDropArea>
                         )
                       })}
                     </>
@@ -9400,14 +9452,16 @@ function Lab() {
                           — beside the collection it adds to, and carried along
                           by the same wrap when the row runs to two. */}
                       {planes.length === 0 && (
-                        <Button
-                          variant="bare"
-                          onClick={() => planeInput.current?.click()}
-                          className={LINE_ACTION}
-                        >
-                          <Plus className="size-3.5" />
-                          {t.lab.uploadPlane}
-                        </Button>
+                        <FileDropArea onFiles={dropPlanes} className="-mx-4 flex px-4">
+                          <Button
+                            variant="bare"
+                            onClick={() => planeInput.current?.click()}
+                            className={LINE_ACTION}
+                          >
+                            <Plus className="size-3.5" />
+                            {t.lab.uploadPlane}
+                          </Button>
+                        </FileDropArea>
                       )}
                       {planes.length > 0 && (
                         <>
@@ -9416,7 +9470,7 @@ function Lab() {
                               scroll. The chip is the file it was made from,
                               truncated — a name is what tells two cards apart,
                               and the full one is in the title. */}
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <FileDropArea onFiles={dropPlanes} className="-mx-4 flex flex-wrap items-center gap-1.5 px-4">
                             {planes.map((plane) => {
                               // `?? planes[0]` decides which card the controls
                               // below show, so the chip has to agree: an
@@ -9465,7 +9519,7 @@ function Lab() {
                             >
                               <Plus className="size-3.5" />
                             </Button>
-                          </div>
+                          </FileDropArea>
                           {/* The selected card's own controls. `?? planes[0]`
                               so the section is never a row of chips with
                               nothing under them — the first upload is selected
