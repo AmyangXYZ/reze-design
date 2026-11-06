@@ -9213,6 +9213,18 @@ function Lab() {
                                 fmt={(v) => `${v.toFixed(0)}°`}
                               />
                             ))}
+                            {/* The stage and its parts together, as they
+                                stand and leave together. */}
+                            <div className="mt-1.5 flex items-center justify-between">
+                              <span className="text-2xs">{t.lab.ctl.shadow}</span>
+                              <Switch
+                                size="sm"
+                                checked={models.find((m) => m.id === stage.id)?.castShadow !== false}
+                                onCheckedChange={(on) => {
+                                  for (const s of stages) if (s.id === stage.id || s.partOf === stage.id) setCastShadow(s.id, on)
+                                }}
+                              />
+                            </div>
                           </>
                         )}
                         {/* TWO DOORS, because a stage arrives as two different
