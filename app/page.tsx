@@ -167,7 +167,7 @@ import { BACKING_MAX, usePanelBacking } from "@/hooks/use-panel-backing"
 import { useInkChoice } from "@/hooks/use-ink-choice"
 import { DEFAULT_SCENE_DOC, defaultScene, demoScene, EMPTY_SCENE } from "@/lib/default-scene"
 import { stockEffects, stockGrades, stockGraphs } from "@/lib/stock"
-import { useStockWhole } from "@/hooks/use-stock"
+import { useStock, useStockWhole } from "@/hooks/use-stock"
 import {
   assetsDocOf,
   CAMERA_DEFAULT_FOV,
@@ -3572,12 +3572,20 @@ function Lab() {
   // A built-in grade's name is its ID in the document and a TRANSLATION on
   // screen — the same split main uses. Drafts and community grades are user
   // strings, so they show exactly as authored.
-  const gradeLabel = useCallback((name: string) => stockName("grade", { name }, uiLocale), [uiLocale])
+  // Subscribed, so the names follow the server's shelf when it replaces the copy
+  // saved from the last visit, which is what the editor opens on.
+  const gradeShelf = useStock("grade")
+  const effectShelf = useStock("effect")
+  const gradeLabel = useCallback(
+    (name: string) => stockName("grade", { name }, uiLocale),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stockName reads the shelf
+    [uiLocale, gradeShelf],
+  )
   // An applied effect's shown name: a built-in's translates, anything else is
   // its author's (an effect is a built-in when the library ships one by that name).
   const effectLabel = useCallback(
-    (name: string) => (stockEffects().some((x) => x.name === name) ? stockName("effect", { name }, uiLocale) : name),
-    [uiLocale],
+    (name: string) => (effectShelf.some((x) => x.name === name) ? stockName("effect", { name }, uiLocale) : name),
+    [uiLocale, effectShelf],
   )
   const pickGrade = useCallback(
     // The pin and the spec belong to the grade that WAS chosen, and `patch`
