@@ -9215,8 +9215,8 @@ function Lab() {
                             ))}
                             {/* The stage and its parts together, as they
                                 stand and leave together. */}
-                            <div className="mt-1.5 flex items-center justify-between">
-                              <span className="text-2xs">{t.lab.ctl.shadow}</span>
+                            <div className="mt-2.5 flex items-center justify-between">
+                              <span className="text-xs">{t.lab.ctl.shadow}</span>
                               <Switch
                                 size="sm"
                                 checked={models.find((m) => m.id === stage.id)?.castShadow !== false}
