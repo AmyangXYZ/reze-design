@@ -209,6 +209,18 @@ function merge(old: Page | undefined, fresh: Page): Page {
   }
 }
 
+/** A further page after what is held: a ranking that moved between the two
+ *  requests hands back scenes the reader already has. */
+function append(held: GalleryScene[], more: GalleryScene[]): GalleryScene[] {
+  const seen = new Set(held.map((s) => s.id))
+  return [...held, ...more.filter((s) => !seen.has(s.id))]
+}
+
+/** Each scene once, first place kept. */
+function unique<T extends { id: string }>(list: T[]): T[] {
+  return [...new Map(list.map((s) => [s.id, s] as const)).values()]
+}
+
 /** The first page of a view, merged into what we already had. Shared with anyone
  *  already waiting on the same view. */
 function loadPage(v: Key): Promise<Page> {
@@ -533,7 +545,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const items = useMemo<GalleryRow[]>(() => {
     const merged = view === "all" ? [...scenes, ...newest, ...Object.values(lists).flatMap((l) => l ?? []), ...minePrivate] : scenes
     // Once each: two pages can both hold a scene that moved between them.
-    const once = [...new Map(merged.map((s) => [s.id, s])).values()]
+    const once = unique(merged)
     return once.map((s) => ({ ...s, kind: "scene" as const, owner: "user" as const, mine: mine(s.author) }))
   }, [scenes, newest, lists, minePrivate, view, mine],
   )
@@ -588,7 +600,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         .then((page) => {
           noteVerified(page.scenes)
           const held = pages.get("newest")
-          const next = { scenes: [...(held?.scenes ?? []), ...page.scenes], nextCursor: page.nextCursor }
+          const next = { scenes: append(held?.scenes ?? [], page.scenes), nextCursor: page.nextCursor }
           pages.set("newest", next)
           setNewest(next.scenes)
           setNewestCursor(page.nextCursor)
@@ -610,7 +622,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         // Into the cache as well as the view: pages read once shouldn't be re-read
         // the next time the gallery opens.
         const held = pages.get(view)
-        const next = { scenes: [...(held?.scenes ?? []), ...page.scenes], nextCursor: page.nextCursor }
+        const next = { scenes: append(held?.scenes ?? [], page.scenes), nextCursor: page.nextCursor }
         pages.set(view, next)
         setScenes(next.scenes)
         setCursor(page.nextCursor)
@@ -722,7 +734,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     // Latest takes its pick first, so it runs day by day with nothing skipped;
     // Trending ranks what is left, and still stands first on the page.
     // Each shelf reads its own query, in that query's order.
-    const list = (k: Key) => (k === "newest" ? newest : (lists[k] ?? [])).flatMap((s) => byId.get(s.id) ?? [])
+    const list = (k: Key) => unique((k === "newest" ? newest : (lists[k] ?? [])).flatMap((s) => byId.get(s.id) ?? []))
     shelf("new", t.rail.sortNew, list("newest"), true)
     shelf("hot", t.rail.sortHot, rows, true)
     out.sort((a, b) => Number(b.key === "hot") - Number(a.key === "hot"))
@@ -773,7 +785,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const gridRows = narrowed
     ? rows
     : rank === "new"
-      ? newest.flatMap((s) => byId.get(s.id) ?? []).sort(byDate)
+      ? unique(newest.flatMap((s) => byId.get(s.id) ?? [])).sort(byDate)
       : rows
   const gridTitle = browse.query.trim()
     ? `“${browse.query.trim()}”`
@@ -1159,6 +1171,8 @@ function PreviewLayer({
   /** The transform that lays the preview on its card. */
   const onCard = useRef("")
   const open = useRef<HTMLElement | null>(null)
+  /** When the one shrinking back onto its card is gone. */
+  const closedAt = useRef(0)
   /** When the page last scrolled, and until when its scrolling is the
    *  preview's own (bringing its foot on screen). */
   const scrolledAt = useRef(0)
@@ -1179,6 +1193,7 @@ function PreviewLayer({
     pop.setAttribute("data-closing", "")
     pop.removeAttribute("data-open")
     pop.style.transform = onCard.current
+    closedAt.current = performance.now() + CLOSE_MS
     leaving.current = window.setTimeout(() => setCur(null), CLOSE_MS)
   }, [])
   useImperativeHandle(ref, () => {
@@ -1187,17 +1202,17 @@ function PreviewLayer({
         clearTimeout(dwell.current)
         if (!now && performance.now() - scrolledAt.current < SETTLE_MS) return
         if (open.current === card) return clearTimeout(leaving.current)
-        // Another is open: it closes first, then this one grows.
-        const busy = open.current !== null
-        if (busy) {
+        // Another is open or still closing: it finishes closing, then this
+        // one grows.
+        if (open.current !== null) {
           clearTimeout(leaving.current)
           shut()
         }
+        const closing = Math.max(0, closedAt.current - performance.now())
         dwell.current = window.setTimeout(() => {
-          clearTimeout(leaving.current)
           open.current = card
           setCur({ s, card })
-        }, busy ? CLOSE_MS : now ? 0 : DWELL_MS)
+        }, closing > 0 ? closing + 1 : now ? 0 : DWELL_MS)
       },
       hide: (now = false) => {
         clearTimeout(dwell.current)
@@ -1289,6 +1304,7 @@ function PreviewLayer({
   }
   return (
     <div
+      key={s.id}
       ref={popRef}
       onMouseEnter={keep}
       onMouseLeave={leave}
