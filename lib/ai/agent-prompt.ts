@@ -29,6 +29,7 @@ Building a frame that looks good — where an MMD artist starts, before fine-tun
 - Key: the sun in front of her and to one side, 20–45° up, so the face is lit and the shadow falls across one cheek rather than up the nose. Straight on flattens her; from behind leaves her face in shadow unless that is the mood.
 - Fill: the shadow side of her face 1–2 stops below the lit side. Less reads flat, more reads harsh. The world light is the fill — lower it to deepen shadows rather than dimming the sun.
 - Separation: a lamp behind and above her, opposite the key and often cooler, for a rim; or a background a stop or more apart from her, or of a contrasting hue.
+- Lamps are Blender's point and spot. A spot (type spot, aim_at a part of her) lights only inside its cone: a stage spotlight pooling on her, a hard accent, or a rim that stays off the background. Blend softens its edge; a narrow cone with low blend reads as a theatre spot. No lamp casts a shadow — the sun's is the only one.
 - Grade: a warm key against a cooler world reads as depth; one tint over everything reads flat.
 - Bloom and effects last. Bloom on what is truly bright only — highlights and emissive light — its threshold above lit skin, so faces do not glow.
 - Camera, whenever it is asked for: a narrow field of view (about 20–35°) flatters a figure; eye level or a little above for a portrait, low to make her powerful.

@@ -186,8 +186,13 @@ Media and Skybox share one seat: filling one empties the other.
   that lights the characters only.
 - **Sun** — the key light and the shadow it casts, with colour, strength,
   azimuth and elevation. Low sun gives long shadows and strong rim separation.
-- **Lamps** — point lights you place, shown as markers in the viewport. Stage
-  rigs can also bring spot lamps.
+- **Lamps** — lights you place, shown as markers in the viewport. A lamp's
+  **Type** is Point or Spot, as in Blender. A spot lights only inside its cone:
+  **Cone** is Blender's Spot Size, **Blend** how much of its edge is soft,
+  **Pitch** and **Yaw** where it points, and **Aim at character** points it at
+  the cast's hips. While its panel is open the viewport draws the cone. A spot
+  can throw a **Pattern** (leaves, window, blinds…). Lamps cast no shadow; the
+  sun's is the only one.
 
 A cool world against a warm sun (or the reverse) does most of the work.
 
@@ -599,7 +604,7 @@ pattern stays put when the camera moves. For something the character stands
 | `rzProject(p)` | A world point on screen: `xy` uv, `z` distance, comparable to `depth`, negative behind the camera |
 | `rzCastDistance(uv)` | Screen pixels to the cast's silhouette — 0 on her, positive outside |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | Which object and material drew this pixel (field mounts) |
-| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point |
+| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point — not in `background`/`foreground`, where `rzShadow` is 1, `rzWorldAmbient` is 0 and `rzLightsDiffuse` does not exist; a field effect drawing a solid lights it itself |
 | `rzLightCount()` · `rzLightPos/Color/Radius/Aim/Cone(i)` | The scene's lamps |
 | `rzHash11/21/31/13` · `rzValueNoise(p)` · `rzCurlNoise(p)` · `rzFalloff(d, r)` | Hashes, noise, and a falloff that is exactly 0 at `r` |
 
@@ -961,7 +966,7 @@ Grades, effects and graphs share one lifecycle.
 | --- | --- | --- |
 | Light → World | colour, strength; cast fill colour, strength | 0–2; 0–4 |
 | Light → Sun | shadow, colour, strength, azimuth, elevation | 0–6, 0–360°, 0–90° |
-| Light → Lamps | on, colour, intensity, radius, X/Y/Z | — |
+| Light → Lamps | on, type (point/spot), colour, intensity, radius, X/Y/Z; for a spot: pattern, cone, blend, pitch, yaw, aim at character | cone 1–180°, blend 0–1 |
 | Post → Grade | preset, intensity | 0–1, remembered per preset |
 | Post → Tone | Standard / Filmic / AgX, exposure | — |
 | Post → Bloom | intensity, threshold, radius | 0 = off |

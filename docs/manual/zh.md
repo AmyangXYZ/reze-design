@@ -157,7 +157,7 @@ reze-engine（渲染与物理）、[Reze Studio](https://github.com/AmyangXYZ/re
 - **环境光**：场景整体所处的环境光，以及只照亮角色的 **角色补光**。
 - **太阳**：主光和它投下的阴影，可调颜色、强度、方位角和仰角。太阳低时阴影长、轮廓分离
   明显。
-- **灯**：自己放置的点光源，在视图中显示为标记。舞台灯光配置也可以带入聚光灯。
+- **灯**：自己放置的灯，在视图中显示为标记。和 Blender 一样，**类型**分点光和聚光。聚光只照亮光锥以内：**光锥**即 Blender 的聚光大小，**边缘柔化**是边缘有多软，**俯仰**和**偏航**决定朝向，**对准角色**会让它对准角色的胯部。打开灯的面板时，视图中会画出光锥。聚光还可以投射**图案**（树影、窗格、百叶等）。灯不投射阴影，只有太阳有阴影。
 
 冷色环境光配暖色太阳（或反过来）通常就能得到好的效果。
 
@@ -508,7 +508,7 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 | `rzProject(p)` | 世界点在屏幕上的位置：`xy` 为 uv，`z` 为距离，可与 `depth` 比较，在相机后方为负 |
 | `rzCastDistance(uv)` | 到角色轮廓的屏幕像素距离：角色上为 0，外部为正 |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | 此像素由哪个物体和材质绘制（场挂载点） |
-| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | 某点的太阳阴影、环境光和灯光 |
+| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | 某点的太阳阴影、环境光和灯光；`background`/`foreground` 中不可用：`rzShadow` 恒为 1，`rzWorldAmbient` 恒为 0，`rzLightsDiffuse` 不存在，在其中绘制实体的特效需要自己打光 |
 | `rzLightCount()` · `rzLightPos/Color/Radius/Aim/Cone(i)` | 场景中的灯 |
 | `rzHash11/21/31/13` · `rzValueNoise(p)` · `rzCurlNoise(p)` · `rzFalloff(d, r)` | 哈希、噪声，以及在 `r` 处恰好为 0 的衰减 |
 
@@ -838,7 +838,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | --- | --- | --- |
 | 灯光 → 环境光 | 颜色、强度；角色补光颜色、强度 | 0–2；0–4 |
 | 灯光 → 太阳 | 阴影、颜色、强度、方位角、仰角 | 0–6、0–360°、0–90° |
-| 灯光 → 灯 | 开关、颜色、强度、半径、X/Y/Z | — |
+| 灯光 → 灯 | 开关、类型（点光/聚光）、颜色、强度、半径、X/Y/Z；聚光另有图案、光锥、边缘柔化、俯仰、偏航、对准角色 | 光锥 1–180°，边缘柔化 0–1 |
 | 后期 → 调色 | 预设、强度 | 0–1，按预设分别记住 |
 | 后期 → 色调 | Standard / Filmic / AgX、曝光 | — |
 | 后期 → 泛光 | 强度、阈值、半径 | 0 为关闭 |

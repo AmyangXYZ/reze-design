@@ -450,9 +450,31 @@ await test("add_lamp: defaults, clamps, spot from an aim, keys in frames", async
   assert.equal(l.name, "Rim")
   assert.deepEqual(l.position, [0, 100, 0])
   assert.equal(l.intensity, 1000)
-  assert.equal(l.angle, 40, "a spot gets a default cone")
+  assert.equal(l.angle, 45, "a spot gets a default cone")
+  assert.deepEqual(l.aim, [0, -1, 0], "aim is a point; the lamp stores the direction to it")
   assert.deepEqual(l.track?.intensity, [[0, 0], [120, 60]], "keys sorted, seconds to frames")
   assert.deepEqual(l.track?.color, [[30, "#ff0000"]], "a bad colour key is dropped")
+})
+
+await test("spot lamps the way Blender sets them: type, aim_at, pitch/yaw, Spot Size, Blend", async () => {
+  const { h, state } = fake()
+  // No engine in the fake, so aim_at falls back to where the camera looks.
+  await runSceneTool("add_lamp", { name: "Key", position: [0, 11, -20], type: "spot", aim_at: "hips", angle: 300, blend: 0.5 }, h)
+  let l = state.lamps[0]
+  assert.deepEqual(l.aim, [0, 0, 1], "turned to face the camera's target")
+  assert.equal(l.angle, 180, "Spot Size clamps to 180")
+  assert.equal(l.innerAngle, 90, "blend 0.5 keeps the inner half")
+  await runSceneTool("update_lamp", { lamp: "Key", pitch: -90 }, h)
+  l = state.lamps[0]
+  assert.ok(Math.abs(l.aim![1] + 1) < 1e-9, "pitch -90 points straight down")
+  assert.equal(l.innerAngle, 90, "re-aiming keeps the blend")
+  const r = await runSceneTool("get_lamps", {}, h)
+  const out = (r.data as Record<string, unknown>[])[0]
+  assert.equal(out.type, "spot")
+  assert.equal(out.blend, 0.5)
+  assert.equal(out.pitch, -90)
+  await runSceneTool("update_lamp", { lamp: "Key", type: "point" }, h)
+  assert.equal(state.lamps[0].aim, undefined, "type point drops the aim")
 })
 
 await test("add_lamp with no position goes where the camera looks", async () => {

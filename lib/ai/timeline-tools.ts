@@ -16,7 +16,8 @@ import type { VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { musicWindow, summarizeMusic } from "@/lib/ai/music"
-import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
+import { figureOf, subjectId, type SceneTool, type SceneToolHandles } from "@/lib/ai/scene-tools"
+import { aimAt, aimOf, blendOf, innerOf, pitchYawOf, SPOT_ANGLE } from "@/lib/spot"
 
 const toFrame = (s: number) => Math.max(0, Math.round(s * FPS))
 const toSec = (f: number) => Math.round((f / FPS) * 100) / 100
@@ -140,9 +141,50 @@ const LAMP_FIELDS = {
   color: { type: "string", description: "#rrggbb" },
   intensity: { type: "number", description: "0–1000; 20 is a warm bulb ten units out." },
   radius: { type: "number", description: "1–200, how far it reaches." },
-  aim: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, description: "A point to aim at — makes it a spotlight." },
-  angle: { type: "number", description: "Spot cone, degrees 5–150." },
+  type: { type: "string", enum: ["point", "spot"], description: "point glows every way; spot lights only inside its cone. Turning a lamp into a spot with no aim given points it at the character's hips." },
+  aim: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, description: "A world point [x, y, z] for the spot to point at. Makes it a spot." },
+  aim_at: { type: "string", enum: ["head", "chest", "hips", "feet"], description: "Point the spot at this part of a character, where it stands now. Makes it a spot." },
+  subject: { type: "string", description: "Which character aim_at means, by name or id; the first by default." },
+  pitch: { type: "number", description: "Spot direction, degrees up from level: -90 is straight down." },
+  yaw: { type: "number", description: "Spot direction, degrees: 0 points along +Z (toward her back; she faces -Z), 90 along +X." },
+  angle: { type: "number", description: "Spot Size: the whole cone, degrees 1–180." },
+  blend: { type: "number", description: "How much of the cone's edge is soft, 0 hard – 1 all falloff; 0.2 by default." },
   on: { type: "boolean" },
+}
+
+/**
+ * The spot half of a lamp from the tool's arguments, Blender's way: type,
+ * an aim (a point, a part of a character, or pitch and yaw), Spot Size, Blend.
+ * The document stores a direction, so a point is turned into one from where
+ * the lamp stands. Returns only what the arguments change.
+ */
+function spotIn(args: Record<string, unknown>, h: SceneToolHandles, l: SceneLight): Partial<SceneLight> {
+  if (args.type === "point") return { aim: undefined, cookie: undefined }
+  let aim: [number, number, number] | undefined
+  const part = args.aim_at
+  if (part === "head" || part === "chest" || part === "hips" || part === "feet") {
+    aim = aimAt(l.position, figurePart(h, args.subject, part))
+  } else if (vec3(args.aim, -100, 100)) {
+    aim = aimAt(l.position, vec3(args.aim, -100, 100)!)
+  } else if (num(args.pitch) !== undefined || num(args.yaw) !== undefined) {
+    const was = l.aim ? pitchYawOf(l.aim) : { pitch: -45, yaw: 0 }
+    aim = aimOf(clamp(num(args.pitch) ?? was.pitch, -90, 90), num(args.yaw) ?? was.yaw)
+  } else if (args.type === "spot" && !l.aim) {
+    aim = aimAt(l.position, figurePart(h, args.subject, "hips"))
+  }
+  const spot = aim ?? l.aim
+  if (!spot) return {}
+  const angle = clamp(num(args.angle) ?? l.angle ?? SPOT_ANGLE, 1, 180)
+  const blend = clamp(num(args.blend) ?? blendOf(l.angle ?? SPOT_ANGLE, l.innerAngle), 0, 1)
+  return { aim: spot, angle, innerAngle: innerOf(angle, blend) }
+}
+
+/** A character's part in the world now, or where the camera looks without one. */
+function figurePart(h: SceneToolHandles, subject: unknown, part: "head" | "chest" | "hips" | "feet"): [number, number, number] {
+  const engine = h.engine()
+  const id = subjectId(h, subject)
+  const fig = engine && id ? figureOf(engine, id) : null
+  return fig ? fig[part] : h.cameraTarget
 }
 
 /** Keyframes in the agent's seconds: [[seconds, value], …] per channel. */
@@ -178,7 +220,14 @@ function lampOut(l: SceneLight) {
     color: l.color,
     intensity: l.intensity,
     radius: l.radius,
-    ...(l.aim ? { aim: l.aim, angle: l.angle } : {}),
+    type: l.aim ? "spot" : "point",
+    ...(l.aim
+      ? (() => {
+          const { pitch, yaw } = pitchYawOf(l.aim)
+          const angle = l.angle ?? SPOT_ANGLE
+          return { angle, blend: +blendOf(angle, l.innerAngle).toFixed(2), pitch: Math.round(pitch), yaw: Math.round(yaw), ...(l.cookie ? { pattern: l.cookie } : {}) }
+        })()
+      : {}),
     on: l.on !== false,
     ...(l.stage ? { fromStage: true } : {}),
     ...(l.track ? { keyed: Object.keys(l.track) } : {}),
@@ -334,14 +383,14 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   },
   {
     name: "get_lamps",
-    description: "The scene's lamps (point and spot lights besides the sun): position, colour, intensity, reach, and which channels are keyed over time.",
+    description: "The scene's lamps (point and spot lights besides the sun): position, colour, intensity, reach; for a spot its cone (angle), blend, pitch and yaw; and which channels are keyed over time.",
     parameters: { type: "object", properties: {} },
     run: async (_args, h) => ({ data: h.lamps.map(lampOut) }),
   },
   {
     name: "add_lamp",
     description:
-      "Add a lamp. Lamps light by distance and cast no shadow — the sun is the only shadow. Use for coloured rim and accent light, practical lights on a set, or a light that pulses through the timeline via `keys`.",
+      "Add a lamp, a point or a spot as Blender has them. Lamps light by distance and cast no shadow — the sun is the only shadow. A point is for practical lights and soft accents; a spot (type spot, aimed with aim_at, aim or pitch/yaw) is a stage spotlight: a pool of light on her, a hard key, or a rim from behind and above, lighting only inside its cone. Use `keys` for a light that pulses through the timeline.",
     parameters: {
       type: "object",
       properties: {
@@ -363,11 +412,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
         intensity: clamp(num(args.intensity) ?? 20, 0, 1000),
         radius: clamp(num(args.radius) ?? 20, 1, 200),
       }
-      const aim = vec3(args.aim, -100, 100)
-      if (aim) {
-        lamp.aim = aim
-        lamp.angle = clamp(num(args.angle) ?? 40, 5, 150)
-      }
+      Object.assign(lamp, spotIn(args, h, lamp))
       if (args.on === false) lamp.on = false
       const track = trackIn(args.keys)
       if (track) lamp.track = track
@@ -377,7 +422,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   },
   {
     name: "update_lamp",
-    description: "Change a lamp by id or name. `keys` replaces its animation; keys: {} makes it static again.",
+    description: "Change a lamp by id or name. type point/spot switches it; aim_at, aim or pitch/yaw re-point a spot (moving a spot keeps its direction, so re-aim after a move). `keys` replaces its animation; keys: {} makes it static again.",
     parameters: {
       type: "object",
       properties: { lamp: { type: "string" }, ...LAMP_FIELDS, keys: { type: "object" } },
@@ -393,9 +438,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
       if (typeof args.color === "string" && /^#[0-9a-f]{6}$/i.test(args.color)) next.color = args.color
       if (num(args.intensity) !== undefined) next.intensity = clamp(num(args.intensity)!, 0, 1000)
       if (num(args.radius) !== undefined) next.radius = clamp(num(args.radius)!, 1, 200)
-      const aim = vec3(args.aim, -100, 100)
-      if (aim) next.aim = aim
-      if (num(args.angle) !== undefined) next.angle = clamp(num(args.angle)!, 5, 150)
+      Object.assign(next, spotIn(args, h, next))
       if (typeof args.on === "boolean") next.on = args.on
       if (args.keys !== undefined) {
         const track = trackIn(args.keys)
