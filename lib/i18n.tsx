@@ -879,6 +879,17 @@ const en = {
       /** The switch. A lamp turned off leaves the engine entirely rather than
        *  dimming to zero, so this is off, not dark. */
       on: "On",
+      /** Blender's light types this panel offers: a point glows every way, a
+       *  spot reaches only inside its cone. */
+      type: "Type",
+      point: "Point",
+      spot: "Spot",
+      /** Blender's word: how much of the cone's edge is soft. */
+      blend: "Blend",
+      pitch: "Pitch",
+      yaw: "Yaw",
+      /** Points the spot at the cast's hips. */
+      aimAtCast: "Aim at character",
     },
     ctl: {
       /** Puts an effect's dials back to what its shader declared. Disabled when
@@ -1978,6 +1989,13 @@ const zh: Dictionary = {
       add: "添加灯",
       name: (n: number) => `灯 ${n}`,
       on: "开",
+      type: "类型",
+      point: "点光",
+      spot: "聚光",
+      blend: "边缘柔化",
+      pitch: "俯仰",
+      yaw: "偏航",
+      aimAtCast: "对准角色",
     },
     ctl: {
       resetParams: "重置",

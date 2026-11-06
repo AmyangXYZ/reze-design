@@ -84,6 +84,7 @@ import {
   Minimize2,
   Search,
   CircleHelp,
+  Crosshair,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -271,6 +272,7 @@ import {
   UNLIT_GRAPH,
 } from "reze-engine"
 import { LampMarkers } from "@/components/scene/lamp-markers"
+import { aimAt, aimOf, blendOf, coneSegments, innerOf, pitchYawOf, rotate, SPOT_ANGLE } from "@/lib/spot"
 import { accessoryFiles, carryXFile, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
 import { texturesToWebp } from "@/lib/texture-webp"
@@ -3445,6 +3447,27 @@ function Lab() {
       setLightsState((list) => list.map((l) => (l.id === id ? { ...l, ...part } : l))),
     [],
   )
+  /** Where a spot aimed "at the character" points: the cast's hips (センター,
+   *  posed, in the world), averaged over everyone visible. Null with no cast. */
+  const castHips = useCallback((): [number, number, number] | null => {
+    const engine = engineRef.current
+    if (!engine) return null
+    let n = 0
+    const sum: [number, number, number] = [0, 0, 0]
+    for (const m of cast) {
+      const model = engine.getModel(m.id)
+      const tf = engine.getModelTransform(m.id)
+      if (!model || !tf?.visible) continue
+      const local = model.getBoneWorldPosition("センター") ?? model.getBoneWorldPosition("下半身")
+      if (!local) continue
+      const w = rotate(tf.rotation, [local.x * tf.scale, local.y * tf.scale, local.z * tf.scale])
+      sum[0] += tf.position.x + w[0]
+      sum[1] += tf.position.y + w[1]
+      sum[2] += tf.position.z + w[2]
+      n++
+    }
+    return n ? [sum[0] / n, sum[1] / n, sum[2] / n] : null
+  }, [cast, engineRef])
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
@@ -3949,6 +3972,26 @@ function Lab() {
           color: [c.x, c.y, c.z, 0.22],
           thickness: 1,
         })
+        // A spot's cone, out to where it is at half strength like the inner
+        // ring: four edges and the rim. The full-strength core is the same
+        // shape, fainter, so Blend reads as the gap between the two rims.
+        if (l.aim) {
+          const angle = l.angle ?? SPOT_ANGLE
+          const reach = l.radius * HALF_POWER
+          const outer = coneSegments(l.position, l.aim, angle, reach)
+          const inner = coneSegments(l.position, l.aim, innerOf(angle, blendOf(angle, l.innerAngle)), reach, 24)
+          const line = (sg: (typeof outer.rim)[number], alpha: number, thickness: number) =>
+            marks.push({
+              shape: "line",
+              position: sg.position,
+              rotation: sg.rotation,
+              scale: [1, sg.length, 1],
+              color: [c.x, c.y, c.z, alpha],
+              thickness,
+            })
+          for (const sg of [...outer.edges, ...outer.rim]) line(sg, 0.6, 1.5)
+          for (const sg of inner.rim) line(sg, 0.3, 1)
+        }
       }
     }
     engine.setOverlay("lights", marks)
@@ -10015,53 +10058,123 @@ function Lab() {
                                         dense
                                         labelClass="w-[4.75rem]"
                                       />
-                                      {/* A gobo makes the lamp a spot: a
-                                          point has no cone to throw a picture
-                                          along, so picking one aims the lamp at
-                                          the view's centre, where you are
-                                          looking. None takes the picture away
-                                          and leaves the cone. */}
-                                      <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-                                        <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.pattern}</span>
+                                      {/* Blender's two types. A spot is a
+                                          lamp with an aim: turning one on
+                                          points it at the character, which is
+                                          what lighting a dance usually wants,
+                                          or at the view's centre with nobody
+                                          on stage. */}
+                                      <div className="mt-2.5 flex items-center gap-2">
+                                        <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.lamp.type}</span>
                                         <Select
-                                          value={l.cookie ?? NO_COOKIE}
+                                          value={l.aim ? "spot" : "point"}
                                           onValueChange={(v) => {
-                                            if (v === NO_COOKIE) return patchLight(l.id, { cookie: undefined })
-                                            const cookie = v as LightCookie
-                                            if (l.aim) return patchLight(l.id, { cookie })
-                                            const d = camera.target.map((c, i) => c - l.position[i])
-                                            const len = Math.hypot(d[0], d[1], d[2])
-                                            const aim: [number, number, number] =
-                                              len > 1e-3 ? [d[0] / len, d[1] / len, d[2] / len] : [0, -1, 0]
-                                            patchLight(l.id, { cookie, aim, angle: l.angle ?? 50 })
+                                            if (v === "point") return patchLight(l.id, { aim: undefined, cookie: undefined })
+                                            const to = castHips() ?? camera.target
+                                            patchLight(l.id, { aim: aimAt(l.position, to), angle: l.angle ?? SPOT_ANGLE })
                                           }}
                                         >
                                           <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value={NO_COOKIE}>{t.lab.ctl.none}</SelectItem>
-                                            {LIGHT_COOKIES.map((c) => (
-                                              <SelectItem key={c} value={c}>
-                                                {t.lab.ctl.cookie[c]}
-                                              </SelectItem>
-                                            ))}
+                                            <SelectItem value="point">{t.lab.lamp.point}</SelectItem>
+                                            <SelectItem value="spot">{t.lab.lamp.spot}</SelectItem>
                                           </SelectContent>
                                         </Select>
                                       </div>
-                                      {l.aim && (
-                                        <SliderRow
-                                          label={t.lab.ctl.cone}
-                                          value={l.angle ?? 45}
-                                          min={5}
-                                          max={150}
-                                          step={1}
-                                          onChange={(v) => patchLight(l.id, { angle: v })}
-                                          fmt={(v) => `${v.toFixed(0)}°`}
-                                          dense
-                                          labelClass="w-[4.75rem]"
-                                        />
-                                      )}
+                                      {l.aim && (() => {
+                                        const aim = l.aim
+                                        const angle = l.angle ?? SPOT_ANGLE
+                                        const blend = blendOf(angle, l.innerAngle)
+                                        const { pitch, yaw } = pitchYawOf(aim)
+                                        return (
+                                          <>
+                                            {/* A gobo: the picture the cone throws. */}
+                                            <div className="mt-2.5 flex items-center gap-2">
+                                              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.pattern}</span>
+                                              <Select
+                                                value={l.cookie ?? NO_COOKIE}
+                                                onValueChange={(v) =>
+                                                  patchLight(l.id, { cookie: v === NO_COOKIE ? undefined : (v as LightCookie) })
+                                                }
+                                              >
+                                                <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value={NO_COOKIE}>{t.lab.ctl.none}</SelectItem>
+                                                  {LIGHT_COOKIES.map((c) => (
+                                                    <SelectItem key={c} value={c}>
+                                                      {t.lab.ctl.cookie[c]}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                            {/* Spot Size: the whole cone. The
+                                                inner angle keeps its share of
+                                                it, so Blend holds while it moves. */}
+                                            <SliderRow
+                                              label={t.lab.ctl.cone}
+                                              value={angle}
+                                              min={1}
+                                              max={180}
+                                              step={1}
+                                              onChange={(v) => patchLight(l.id, { angle: v, innerAngle: innerOf(v, blend) })}
+                                              fmt={(v) => `${v.toFixed(0)}°`}
+                                              dense
+                                              labelClass="w-[4.75rem]"
+                                            />
+                                            <SliderRow
+                                              label={t.lab.lamp.blend}
+                                              value={blend}
+                                              min={0}
+                                              max={1}
+                                              step={0.01}
+                                              onChange={(v) => patchLight(l.id, { innerAngle: innerOf(angle, v) })}
+                                              fmt={(v) => v.toFixed(2)}
+                                              dense
+                                              labelClass="w-[4.75rem]"
+                                            />
+                                            <SliderRow
+                                              label={t.lab.lamp.pitch}
+                                              value={pitch}
+                                              min={-90}
+                                              max={90}
+                                              step={1}
+                                              onChange={(v) => patchLight(l.id, { aim: aimOf(v, yaw) })}
+                                              fmt={(v) => `${v.toFixed(0)}°`}
+                                              dense
+                                              labelClass="w-[4.75rem]"
+                                            />
+                                            <SliderRow
+                                              label={t.lab.lamp.yaw}
+                                              value={yaw}
+                                              min={-180}
+                                              max={180}
+                                              step={1}
+                                              onChange={(v) => patchLight(l.id, { aim: aimOf(pitch, v) })}
+                                              fmt={(v) => `${v.toFixed(0)}°`}
+                                              dense
+                                              labelClass="w-[4.75rem]"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              disabled={cast.length === 0}
+                                              onClick={() => {
+                                                const to = castHips()
+                                                if (to) patchLight(l.id, { aim: aimAt(l.position, to) })
+                                              }}
+                                              className="mt-2.5 h-6 w-full justify-start gap-1.5 px-1.5 text-2xs"
+                                            >
+                                              <Crosshair className="size-3" />
+                                              {t.lab.lamp.aimAtCast}
+                                            </Button>
+                                          </>
+                                        )
+                                      })()}
                                       {/* The brightness one unit from the lamp: it
                                           falls off as the inverse square, so the
                                           numbers that light a figure run to the
