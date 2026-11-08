@@ -56,7 +56,7 @@
 bl_info = {
     "name": "REZE DESIGN Stage Export",
     "author": "AmyangXYZ <amyang.xyz@gmail.com>",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 2, 0),
     "location": "File > Export > REZE DESIGN Stage (.glb)",
     "description": "Export the scene as a reze-design stage: lights, world, haze, glow, particles",
@@ -193,6 +193,704 @@ def _fold_emission(mat):
             e.default_value = (value[0], value[1], value[2], 1.0)
 
 
+# ── Node groups inlined ──
+#
+# A material whose surface is built inside a node group (a "flowing light"
+# group with its own Principled, noise and ramps) reads to glTF, and to every
+# step here that walks a material's nodes, as a group node and nothing else:
+# it went out as the default grey surface. Groups on the way to the surface
+# are opened up into the material's own tree first, as Blender's own Ungroup
+# does, so what is inside can be read, folded or baked. glTF's own settings
+# group (its occlusion) is left as it is: the glTF exporter reads it by name.
+
+
+def _inline_group(nt, gnode):
+    """Copy a group node's nodes into `nt`, wired as the group wired them,
+    and remove the group node. Returns False when it cannot be done."""
+    tree = gnode.node_tree
+    if tree is None:
+        return False
+    made = {}
+    gin = [n for n in tree.nodes if n.type == "GROUP_INPUT"]
+    gout = next((n for n in tree.nodes if n.type == "GROUP_OUTPUT" and n.is_active_output), None) \
+        or next((n for n in tree.nodes if n.type == "GROUP_OUTPUT"), None)
+    if gout is None:
+        return False
+    for n in tree.nodes:
+        if n.type in ("GROUP_INPUT", "GROUP_OUTPUT", "FRAME"):
+            continue
+        c = nt.nodes.new(n.bl_idname)
+        for attr in ("operation", "blend_type", "data_type", "interpolation_type", "clamp", "use_clamp",
+                     "clamp_factor", "clamp_result", "factor_mode", "vector_type", "noise_dimensions", "noise_type",
+                     "normalize", "voronoi_dimensions", "feature", "distance", "wave_type", "bands_direction",
+                     "rings_direction", "wave_profile", "gradient_type", "musgrave_dimensions", "interpolation",
+                     "projection", "extension", "image", "uv_map", "attribute_name", "attribute_type", "space",
+                     "from_instancer", "object", "component", "convert_from", "convert_to", "target", "invert",
+                     "distribution", "subsurface_method", "falloff", "blend_method", "label", "hide"):
+            if hasattr(n, attr):
+                try:
+                    setattr(c, attr, getattr(n, attr))
+                except (AttributeError, TypeError, ValueError):
+                    pass
+        if n.type == "VALTORGB":
+            r, s = c.color_ramp, n.color_ramp
+            r.interpolation, r.color_mode, r.hue_interpolation = s.interpolation, s.color_mode, s.hue_interpolation
+            while len(r.elements) > 1:
+                r.elements.remove(r.elements[-1])
+            r.elements[0].position, r.elements[0].color = s.elements[0].position, tuple(s.elements[0].color)
+            for e in s.elements[1:]:
+                r.elements.new(e.position).color = tuple(e.color)
+        if n.type in ("CURVE_RGB", "CURVE_VEC", "CURVE_FLOAT"):
+            m, sm = c.mapping, n.mapping
+            for ci, sc in enumerate(sm.curves):
+                pts = c.mapping.curves[ci].points
+                while len(pts) > len(sc.points):
+                    pts.remove(pts[-1])
+                while len(pts) < len(sc.points):
+                    pts.new(0.0, 0.0)
+                for p, sp in zip(pts, sc.points):
+                    p.location, p.handle_type = tuple(sp.location), sp.handle_type
+            m.update()
+        if n.type == "GROUP":
+            c.node_tree = n.node_tree
+        for i, s in enumerate(n.inputs):
+            if i < len(c.inputs) and hasattr(s, "default_value"):
+                try:
+                    c.inputs[i].default_value = s.default_value
+                except (AttributeError, TypeError, ValueError):
+                    pass
+        for i, s in enumerate(n.outputs):
+            if i < len(c.outputs) and hasattr(s, "default_value"):
+                try:
+                    c.outputs[i].default_value = s.default_value
+                except (AttributeError, TypeError, ValueError):
+                    pass
+        made[n.name] = c
+
+    def source(sock_index):
+        """What feeds the group node's input `sock_index`: (socket or None, default)."""
+        s = gnode.inputs[sock_index]
+        if s.links and s.links[0].is_valid and not s.links[0].is_muted:
+            return s.links[0].from_socket, None
+        return None, getattr(s, "default_value", None)
+
+    def out_index(sock):
+        return list(sock.node.outputs).index(sock)
+
+    def in_index(sock):
+        return list(sock.node.inputs).index(sock)
+    for l in tree.links:
+        if not l.is_valid or l.is_muted:
+            continue
+        to = l.to_node
+        if to.type == "GROUP_OUTPUT":
+            continue
+        dst = made.get(to.name)
+        if dst is None:
+            continue
+        dsock = dst.inputs[in_index(l.to_socket)]
+        if l.from_node.type == "GROUP_INPUT":
+            src, value = source(out_index(l.from_socket))
+            if src is not None:
+                nt.links.new(src, dsock)
+            elif value is not None:
+                try:
+                    dsock.default_value = value
+                except (AttributeError, TypeError, ValueError):
+                    if hasattr(value, "__len__") and hasattr(dsock.default_value, "__len__"):
+                        dsock.default_value = tuple(value)[:len(dsock.default_value)]
+                    elif hasattr(value, "__len__"):
+                        dsock.default_value = sum(tuple(value)[:3]) / 3.0
+            continue
+        sn = made.get(l.from_node.name)
+        if sn is not None:
+            nt.links.new(sn.outputs[out_index(l.from_socket)], dsock)
+    # the group's outputs, wired to whatever the group node fed
+    for oi, gsock in enumerate(gnode.outputs):
+        inner = next((l for l in tree.links if l.to_node == gout and in_index(l.to_socket) == oi and l.is_valid), None)
+        for l in list(gsock.links):
+            target = l.to_socket
+            if inner is None:
+                continue
+            if inner.from_node.type == "GROUP_INPUT":
+                src, value = source(out_index(inner.from_socket))
+                if src is not None:
+                    nt.links.new(src, target)
+                continue
+            sn = made.get(inner.from_node.name)
+            if sn is not None:
+                nt.links.new(sn.outputs[out_index(inner.from_socket)], target)
+    nt.nodes.remove(gnode)
+    return True
+
+
+def _inline_surface_groups(notes):
+    """Open the node groups on the way to each material's surface."""
+    opened = []
+    for mat in bpy.data.materials:
+        if not mat.users or not mat.node_tree:
+            continue
+        nt = mat.node_tree
+        for _ in range(8):   # groups inside groups, a level at a time
+            groups = [n for n in nt.nodes if n.type == "GROUP" and n.node_tree is not None
+                      and not n.node_tree.name.lower().startswith("gltf")
+                      and any(s.links for s in n.outputs)]
+            if not groups:
+                break
+            for g in groups:
+                if _inline_group(nt, g):
+                    opened.append(mat.name)
+    if opened:
+        note(notes, f"node groups opened into their materials, so what is inside can be read and baked: {', '.join(sorted(set(opened)))}")
+
+
+# ── Unlit sheets: emission over transparency, as a game's effects are drawn ──
+#
+# A ripped game scene draws most of itself as pictures that take no light:
+# Mix(Transparent, Emission(picture)) by the picture's alpha, or Add(Transparent,
+# Emission) for glows that add, often tinted per object through Object Info.
+# glTF cannot say any of that and wrote them opaque, a black square around
+# every cut-out. They are rewritten as the Unity converter writes its painted
+# sheets (unity_blender_build.py): a Principled with a black base, the picture
+# as its emission, its alpha the picture's, and `reze.unlit` so the app draws
+# it as painted; the glows that add are `reze.additive`, the app's light sheet
+# (picture × its alpha × strength), their luminance moved into that alpha.
+
+
+def _sheet_factors(socket, colour):
+    """A product of factors feeding `socket`: a list of ("const", v),
+    ("tex", node, output) and ("obj", "Color"/"Alpha"), or None when it is
+    anything else. `colour` says whether the socket is a colour."""
+    if not socket.links:
+        v = socket.default_value
+        return [("const", tuple(v)[:3] if colour else float(v))]
+    node, out = _linked_from(socket)
+    if node is None:
+        return None
+    if node.type == "TEX_IMAGE" and node.image is not None and _uv_vector_ok(node):
+        return [("tex", node, out.name)]
+    if node.type == "OBJECT_INFO" and out.name in ("Color", "Alpha"):
+        return [("obj", out.name)]
+    if node.type == "RGBTOBW":
+        inner, sock = _linked_from(node.inputs[0])
+        if inner is not None and inner.type == "TEX_IMAGE" and inner.image is not None and sock.name == "Color":
+            return [("tex", inner, "Luminance")]
+        return None
+    if node.type == "MATH" and node.operation == "MULTIPLY" and not node.use_clamp:
+        a, b = _sheet_factors(node.inputs[0], False), _sheet_factors(node.inputs[1], False)
+        return None if a is None or b is None else a + b
+    mix = node.type == "MIX" and node.data_type == "RGBA"
+    if (mix or node.type == "MIX_RGB") and node.blend_type == "MULTIPLY" \
+            and not getattr(node, "clamp_result", False) and not getattr(node, "use_clamp", False):
+        fac = node.inputs["Factor"] if mix else node.inputs["Fac"]
+        if fac.links or abs(fac.default_value - 1.0) > 1e-6:
+            return None
+        a, b = (node.inputs[6], node.inputs[7]) if mix else (node.inputs[1], node.inputs[2])
+        fa, fb = _sheet_factors(a, True), _sheet_factors(b, True)
+        return None if fa is None or fb is None else fa + fb
+    return None
+
+
+def _sheet_shape(mat):
+    """How a material draws if it is an unlit sheet: (mode, picture node,
+    colour factors, strength factors, alpha factors), mode "opaque" / "alpha"
+    / "add"; or None."""
+    node = _surface(mat)
+    if node is None:
+        return None
+    alpha = []
+    if node.type == "EMISSION":
+        mode, emit = "opaque", node
+    elif node.type in ("MIX_SHADER", "ADD_SHADER"):
+        first = 1 if node.type == "MIX_SHADER" else 0
+        a = _linked_from(node.inputs[first])[0]
+        b = _linked_from(node.inputs[first + 1])[0]
+        if a is None or b is None or a.type != "BSDF_TRANSPARENT" or b.type != "EMISSION":
+            return None
+        if a.inputs["Color"].links or tuple(a.inputs["Color"].default_value)[:3] != (1.0, 1.0, 1.0):
+            return None
+        emit = b
+        if node.type == "ADD_SHADER":
+            mode = "add"
+        else:
+            mode = "alpha"
+            alpha = _sheet_factors(node.inputs[0], False)
+            if alpha is None:
+                return None
+    else:
+        return None
+    colour = _sheet_factors(emit.inputs["Color"], True)
+    strength = _sheet_factors(emit.inputs["Strength"], False)
+    if colour is None or strength is None:
+        return None
+    texs = [f[1] for f in colour + strength + alpha if f[0] == "tex"]
+    if not texs or any(t != texs[0] for t in texs):
+        return None
+    outs = {(where, f[2]) for where, fs in (("c", colour), ("s", strength), ("a", alpha)) for f in fs if f[0] == "tex"}
+    # the picture's colour is the colour; its alpha only cuts it out; its
+    # luminance only scales a glow that adds
+    if not outs <= {("c", "Color"), ("a", "Alpha"), ("s", "Luminance")} or ("c", "Color") not in outs:
+        return None
+    if ("s", "Luminance") in outs and mode != "add":
+        return None
+    if mode == "alpha" and ("a", "Alpha") not in outs:
+        return None
+    return mode, texs[0], colour, strength, alpha
+
+
+def _product(factors, ob, colour):
+    import numpy as np
+    v = np.ones(3) if colour else 1.0
+    for f in factors:
+        if f[0] == "const":
+            v = v * (np.array(f[1]) if colour else f[1])
+        elif f[0] == "obj":
+            v = v * (np.array(tuple(ob.color)[:3]) if f[1] == "Color" else ob.color[3])
+    return v
+
+
+def _luminance_picture(img):
+    """A copy of a picture with its alpha replaced by its luminance (linear,
+    Blender's RGB to BW weights): the light sheet's scale on its colour."""
+    import numpy as np
+    w, h = img.size
+    if not w or not h:
+        return None     # a picture that does not load
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(-1, 4)
+    rgb = px[:, :3]
+    # a file from a newer Blender can name a colour space this one lacks
+    # (read as blank): a byte picture's default, sRGB
+    space = img.colorspace_settings.name or ("Linear Rec.709" if img.is_float else "sRGB")
+    if space == "sRGB" and not img.is_float:
+        rgb = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    px[:, 3] = np.clip(rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32), 0, 1)
+    out = bpy.data.images.new(f"{img.name} glow", w, h, alpha=True)
+    out.colorspace_settings.name = space
+    out.pixels.foreach_set(px.ravel())
+    out.pack()
+    return out
+
+
+def _unlit_sheets(scene, notes):
+    import numpy as np
+    shapes = {}
+    for mat in bpy.data.materials:
+        if mat.users and mat.node_tree and not _volume_only(mat):
+            shape = _sheet_shape(mat)
+            if shape:
+                shapes[mat.name] = shape
+    if not shapes:
+        return
+    # one material per tint: Object Info's colour and alpha are each object's
+    groups = {}
+    for ob in scene.objects:
+        for slot in ob.material_slots:
+            m = slot.material
+            if m is None or m.name not in shapes:
+                continue
+            _, _, colour, strength, alpha = shapes[m.name]
+            uses_obj = any(f[0] == "obj" for f in colour + strength + alpha)
+            key = (m.name, tuple(round(c, 4) for c in ob.color) if uses_obj else None)
+            groups.setdefault(key, []).append((ob, slot))
+    glow_pictures = {}
+    counts = {"opaque": 0, "alpha": 0, "add": 0, "unread": 0}
+    # the first tint of a material keeps it, the others get copies, all made
+    # before any is rewritten
+    seen = set()
+    work = []
+    for (name, _), users in groups.items():
+        src = bpy.data.materials[name]
+        mat = src if name not in seen else src.copy()
+        seen.add(name)
+        if mat is not src:
+            for _, slot in users:
+                slot.material = mat
+        work.append((mat, users))
+    for mat, users in work:
+        mode, tex, colour, strength, alpha = _sheet_shape(mat)
+        ob = users[0][0]
+        c = _product(colour, ob, True)
+        s = float(_product(strength, ob, False))
+        a = float(_product(alpha, ob, False)) if mode == "alpha" else 1.0
+        nt = mat.node_tree
+        out = _output(mat)
+        pic = tex
+        if mode == "add" and any(f[0] == "tex" and f[2] == "Luminance" for f in strength):
+            if tex.image.name not in glow_pictures:
+                glow_pictures[tex.image.name] = _luminance_picture(tex.image)
+            img = glow_pictures[tex.image.name]
+            if img is None:
+                counts["unread"] += 1
+                continue
+            pic = nt.nodes.new("ShaderNodeTexImage")
+            pic.image = img
+            pic.interpolation = tex.interpolation
+            pic.extension = tex.extension
+            v = tex.inputs["Vector"]
+            if v.links:
+                nt.links.new(v.links[0].from_socket, pic.inputs["Vector"])
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+        bsdf.inputs["Roughness"].default_value = 1.0
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+        feed = pic.outputs["Color"]
+        if np.any(np.abs(c - 1.0) > 1e-4):
+            mul = nt.nodes.new("ShaderNodeMix")
+            mul.data_type = "RGBA"
+            mul.blend_type = "MULTIPLY"
+            mul.inputs["Factor"].default_value = 1.0
+            nt.links.new(feed, mul.inputs[6])
+            mul.inputs[7].default_value = (float(c[0]), float(c[1]), float(c[2]), 1.0)
+            feed = mul.outputs[2]
+        nt.links.new(feed, bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = s
+        if mode == "alpha":
+            if abs(a - 1.0) > 1e-4:
+                m2 = nt.nodes.new("ShaderNodeMath")
+                m2.operation = "MULTIPLY"
+                nt.links.new(tex.outputs["Alpha"], m2.inputs[0])
+                m2.inputs[1].default_value = a
+                nt.links.new(m2.outputs[0], bsdf.inputs["Alpha"])
+            else:
+                nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+        for link in list(out.inputs["Surface"].links):
+            nt.links.remove(link)
+        nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+        r = dict(mat.get("reze") or {})
+        r["unlit"] = True
+        if mode != "opaque":
+            r["castShadow"] = False
+        if mode == "add":
+            r["additive"] = True
+        mat["reze"] = r
+        counts[mode] += 1
+    note(notes, f"unlit sheets: {counts['alpha']} cut out by their picture's alpha, {counts['add']} adding their light, "
+                f"{counts['opaque']} solid — drawn as painted, taking no light (Object Info's tint folded in, "
+                "one material per tint)" + (f"; {counts['unread']} left as they were, their picture unreadable" if counts["unread"] else ""))
+
+
+# ── Sheer surfaces: Mix(Transparent, Principled) as the Principled's alpha ──
+#
+# Gauze, a dew drop, a butterfly's wing: a Principled mixed with a white
+# Transparent BSDF, the mix factor its coverage. glTF reads coverage only from
+# the Principled's Alpha, so these went out opaque: a jellyfish canopy of sheer
+# organza came out solid white. The Principled is wired straight to the output
+# with the coverage as its alpha. A coverage made by nodes that depend on the
+# view (1 - |N·I| raised to a power, more cloth at the rim) cannot be a
+# picture: it is evaluated over the surface as the scene camera sees it
+# (_node_values, with the Geometry node's Normal and Incoming) and its
+# on-screen mean (each face by its solid angle) is the alpha. A noise in it
+# counts at its mean.
+
+
+def _sheer_parts(mat):
+    """(mix node, principled, principled's input index 1 or 2) when a
+    material's surface is Mix(white Transparent, Principled), else None."""
+    node = _surface(mat)
+    if node is None or node.type != "MIX_SHADER":
+        return None
+    a = _linked_from(node.inputs[1])[0]
+    b = _linked_from(node.inputs[2])[0]
+    for clear, bsdf, k in ((a, b, 2), (b, a, 1)):
+        if clear is not None and bsdf is not None and clear.type == "BSDF_TRANSPARENT" and bsdf.type == "BSDF_PRINCIPLED" \
+                and not clear.inputs["Color"].links and min(tuple(clear.inputs["Color"].default_value)[:3]) > 0.999:
+            return node, bsdf, k
+    return None
+
+
+def _seen_coverage(sock, mat, scene, obs):
+    """The mean of a node-made coverage over `mat`'s faces on `obs` as the
+    scene camera sees them, or None when its nodes cannot be read here."""
+    import numpy as np
+    from mathutils import Vector
+    from bpy_extras.object_utils import world_to_camera_view
+    cam = scene.camera
+    eye = np.array(tuple(cam.matrix_world.translation)) if cam else np.array((0.0, 0.0, PROBE_HEIGHT))
+    dg = bpy.context.evaluated_depsgraph_get()
+    vals, weights = [], []
+    for ob in obs:
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        try:
+            idx = {i for i, s in enumerate(ob.material_slots) if s.material == mat}
+            polys = [p for p in me.polygons if p.material_index in idx]
+            if not polys:
+                continue
+            co = np.array([tuple(v.co) for v in me.vertices])
+            lo, hi = co.min(0), co.max(0)
+            local = np.array([tuple(p.center) for p in polys])
+            mw = np.array(ob.matrix_world)
+            nm = np.array(ob.matrix_world.to_3x3().inverted_safe().transposed())
+            world = local @ mw[:3, :3].T + mw[:3, 3]
+            n = np.array([tuple(p.normal) for p in polys]) @ nm.T
+            n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+            to_eye = eye - world
+            d = np.maximum(np.linalg.norm(to_eye, axis=1), 1e-6)
+            inc = to_eye / d[:, None]
+            area = np.array([p.area for p in polys]) * abs(np.linalg.det(mw[:3, :3])) ** (2 / 3)
+            gen = (local - lo) / np.where(hi - lo > 1e-9, hi - lo, 1.0)
+            v = _node_values(sock, gen, local, {"Normal": n, "Incoming": inc, "Position": world})
+            if v is None:
+                return None
+            v = v if v.ndim == 1 else v.mean(1)
+            w = area * np.abs((n * inc).sum(1)) / d ** 2
+            if cam:
+                inside = np.array([0 <= q.x <= 1 and 0 <= q.y <= 1 and q.z > 0
+                                   for q in (world_to_camera_view(scene, cam, Vector(tuple(p))) for p in world)])
+                if inside.any():
+                    w = w * inside
+            vals.append(np.broadcast_to(v, w.shape))
+            weights.append(w)
+        finally:
+            ev.to_mesh_clear()
+    if not vals:
+        return None
+    v, w = np.concatenate(vals), np.concatenate(weights)
+    return float(np.clip((v * w).sum() / w.sum(), 0, 1)) if w.sum() > 0 else float(np.clip(v.mean(), 0, 1))
+
+
+def _sheer_surfaces(scene, notes):
+    done, names = [], set()
+    for mat in bpy.data.materials:
+        if not mat.users or not mat.node_tree or _volume_only(mat):
+            continue
+        parts = _sheer_parts(mat)
+        if parts is None:
+            continue
+        mix, bsdf, k = parts
+        if bsdf.inputs["Alpha"].links:
+            continue
+        fac = mix.inputs[0]
+        if fac.links:
+            obs = [ob for ob in scene.objects if ob.type == "MESH" and ob.visible_get() and not ob.hide_render
+                   and any(s.material == mat for s in ob.material_slots)]
+            f = _seen_coverage(fac, mat, scene, obs) if obs else None
+            if f is None:
+                continue    # nodes this cannot read: left as glTF writes it
+            how = "as the scene camera sees it"
+        else:
+            f = float(fac.default_value)
+            how = "constant"
+        cover = f if k == 2 else 1.0 - f
+        a = bsdf.inputs["Alpha"].default_value * cover
+        nt = mat.node_tree
+        out = _output(mat)
+        for link in list(out.inputs["Surface"].links):
+            nt.links.remove(link)
+        nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+        bsdf.inputs["Alpha"].default_value = a
+        done.append(f"{mat.name} {a:.2f} ({how})")
+        names.add(mat.name)
+    if done:
+        note(notes, "sheer surfaces (a Principled mixed with Transparent) drawn at their coverage as alpha: " + ", ".join(done))
+    return names
+
+
+# ── Two-sided colours: a base colour that differs on a face's back ──
+#
+# Geometry's Backfacing choosing between two colours (a parasol pale on top
+# and dark blue beneath) is one colour per side, which one glTF material
+# cannot say. The faces are doubled, the copy turned round, and each side
+# wears a one-sided copy of the material with its own colour.
+
+
+def _backfacing_colours(mat):
+    """(front rgb, back rgb) when a Principled's Base Color is a Mix of two
+    constant colours by Geometry's Backfacing, else None."""
+    bsdf = _surface(mat)
+    if bsdf is None or bsdf.type != "BSDF_PRINCIPLED":
+        return None
+    node, _ = _linked_from(bsdf.inputs["Base Color"])
+    if node is None:
+        return None
+    if node.type == "MIX" and node.data_type == "RGBA" and node.blend_type == "MIX":
+        fac, a, b = node.inputs[0], node.inputs[6], node.inputs[7]
+    elif node.type == "MIX_RGB" and node.blend_type == "MIX":
+        fac, a, b = node.inputs[0], node.inputs[1], node.inputs[2]
+    else:
+        return None
+    src, sock = _linked_from(fac)
+    if src is None or src.type != "NEW_GEOMETRY" or sock.name != "Backfacing":
+        return None
+    ca = _constant_colour(*_linked_from(a)) if a.links else tuple(a.default_value)[:3]
+    cb = _constant_colour(*_linked_from(b)) if b.links else tuple(b.default_value)[:3]
+    return (ca, cb) if ca and cb else None
+
+
+def _two_sided(scene, notes):
+    import bmesh
+    done, names = [], set()
+    dg = bpy.context.evaluated_depsgraph_get()
+    for mat in list(bpy.data.materials):
+        if not mat.users or not mat.node_tree:
+            continue
+        cols = _backfacing_colours(mat)
+        if cols is None:
+            continue
+        obs = [ob for ob in scene.objects if ob.type == "MESH" and any(s.material == mat for s in ob.material_slots)]
+        back = mat.copy()
+        back.name = f"{mat.name} back"
+        for m, c in ((mat, cols[0]), (back, cols[1])):
+            bsdf = _surface(m)
+            sock = bsdf.inputs["Base Color"]
+            for link in list(sock.links):
+                m.node_tree.links.remove(link)
+            sock.default_value = (c[0], c[1], c[2], 1.0)
+            m.use_backface_culling = True
+        for ob in obs:
+            if ob.modifiers:
+                ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+                ob.modifiers.clear()
+            elif ob.data.users > 1:
+                ob.data = ob.data.copy()
+            idx = {i for i, s in enumerate(ob.material_slots) if s.material == mat}
+            ob.data.materials.append(back)
+            bi = len(ob.material_slots) - 1
+            ob.material_slots[bi].link = "DATA"
+            ob.material_slots[bi].material = back
+            bm = bmesh.new()
+            bm.from_mesh(ob.data)
+            faces = [f for f in bm.faces if f.material_index in idx]
+            dup = bmesh.ops.duplicate(bm, geom=faces)
+            new = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
+            bmesh.ops.reverse_faces(bm, faces=new)
+            for f in new:
+                f.material_index = bi
+            bm.to_mesh(ob.data)
+            bm.free()
+        done.append(f"{mat.name} on {len(obs)} object(s)")
+        names |= {mat.name, back.name}
+    if done:
+        note(notes, "two-sided colours (Backfacing picking the base colour): the faces doubled, each side one-sided with its own colour: "
+                    + ", ".join(done))
+    return names
+
+
+# ── Emission by nodes: an Emission shader whose colour nodes make ──
+#
+# A sky card glowing a gradient kept in a colour attribute (Emission(Color
+# Attribute)) went out as glTF's flat white glow, since the app reads no
+# vertex colours: a pale wall where Blender draws blue mist. It is rewritten
+# as the painted sheets are (a Principled with a black base and the colour as
+# its emission, `reze.unlit`) so the colour bake (_baked_colours) puts the
+# colour in a picture.
+
+
+def _emission_surfaces(notes):
+    done = []
+    for mat in bpy.data.materials:
+        if not mat.users or not mat.node_tree or _volume_only(mat):
+            continue
+        node = _surface(mat)
+        if node is None or node.type != "EMISSION":
+            continue
+        c, s = node.inputs["Color"], node.inputs["Strength"]
+        if s.links or s.default_value <= 0 or not _from_nodes(c):
+            continue
+        nt = mat.node_tree
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+        bsdf.inputs["Roughness"].default_value = 1.0
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+        nt.links.new(c.links[0].from_socket, bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = s.default_value
+        out = _output(mat)
+        for link in list(out.inputs["Surface"].links):
+            nt.links.remove(link)
+        nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+        r = dict(mat.get("reze") or {})
+        r["unlit"] = True
+        mat["reze"] = r
+        done.append(mat.name)
+    if done:
+        note(notes, f"glows coloured by nodes ({', '.join(done)}): drawn as painted sheets, their colour baked into a picture")
+    return set(done)
+
+
+# ── Stated looks: the surface Blender describes, not the one its name suggests ──
+#
+# The app gives a lit material whose NAME reads as water or glass its own
+# Water or Glass look (stageLookFor: WATER_*, *_Glass, *_Lens), unless the
+# file states a look; an empty look is "none, draw what the file says". A
+# Principled that transmits little is no clear surface whatever its name: a
+# dark glossy pool with node-made ripples (WATER_V3_...) was drawn as the
+# app's pale water, a dark glass panel and a warm lens as clear glass. Each
+# lit Principled transmitting under half states the empty look.
+
+
+def _stated_looks(notes):
+    stated = 0
+    for mat in bpy.data.materials:
+        if not mat.users or not mat.node_tree or _volume_only(mat):
+            continue
+        r = dict(mat.get("reze") or {})
+        if r.get("unlit") or "look" in r:
+            continue
+        node = _surface(mat)
+        if node is None or node.type != "BSDF_PRINCIPLED":
+            continue
+        t = node.inputs["Transmission Weight"]
+        if t.links or t.default_value >= 0.5:
+            continue
+        r["look"] = ""
+        mat["reze"] = r
+        stated += 1
+    if stated:
+        note(notes, f"looks: {stated} lit Principled material(s) state no surface look, so the app draws them as Blender "
+                    "describes them rather than by a look their name suggests (water, glass)")
+
+
+# ── Numbers from nodes: a roughness or metal made by nodes, as its mean ──
+#
+# glTF carries roughness and metal as a number or a picture. One made by nodes
+# (a noise mapped to 0.22..0.42: wet stone, glossy in patches) went out as
+# glTF's default of 1, a matte floor where Blender draws a reflecting one. It
+# is evaluated over the surface (_node_values: a noise at its mean) and its
+# mean is the number.
+
+
+def _fold_node_numbers(scene, notes):
+    import numpy as np
+    done = []
+    for mat in bpy.data.materials:
+        if not mat.users or not mat.node_tree or _volume_only(mat):
+            continue
+        bsdf = _surface(mat)
+        if bsdf is None or bsdf.type != "BSDF_PRINCIPLED":
+            continue
+        for key in ("Roughness", "Metallic"):
+            sock = bsdf.inputs[key]
+            if not sock.links or _image_fed(sock, ("Color", "Alpha")):
+                continue
+            obs = [ob for ob in scene.objects if ob.type == "MESH" and ob.data.vertices
+                   and any(s.material == mat for s in ob.material_slots)]
+            if not obs:
+                continue
+            vals = []
+            for ob in obs[:16]:
+                co = np.array([tuple(v.co) for v in ob.data.vertices])
+                if len(co) > 4096:
+                    co = co[np.random.default_rng(5).choice(len(co), 4096, replace=False)]
+                lo, hi = co.min(0), co.max(0)
+                gen = (co - lo) / np.where(hi - lo > 1e-9, hi - lo, 1.0)
+                v = _node_values(sock, gen, co)
+                if v is None:
+                    vals = None
+                    break
+                vals.append(v if v.ndim == 1 else v.mean(1))
+            if not vals:
+                continue
+            mean = float(np.clip(np.concatenate(vals).mean(), 0, 1))
+            for link in list(sock.links):
+                mat.node_tree.links.remove(link)
+            sock.default_value = mean
+            done.append(f"{mat.name} {key.lower()} {mean:.2f}")
+    if done:
+        note(notes, "numbers from nodes, as their mean over the surface: " + ", ".join(done))
+
+
 # ── Instances made real ──
 
 
@@ -213,7 +911,7 @@ def _coplanar(scene, notes, lift=0.002, min_area=0.05):
         ev = ob.evaluated_get(dg)
         me = ev.to_mesh()
         mw = ob.matrix_world
-        nm = mw.to_3x3().inverted().transposed()
+        nm = mw.to_3x3().inverted_safe().transposed()
         sc = abs(mw.to_scale().x * mw.to_scale().y)
         for p in me.polygons:
             if p.area * sc < min_area:
@@ -988,7 +1686,7 @@ def _glow_lamps(scene, notes):
         me = ev.to_mesh()
         try:
             mw = ob.matrix_world
-            n3 = mw.to_3x3().inverted().transposed()
+            n3 = mw.to_3x3().inverted_safe().transposed()
             by = {}
             for p in me.polygons:
                 if p.material_index not in glows:
@@ -1294,21 +1992,151 @@ def _ambient(scene, notes):
     return sh
 
 
-def _volume_params(mat):
+def _node_values(socket, gen, obj, geo=None):
+    """A float or vector input evaluated at N points, as an (N,) or (N, 3)
+    array: its default when unlinked, else the nodes feeding it, for the few
+    a density is usually made of (texture coordinates, maths, map range).
+    `gen` and `obj` are the points' Generated and Object coordinates, `geo`
+    the Geometry node's outputs there (a surface's Normal and Incoming). None
+    for a node it does not know (a noise texture, an attribute)."""
+    import numpy as np
+    n = len(gen)
+    if not socket.is_linked:
+        v = socket.default_value
+        if hasattr(v, "__len__"):
+            return np.broadcast_to(np.array(tuple(v)[:3], dtype=np.float64), (n, 3))
+        return np.full(n, float(v))
+    link = socket.links[0]
+    node, out = link.from_node, link.from_socket
+    if node.type == "REROUTE":
+        return _node_values(node.inputs[0], gen, obj, geo)
+
+    def inp(i):
+        return _node_values(node.inputs[i], gen, obj, geo)
+
+    def as_float(v):
+        return v if v is None or v.ndim == 1 else v.mean(1)
+    if node.type == "TEX_COORD":
+        return {"Generated": gen, "Object": obj}.get(out.name)
+    if node.type == "NEW_GEOMETRY":
+        return (geo or {}).get(out.name)
+    if node.type == "VALUE":
+        return np.full(n, float(out.default_value))
+    if node.type == "TEX_NOISE" and out.name in ("Fac", "Factor", "Color"):
+        # its MEAN, which is what the caller takes over the box: Blender's
+        # noise is centred on 0.5 (a mist's density as falloff × noise)
+        return np.full(n, 0.5) if out.name != "Color" else np.full((n, 3), 0.5)
+    if node.type == "SEPXYZ":
+        v = inp(0)
+        return None if v is None else v[:, "XYZ".index(out.name)]
+    if node.type == "VECT_MATH":
+        a, b = inp(0), inp(1)
+        if a is None or b is None:
+            return None
+        op = node.operation
+        if op == "LENGTH":
+            return np.linalg.norm(a, axis=1)
+        if op == "DISTANCE":
+            return np.linalg.norm(a - b, axis=1)
+        if op == "DOT_PRODUCT":
+            return (a * b).sum(1)
+        if op == "SCALE":
+            return a * as_float(inp(3))[:, None]
+        f = {"ADD": np.add, "SUBTRACT": np.subtract, "MULTIPLY": np.multiply, "MINIMUM": np.minimum,
+             "MAXIMUM": np.maximum}.get(op)
+        if f is not None:
+            return f(a, b)
+        if op == "ABSOLUTE":
+            return np.abs(a)
+        return None
+    if node.type == "MATH":
+        a, b = as_float(inp(0)), as_float(inp(1))
+        if a is None or b is None:
+            return None
+        op = node.operation
+        f = {"ADD": lambda: a + b, "SUBTRACT": lambda: a - b, "MULTIPLY": lambda: a * b,
+             "DIVIDE": lambda: np.divide(a, b, out=np.zeros_like(a), where=b != 0),
+             "POWER": lambda: np.power(np.maximum(a, 0), b), "MINIMUM": lambda: np.minimum(a, b),
+             "MAXIMUM": lambda: np.maximum(a, b), "ABSOLUTE": lambda: np.abs(a),
+             "LESS_THAN": lambda: (a < b).astype(float), "GREATER_THAN": lambda: (a > b).astype(float)}.get(op)
+        if f is None:
+            return None
+        v = f()
+        return np.clip(v, 0, 1) if node.use_clamp else v
+    if node.type == "CLAMP":
+        v, lo, hi = as_float(inp(0)), as_float(inp(1)), as_float(inp(2))
+        return None if v is None or lo is None or hi is None else np.clip(v, lo, hi)
+    if node.type == "MAP_RANGE" and node.data_type == "FLOAT" and node.interpolation_type in ("LINEAR", "SMOOTHSTEP"):
+        v, a0, a1, b0, b1 = (as_float(inp(i)) for i in range(5))
+        if any(x is None for x in (v, a0, a1, b0, b1)):
+            return None
+        t = np.divide(v - a0, a1 - a0, out=np.zeros_like(v), where=(a1 - a0) != 0)
+        if node.interpolation_type == "SMOOTHSTEP":
+            t = np.clip(t, 0, 1)
+            t = t * t * (3 - 2 * t)
+        r = b0 + t * (b1 - b0)
+        return np.clip(r, np.minimum(b0, b1), np.maximum(b0, b1)) if node.clamp else r
+    return None
+
+
+def _density(sock, ob):
+    """A volume's density: its number, or when nodes drive it (a soft ball
+    fading out to the box's edges) their MEAN over the object's box, which a
+    uniform fog stands in for. None when the nodes cannot be read here."""
+    if not sock.is_linked:
+        return sock.default_value
+    if ob is None or ob.type != "MESH" or not ob.data.vertices:
+        return None
+    import numpy as np
+    co = np.array([tuple(v.co) for v in ob.data.vertices])
+    lo, hi = co.min(0), co.max(0)
+    u = np.random.default_rng(3).random((4096, 3))
+    d = _node_values(sock, u, lo + u * (hi - lo))
+    if d is None:
+        return None
+    return float(np.maximum(d if d.ndim == 1 else d.mean(1), 0).mean())
+
+
+def _density_at(ob, points):
+    """A volume object's density at world points (an (N,) array), from its
+    material's nodes, or None when they cannot be read here (then the box's
+    mean stands in). Generated coordinates are the mesh's own bounds."""
+    import numpy as np
+    mat = ob.material_slots[0].material if ob.material_slots else None
+    out = _output(mat) if mat else None
+    node = _linked_from(out.inputs["Volume"])[0] if out else None
+    if node is None or node.type not in ("PRINCIPLED_VOLUME", "VOLUME_SCATTER", "VOLUME_ABSORPTION"):
+        return None
+    sock = node.inputs["Density"]
+    if not sock.is_linked:
+        return np.full(len(points), float(sock.default_value))
+    co = np.array([tuple(v.co) for v in ob.data.vertices])
+    lo, hi = co.min(0), co.max(0)
+    inv = np.array(ob.matrix_world.inverted_safe())
+    local = (np.c_[points, np.ones(len(points))] @ inv.T)[:, :3]
+    gen = (local - lo) / np.where(hi - lo > 0, hi - lo, 1.0)
+    d = _node_values(sock, gen, local)
+    if d is None:
+        return None
+    d = d if d.ndim == 1 else d.mean(1)
+    # outside the box there is no haze
+    inside = np.all((gen >= 0) & (gen <= 1), axis=1)
+    return np.where(inside, np.maximum(d, 0), 0.0)
+
+
+def _volume_params(mat, ob=None):
     """(extinction per metre, albedo rgb) of a volume material, or None."""
     out = _output(mat)
     node = _linked_from(out.inputs["Volume"])[0] if out else None
     if node is None:
         return None
-    if node.type == "PRINCIPLED_VOLUME":
-        d = node.inputs["Density"].default_value
-        c = tuple(node.inputs["Color"].default_value)[:3]
-    elif node.type == "VOLUME_SCATTER":
-        d = node.inputs["Density"].default_value
-        c = tuple(node.inputs["Color"].default_value)[:3]
-    elif node.type == "VOLUME_ABSORPTION":
-        d = node.inputs["Density"].default_value
-        c = (0.0, 0.0, 0.0)
+    if node.type in ("PRINCIPLED_VOLUME", "VOLUME_SCATTER", "VOLUME_ABSORPTION"):
+        sock = node.inputs["Density"]
+        d = _density(sock, ob)
+        if d is None:
+            # nodes this cannot read: their default, as before
+            d = sock.default_value
+        c = tuple(node.inputs["Color"].default_value)[:3] if node.type != "VOLUME_ABSORPTION" else (0.0, 0.0, 0.0)
     else:
         return None
     return (d, c) if d > 0 else None
@@ -1470,7 +2298,7 @@ def _haze(scene, notes, probe=None):
     for ob in scene.objects:
         if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.material_slots \
                 and all(s.material and _volume_only(s.material) for s in ob.material_slots):
-            p = _volume_params(ob.material_slots[0].material)
+            p = _volume_params(ob.material_slots[0].material, ob)
             if p:
                 corners = [ob.matrix_world @ v.co for v in ob.data.vertices]
                 lo = np.min(np.array(corners), 0)
@@ -1560,7 +2388,7 @@ def _haze_boxes(scene):
     for ob in scene.objects:
         if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.material_slots \
                 and all(s.material and _volume_only(s.material) for s in ob.material_slots):
-            p = _volume_params(ob.material_slots[0].material)
+            p = _volume_params(ob.material_slots[0].material, ob)
             if p:
                 corners = np.array([ob.matrix_world @ v.co for v in ob.data.vertices])
                 out.append((ob, p[0], p[1], corners.min(0), corners.max(0)))
@@ -1723,6 +2551,9 @@ def _glow_planes(name, quads, material, scene):
     return ob
 
 
+VEIL_MIN = 0.05   # a haze cloud's veil below which its cards add light instead of laying it over
+
+
 def _glow_cards(scene, notes, only=None):
     """THE HAZE'S GLOW, as cards the app already draws.
 
@@ -1780,6 +2611,26 @@ def _glow_cards(scene, notes, only=None):
             bvh = _surfaces_bvh(scene)
         span = _mean_exit(bvh, at, box[3], box[4], skip=r0)
         power = L.energy * (2.0 ** getattr(L, "exposure", 0.0))
+        # THE AIR THIS LIGHT LIGHTS: a haze whose density fades out toward its
+        # box's edges (a soft cloud) is thin where a light at its edge stands,
+        # and the box's mean drew a rim light at a rose arch's edge as a bright
+        # star where Blender shows nothing. The density is read where the glow
+        # is: down a spot's beam, in the ball around anything else.
+        rng = np.random.default_rng(11)
+        if L.type == "SPOT" and L.spot_size < math.radians(170):
+            ax0 = np.array((ob.matrix_world.to_3x3() @ Vector((0, 0, -1))).normalized())
+            with np.errstate(divide="ignore", invalid="ignore"):
+                tt = np.where(ax0 > 0, (box[4] - at) / ax0, np.where(ax0 < 0, (box[3] - at) / ax0, np.inf))
+            run = max(float(tt.min()), r0)
+            pts = at + np.outer(np.linspace(r0, run, 64), ax0)
+        else:
+            rad = max(r0, min(span, 2.0))
+            dirs = rng.normal(size=(512, 3))
+            dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+            pts = at + dirs * (rad * rng.random((512, 1)) ** (1 / 3))
+        local = _density_at(box[0], pts)
+        if local is not None:
+            sigma = float(local.mean())
         col = np.array(L.color) * albedo * sigma            # sigma_s, per channel
         if col.max() <= 0 or power <= 0 or span < 2 * r0:
             continue
@@ -1790,6 +2641,12 @@ def _glow_cards(scene, notes, only=None):
         # draws over what is behind it, e^(-sigma*l) through the cloud's middle
         # (l twice the light's reach), shared among the planes.
         veil = 1 - math.exp(-sigma * 2 * span) if not _holds_cast(box[3], box[4]) else 0.0
+        # A VEIL TOO THIN TO HIDE ANYTHING is light, not cover: shared over the
+        # planes its alpha is under one step of the picture's 8 bits, and the
+        # colour (light / alpha) came out as flat blocks and grey stars over a
+        # rose garden's thin mist. Below VEIL_MIN the glow is added.
+        if veil < VEIL_MIN:
+            veil = 0.0
 
         def card(shape, envelope, planes, colour, strength):
             cover = (lambda u, v: 1 - (1 - veil * envelope(u, v)) ** (1 / planes)) if veil else None
@@ -2370,12 +3227,24 @@ def _from_nodes(socket):
     return _constant_colour(*_linked_from(socket)) is None
 
 
-def _baked_colours(scene, notes):
+def _alpha_from_nodes(socket):
+    """An alpha fed by nodes that are no picture and no number."""
+    if not socket.links:
+        return False
+    if _image_fed(socket, ("Color", "Alpha")):
+        return False
+    node = _linked_from(socket)[0]
+    return node is not None and node.type != "VALUE"
+
+
+def _baked_colours(scene, notes, only=None):
     import numpy as np
     targets = {}
     for mat in bpy.data.materials:
         if not mat.node_tree or mat.users == 0 or _volume_only(mat) or _haze_card(mat):
             continue
+        if only is not None and mat.name not in only:
+            continue    # baked in an atlas of their own (see export_stage)
         node = _surface(mat)
         if node is None or node.type != "BSDF_PRINCIPLED":
             continue
@@ -2384,8 +3253,16 @@ def _baked_colours(scene, notes):
         i = node.inputs
         base = _from_nodes(i["Base Color"])
         glow = _from_nodes(i["Emission Color"]) and not i["Emission Strength"].links and i["Emission Strength"].default_value > 0
-        if base or glow:
-            targets[mat.name] = (base, glow)
+        # A CUT-OUT MADE BY NODES (a noise ramped into alpha): baked into the
+        # colour picture's alpha, so the colour picture is made too
+        alpha = _alpha_from_nodes(i["Alpha"])
+        # A BUMP MADE BY NODES (a noise through a Bump node: water's ripples)
+        # baked into a normal map, which glTF carries; a picture already in a
+        # Normal Map node goes out as it is
+        bump = bool(i["Normal"].links) and _linked_from(i["Normal"])[0] is not None \
+            and _linked_from(i["Normal"])[0].type != "NORMAL_MAP"
+        if base or glow or alpha or bump:
+            targets[mat.name] = (base or alpha, glow, alpha, bump)
     if not targets:
         return
     obs = [ob for ob in scene.objects if ob.type == "MESH" and ob.visible_get() and not ob.hide_render and ob.data.polygons
@@ -2394,98 +3271,177 @@ def _baked_colours(scene, notes):
                    for s in ob.material_slots if s.material and s.material.node_tree)]
     if not obs:
         return
+    # ONE ATLAS, ONE BAKE: Cycles syncs the whole scene for every bake call,
+    # so one call per object synced a room of 1,200 objects 65 times over for
+    # its 65 stones. The objects are laid out together (as the occlusion's
+    # atlas is) and baked as one joined copy (_bake_atlas), and each target
+    # material wears the one picture on their shared UV layout.
+    inside = set(obs)
+    for name in list(targets):
+        m = bpy.data.materials[name]
+        if any(s.material == m for ob in scene.objects if ob not in inside for s in ob.material_slots):
+            # also worn by something not laid out: those keep the nodes, and
+            # the laid-out ones get a copy that wears the picture
+            cp = m.copy()
+            targets[cp.name] = targets[name]
+            for ob in obs:
+                for slot in ob.material_slots:
+                    if slot.material == m:
+                        slot.material = cp
+            del targets[name]
     dg = bpy.context.evaluated_depsgraph_get()
+    for ob in obs:
+        if ob.modifiers:
+            ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+            ob.modifiers.clear()
+        elif ob.data.users > 1:
+            ob.data = ob.data.copy()
+        # THE OBJECT'S OWN UVs STAY: a pattern read through them (a noise
+        # stretched along a ring's UVs) is what the bake has to see. The
+        # atlas is a layer of its own, the one baked into (active) while the
+        # nodes go on reading the old one (active for render).
+        me = ob.data
+        render = next((uv for uv in me.uv_layers if uv.active_render), None)
+        bake_uv = me.uv_layers.get("reze_bake") or me.uv_layers.new(name="reze_bake")
+        me.uv_layers.active = bake_uv
+        if render is not None:
+            render.active_render = True
+    size = _atlas_size(obs, BAKE_TEXELS_PER_M, BAKE_MAX)
     vl = bpy.context.view_layer
-    c = scene.cycles
-    keep = (scene.render.engine, c.samples, c.use_denoising)
-    baked, origin = set(), {}
-    try:
-        scene.render.engine = "CYCLES"
-        c.samples = 16
-        for ob in obs:
-            if ob.modifiers:
-                ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
-                ob.modifiers.clear()
-            elif ob.data.users > 1:
-                ob.data = ob.data.copy()
-            me = ob.data
-            for uv in list(me.uv_layers):
-                me.uv_layers.remove(uv)
-            me.uv_layers.new(name="UVMap")
-            s = ob.matrix_world.to_scale()
-            area = sum(p.area for p in me.polygons) * abs(s.x * s.y)
-            size = int(min(BAKE_MAX, max(64, 2 ** math.ceil(math.log2(max(1.0, math.sqrt(area) * BAKE_TEXELS_PER_M))))))
-            for o in scene.objects:
-                o.select_set(False)
-            ob.select_set(True)
-            vl.objects.active = ob
-            bpy.ops.object.mode_set(mode="EDIT")
-            bpy.ops.mesh.select_all(action="SELECT")
-            bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=2.0 / size, area_weight=0.0, scale_to_bounds=False)
-            bpy.ops.object.mode_set(mode="OBJECT")
-            # ITS OWN COPY of a shared material: the baked picture is this
-            # object's atlas, on this object's fresh UVs
-            for slot in ob.material_slots:
-                m = slot.material
-                if m and m.name in targets and m.users > 1:
-                    slot.material = m.copy()
-                    targets[slot.material.name] = targets[m.name]
-                    origin[slot.material.name] = origin.get(m.name, m.name)
-            mats = [s.material for s in ob.material_slots if s.material and s.material.name in targets]
-            for kind in ("EMIT", "DIFFUSE"):
-                want = [m for m in mats if targets[m.name][0 if kind == "DIFFUSE" else 1]]
-                if not want:
-                    continue
-                img = bpy.data.images.new(f"reze_bake_{kind.lower()}", size, size, float_buffer=True)
-                img.colorspace_settings.name = "Non-Color"
-                added = []
-                # every slot gets the target (Cycles bakes the active image node
-                # of each material), the others' results thrown away
-                for m in {s.material for s in ob.material_slots if s.material}:
-                    n = m.node_tree.nodes.new("ShaderNodeTexImage")
-                    n.image = img
-                    m.node_tree.nodes.active = n
-                    added.append((m, n))
-                try:
-                    if kind == "DIFFUSE":
-                        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, margin=2, use_clear=True)
-                    else:
-                        bpy.ops.object.bake(type="EMIT", margin=2, use_clear=True)
-                finally:
-                    for m, n in added:
-                        m.node_tree.nodes.remove(n)
-                px = np.empty(size * size * 4, dtype=np.float32)
-                img.pixels.foreach_get(px)
-                bpy.data.images.remove(img)
-                rgb = px.reshape(size, size, 4)[..., :3].astype(np.float64)
-                top = float(rgb.max()) if kind == "EMIT" else 1.0
-                if top <= 0:
-                    continue
-                v = np.clip(rgb / top, 0, 1)
-                enc = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
-                out = bpy.data.images.new(f"{ob.name} {'glow' if kind == 'EMIT' else 'colour'}", size, size)
-                out.pixels.foreach_set(np.concatenate([enc, np.ones((size, size, 1))], axis=-1).astype(np.float32).ravel())
-                out.pack()
-                for m in want:
-                    nt = m.node_tree
-                    bsdf = _surface(m)
-                    tex = nt.nodes.new("ShaderNodeTexImage")
-                    tex.image = out
-                    uvn = nt.nodes.new("ShaderNodeUVMap")
-                    uvn.uv_map = "UVMap"
-                    nt.links.new(uvn.outputs[0], tex.inputs["Vector"])
-                    sock = bsdf.inputs["Emission Color" if kind == "EMIT" else "Base Color"]
-                    for link in list(sock.links):
-                        nt.links.remove(link)
-                    nt.links.new(tex.outputs["Color"], sock)
-                    if kind == "EMIT":
-                        bsdf.inputs["Emission Strength"].default_value = top
-                    baked.add(origin.get(m.name, m.name))
-    finally:
-        scene.render.engine, c.samples, c.use_denoising = keep
+    for o in scene.objects:
+        o.select_set(False)
+    for ob in obs:
+        ob.select_set(True)
+    vl.objects.active = obs[0]
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=2.0 / size, area_weight=0.0, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # every material the joined copy wears gets the bake's image node (Cycles
+    # bakes the active image node of each); the others' texels go unused
+    worn = {s.material.name for ob in obs for s in ob.material_slots if s.material}
+    baked = set()
+    # the bakes read colour and glow at full coverage: Cycles weighs a
+    # closure by the surface's alpha, so a cut-out's colours baked dim
+    held = {}
+    for n in targets:
+        sock = _surface(bpy.data.materials[n]).inputs["Alpha"]
+        held[n] = (sock.links[0].from_socket if sock.links else None, sock.default_value)
+        for link in list(sock.links):
+            sock.id_data.links.remove(link)
+        sock.default_value = 1.0
+    coverage = None
+    if any(t[2] for t in targets.values()):
+        # the alpha baked as a glow: its source wired into the emission for
+        # this one bake, the emission put back after
+        kept = {}
+        for n, t in targets.items():
+            if not t[2]:
+                continue
+            nt = bpy.data.materials[n].node_tree
+            bsdf = _surface(bpy.data.materials[n])
+            ec, es = bsdf.inputs["Emission Color"], bsdf.inputs["Emission Strength"]
+            kept[n] = (ec.links[0].from_socket if ec.links else None, tuple(ec.default_value), es.default_value)
+            for link in list(ec.links):
+                nt.links.remove(link)
+            nt.links.new(held[n][0], ec)
+            es.default_value = 1.0
+        try:
+            coverage = np.clip(_bake_atlas(scene, obs, worn, size, 16, uv="reze_bake", smooth=False, type="EMIT")[..., 0], 0, 1)
+        finally:
+            for n, (src, colour, strength) in kept.items():
+                nt = bpy.data.materials[n].node_tree
+                bsdf = _surface(bpy.data.materials[n])
+                ec = bsdf.inputs["Emission Color"]
+                for link in list(ec.links):
+                    nt.links.remove(link)
+                if src is not None:
+                    nt.links.new(src, ec)
+                ec.default_value = colour
+                bsdf.inputs["Emission Strength"].default_value = strength
+    bumped = [n for n in targets if targets[n][3]]
+    if bumped:
+        # tangent space on the atlas' own UVs, which glTF's tangents follow
+        nrm = _bake_atlas(scene, obs, worn, size, 16, uv="reze_bake", smooth=False, type="NORMAL", normal_space="TANGENT")
+        img = bpy.data.images.new("reze normal", size, size)
+        img.colorspace_settings.name = "Non-Color"
+        img.pixels.foreach_set(np.concatenate([np.clip(nrm, 0, 1), np.ones((size, size, 1))], axis=-1).astype(np.float32).ravel())
+        img.pack()
+        for n in bumped:
+            m = bpy.data.materials[n]
+            nt = m.node_tree
+            bsdf = _surface(m)
+            tex = nt.nodes.new("ShaderNodeTexImage")
+            tex.image = img
+            tex.interpolation = "Linear"
+            uvn = nt.nodes.new("ShaderNodeUVMap")
+            uvn.uv_map = "reze_bake"
+            nt.links.new(uvn.outputs[0], tex.inputs["Vector"])
+            nm = nt.nodes.new("ShaderNodeNormalMap")
+            nm.uv_map = "reze_bake"
+            nt.links.new(tex.outputs["Color"], nm.inputs["Color"])
+            for link in list(bsdf.inputs["Normal"].links):
+                nt.links.remove(link)
+            nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+            baked.add(n)
+    for kind in ("EMIT", "DIFFUSE"):
+        want = [bpy.data.materials[n] for n in targets if targets[n][0 if kind == "DIFFUSE" else 1]]
+        if not want:
+            continue
+        if kind == "DIFFUSE":
+            rgb = _bake_atlas(scene, obs, worn, size, 16, uv="reze_bake", smooth=False, type="DIFFUSE", pass_filter={"COLOR"})
+        else:
+            rgb = _bake_atlas(scene, obs, worn, size, 16, uv="reze_bake", smooth=False, type="EMIT")
+        top = float(rgb.max()) if kind == "EMIT" else 1.0
+        if top <= 0:
+            continue
+        v = np.clip(rgb / top, 0, 1)
+        enc = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
+        a = coverage[..., None] if kind == "DIFFUSE" and coverage is not None else np.ones((size, size, 1))
+        out = bpy.data.images.new(f"reze {'glow' if kind == 'EMIT' else 'colour'}", size, size, alpha=True)
+        out.pixels.foreach_set(np.concatenate([enc, a], axis=-1).astype(np.float32).ravel())
+        out.pack()
+        for m in want:
+            nt = m.node_tree
+            bsdf = _surface(m)
+            tex = nt.nodes.new("ShaderNodeTexImage")
+            tex.image = out
+            uvn = nt.nodes.new("ShaderNodeUVMap")
+            uvn.uv_map = "reze_bake"
+            nt.links.new(uvn.outputs[0], tex.inputs["Vector"])
+            if kind == "DIFFUSE" and targets[m.name][2]:
+                nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+            sock = bsdf.inputs["Emission Color" if kind == "EMIT" else "Base Color"]
+            for link in list(sock.links):
+                nt.links.remove(link)
+            nt.links.new(tex.outputs["Color"], sock)
+            if kind == "EMIT":
+                bsdf.inputs["Emission Strength"].default_value = top
+            baked.add(m.name)
+    # the pictures stand in for every node that read the object's own UVs (its
+    # materials hold no other pictures), so the atlas becomes its only layer:
+    # the app reads base colour and glow through the first
+    for ob in obs:
+        me = ob.data
+        for uv in [uv for uv in me.uv_layers if uv.name != "reze_bake"]:
+            me.uv_layers.remove(uv)
+        if "reze_bake" in me.uv_layers:
+            me.uv_layers["reze_bake"].active = True
+            me.uv_layers["reze_bake"].active_render = True
+    for n, (src, value) in held.items():
+        sock = _surface(bpy.data.materials[n]).inputs["Alpha"]
+        if sock.links:
+            continue    # the baked alpha
+        sock.default_value = value
+        if src is not None:
+            sock.id_data.links.new(src, sock)
     if baked:
-        note(notes, f"colours from nodes: {', '.join(sorted(baked))} baked by Cycles into pictures (base colour and glow), "
-                    "which glTF can carry")
+        cut = sorted(n for n in baked if targets.get(n, (0, 0, 0, 0))[2])
+        bump = sorted(n for n in baked if targets.get(n, (0, 0, 0, 0))[3])
+        note(notes, f"colours from nodes: {', '.join(sorted(baked))} baked by Cycles into one {size}x{size} picture "
+                    f"on {len(obs)} object(s) (base colour and glow), which glTF can carry"
+                    + (f"; the cut-out made by nodes in {', '.join(cut)} into the picture's alpha" if cut else "")
+                    + (f"; the bump made by nodes in {', '.join(bump)} into a normal map" if bump else ""))
 
 
 # ── Occlusion: the room's own contact darkening, baked by Cycles ──
@@ -2593,10 +3549,10 @@ def _atlas_size(obs, texels_per_m, most):
     return int(min(most, max(64, 2 ** math.ceil(math.log2(max(1.0, math.sqrt(area) * texels_per_m))))))
 
 
-def _bake_atlas(scene, obs, plain, size, samples, uv=None, **bake):
+def _bake_atlas(scene, obs, plain, size, samples, uv=None, smooth=True, **bake):
     """Cycles bakes the atlas objects into one float picture of `size`, on
     their active UV layer or the one named `uv`, returned as an (H, W, 3)
-    array smoothed over 3x3 texels."""
+    array, smoothed over 3x3 texels unless `smooth` is off."""
     import numpy as np
     img = bpy.data.images.new("reze_atlas_bake", size, size, float_buffer=True)
     img.colorspace_settings.name = "Non-Color"
@@ -2653,6 +3609,8 @@ def _bake_atlas(scene, obs, plain, size, samples, uv=None, **bake):
     img.pixels.foreach_get(px)
     bpy.data.images.remove(img)
     rgb = px.reshape(size, size, 4)[..., :3].astype(np.float64)
+    if not smooth:
+        return rgb
     # the bake's grain, smoothed over 3x3 texels
     pad = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode="edge")
     return sum(pad[1 + dy:1 + dy + size, 1 + dx:1 + dx + size] for dy in (-1, 0, 1) for dx in (-1, 0, 1)) / 9.0
@@ -3002,6 +3960,12 @@ def export_stage(out_path, webp=True, quality=90, bake_light=False):
     step(0.3, "Making instances real")
     _realize(scene, notes)
     _coplanar(scene, notes)
+    _inline_surface_groups(notes)
+    _unlit_sheets(scene, notes)
+    sheer = _sheer_surfaces(scene, notes)
+    sheer |= _two_sided(scene, notes)
+    glows = _emission_surfaces(notes)
+    _fold_node_numbers(scene, notes)
     for mat in bpy.data.materials:
         _fold_emission(mat)
 
@@ -3009,10 +3973,15 @@ def export_stage(out_path, webp=True, quality=90, bake_light=False):
     carried = {k: _stored(previous, k) for k in ("grading", "ambient", "fog", "groundShadow")}
     device = _cycles_device(scene)
     step(0.32, "Colours from nodes")
-    try:
-        _baked_colours(scene, notes)
-    except Exception as e:  # noqa: BLE001 — the stage still exports without them
-        note(notes, f"colours from nodes: could not be baked ({e})")
+    # a sky card or a sheet of gauze in an atlas of its own: one 280 m card
+    # laid out with the rocks would take nearly all of their texels
+    for only in (glows, sheer, None):
+        if only is not None and not only:
+            continue
+        try:
+            _baked_colours(scene, notes, only=only)
+        except Exception as e:  # noqa: BLE001 — the stage still exports without them
+            note(notes, f"colours from nodes: could not be baked ({e})")
     ambient = None
     if not carried.get("ambient"):
         step(0.35, f"Measuring the room's light (Cycles on {device})")
@@ -3105,6 +4074,7 @@ def export_stage(out_path, webp=True, quality=90, bake_light=False):
                      **({"particlesJson": json.dumps(particles)} if particles else {})}
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    _stated_looks(notes)
     step(0.75, "Writing the glTF")
     bpy.ops.export_scene.gltf(
         filepath=out_path,
