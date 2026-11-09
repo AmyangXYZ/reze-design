@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Notice } from "@/components/ui/notice"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
 import {
   Select,
   SelectContent,
@@ -39,11 +40,14 @@ import type { SceneTimeline } from "@/lib/timeline"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
+import { VALUE_BOX } from "@/components/scene/scene-sidebar"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/lib/auth-client"
 import { ColorField } from "@/components/color-picker"
 import {
   MARK_DEFAULT_COLOR,
+  MARK_OPACITY_DEFAULT,
+  MARK_SIZE,
   MARK_DEFAULT_PLACE,
   MARK_NAME_MAX,
   MARK_PLACES,
@@ -114,6 +118,8 @@ type ExportPrefs = {
   markPlace: MarkPlace
   markMoving: boolean
   markColor: string
+  markSize: number
+  markOpacity: number
 }
 const EXPORT_DEFAULTS: ExportPrefs = {
   aspect: "2.39:1",
@@ -126,6 +132,8 @@ const EXPORT_DEFAULTS: ExportPrefs = {
   markPlace: MARK_DEFAULT_PLACE,
   markMoving: false,
   markColor: MARK_DEFAULT_COLOR,
+  markSize: MARK_SIZE.default,
+  markOpacity: MARK_OPACITY_DEFAULT,
 }
 
 function readExportPrefs(): ExportPrefs {
@@ -145,6 +153,8 @@ function readExportPrefs(): ExportPrefs {
       markPlace: MARK_PLACES.includes(p.markPlace as MarkPlace) ? (p.markPlace as MarkPlace) : MARK_DEFAULT_PLACE,
       markMoving: p.markMoving === true,
       markColor: typeof p.markColor === "string" && /^#[0-9a-f]{6}$/i.test(p.markColor) ? p.markColor : MARK_DEFAULT_COLOR,
+      markSize: typeof p.markSize === "number" ? Math.min(MARK_SIZE.max, Math.max(MARK_SIZE.min, p.markSize)) : MARK_SIZE.default,
+      markOpacity: typeof p.markOpacity === "number" ? Math.min(1, Math.max(0.1, p.markOpacity)) : MARK_OPACITY_DEFAULT,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -253,6 +263,77 @@ function PlacePicker({
           />
         </Button>
       ))}
+    </div>
+  )
+}
+
+/**
+ * A slider and its value in percent, sized to sit where a row's select does.
+ * Double-click the value to type one, as on the dock's sliders: Enter or
+ * leaving the field commits it, Escape drops it.
+ */
+function PercentSlider({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (v: number) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  const commit = (raw: string) => {
+    setEditing(false)
+    const typed = Number(raw.replace("%", "").trim())
+    if (!Number.isFinite(typed)) return
+    const v = Math.min(max, Math.max(min, typed / 100))
+    if (v !== value) onChange(Number(v.toFixed(4)))
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Slider
+        className="w-24 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
+        value={[value]}
+        min={min}
+        max={max}
+        step={step}
+        onValueChange={([v]) => onChange(v)}
+      />
+      <Input
+        variant="bare"
+        readOnly={!editing}
+        value={editing ? draft : `${Math.round(value * 100)}%`}
+        onMouseDown={(e) => {
+          if (editing || e.detail !== 2) return
+          e.preventDefault()
+          const el = e.currentTarget
+          setDraft(String(Math.round(value * 100)))
+          setEditing(true)
+          requestAnimationFrame(() => {
+            el.focus()
+            el.select()
+          })
+        }}
+        onChange={(e) => editing && setDraft(e.target.value)}
+        onBlur={() => editing && commit(draft)}
+        onKeyDown={(e) => {
+          if (!editing) return
+          if (e.key === "Enter") e.currentTarget.blur()
+          else if (e.key === "Escape") setEditing(false)
+        }}
+        className={cn(
+          VALUE_BOX,
+          "outline-none",
+          editing
+            ? "border-foreground text-foreground"
+            : "cursor-text border-transparent text-muted-foreground select-none",
+        )}
+      />
     </div>
   )
 }
@@ -382,6 +463,8 @@ export const RenderPanel = memo(function RenderPanel({
   const [markPlace, setMarkPlace] = useState<MarkPlace>(prefs.markPlace)
   const [markMoving, setMarkMoving] = useState(prefs.markMoving)
   const [markColor, setMarkColor] = useState(prefs.markColor)
+  const [markSize, setMarkSize] = useState(prefs.markSize)
+  const [markOpacity, setMarkOpacity] = useState(prefs.markOpacity)
   // The field starts as the account's handle, a real value to edit. Once
   // edited, what was typed is the line, empty included.
   const handle = useSession().data?.user?.username
@@ -410,16 +493,16 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor })
-  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity })
+  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity])
   // What the frame gets: none on a compositing handoff, where the picture
   // goes on to be composited and a mark would be baked into the plate.
   const markOut = useMemo<Mark | null>(
     () =>
       !compositing && watermark
-        ? { name: shownName, place: markPlace, moving: markMoving, color: markColor }
+        ? { name: shownName, place: markPlace, moving: markMoving, color: markColor, size: markSize, opacity: markOpacity }
         : null,
-    [compositing, watermark, shownName, markPlace, markMoving, markColor],
+    [compositing, watermark, shownName, markPlace, markMoving, markColor, markSize, markOpacity],
   )
 
   // The frame this panel would render, for the rates the Bitrate options print
@@ -993,6 +1076,12 @@ export const RenderPanel = memo(function RenderPanel({
               </Row>
               <Row label={t.render.markMoving}>
                 <Switch checked={markMoving} onCheckedChange={setMarkMoving} className="scale-75" />
+              </Row>
+              <Row label={t.render.markSize}>
+                <PercentSlider value={markSize} min={MARK_SIZE.min} max={MARK_SIZE.max} step={0.05} onChange={setMarkSize} />
+              </Row>
+              <Row label={t.render.markOpacity}>
+                <PercentSlider value={markOpacity} min={0.1} max={1} step={0.01} onChange={setMarkOpacity} />
               </Row>
               <Row label={t.render.markColor}>
                 <ColorField value={markColor} onChange={setMarkColor} />

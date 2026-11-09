@@ -391,6 +391,8 @@ const en = {
       br: "Bottom right",
     } as Record<"tl" | "tc" | "tr" | "bl" | "bc" | "br", string>,
     markMoving: "Moving",
+    markSize: "Size",
+    markOpacity: "Opacity",
     markColor: "Color",
     /** The toggle that writes the AE script beside the video. */
     aeScript: "AE composition script",
@@ -1567,6 +1569,8 @@ const zh: Dictionary = {
     markPlace: "位置",
     markPlaces: { tl: "左上", tc: "上中", tr: "右上", bl: "左下", bc: "下中", br: "右下" },
     markMoving: "移动",
+    markSize: "大小",
+    markOpacity: "不透明度",
     markColor: "颜色",
     aeScript: "AE 合成脚本",
     quality: "质量",

@@ -1,11 +1,12 @@
 "use client"
 
 // The export's watermark over the framed canvas, drawn by the export's own
-// drawMark so the preview cannot disagree with the file. The canvas works at
-// 1080 lines, the smallest export, and is scaled to the frame: the mark is
-// sized from the height, so every export size reads the same as this.
+// drawMark so the preview cannot disagree with the file. The mark is laid out
+// on a frame of 1080 lines, the smallest export, and that layout is scaled
+// onto a canvas backed at the frame's own device pixels: the proportions are
+// the export's, and the type is as sharp as the screen.
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { drawMark, markFont, type Mark } from "@/lib/watermark"
 
 const LINES = 1080
@@ -18,16 +19,36 @@ export function MarksPreview({
   mark: Mark
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const w = Math.max(1, Math.round((LINES * rect.w) / rect.h))
+  // Read on mount and again when the screen or the zoom changes it.
+  const [dpr, setDpr] = useState(1)
+  useEffect(() => {
+    let query: MediaQueryList | null = null
+    const read = () => {
+      setDpr(window.devicePixelRatio || 1)
+      query?.removeEventListener("change", read)
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+      query.addEventListener("change", read)
+    }
+    read()
+    return () => query?.removeEventListener("change", read)
+  }, [])
+
+  const pxW = Math.max(1, Math.round(rect.w * dpr))
+  const pxH = Math.max(1, Math.round(rect.h * dpr))
+  // The layout frame: 1080 lines at the frame's aspect.
+  const layoutW = (LINES * rect.w) / rect.h
 
   useEffect(() => {
     const canvas = ref.current
     const ctx = canvas?.getContext("2d")
     if (!canvas || !ctx) return
     const font = markFont()
+    const scale = pxH / LINES
     const draw = (time: number) => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawMark(ctx, canvas.width, canvas.height, font, mark, time)
+      ctx.setTransform(scale, 0, 0, scale, 0, 0)
+      drawMark(ctx, layoutW, LINES, font, mark, time)
     }
     // A moving mark is drawn every frame; a placed one once.
     if (!mark.moving) {
@@ -42,13 +63,13 @@ export function MarksPreview({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [w, mark])
+  }, [pxW, pxH, layoutW, mark])
 
   return (
     <canvas
       ref={ref}
-      width={w}
-      height={LINES}
+      width={pxW}
+      height={pxH}
       className="pointer-events-none absolute"
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
     />

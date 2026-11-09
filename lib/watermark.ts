@@ -12,8 +12,11 @@ export const MARK_DEFAULT_COLOR = "#ffffff"
 /** Longest name drawn; a name, not a caption. */
 export const MARK_NAME_MAX = 40
 
-/** `name` empty draws the wordmark alone. `moving` ignores `place`. */
-export type Mark = { name: string; place: MarkPlace; moving: boolean; color: string }
+/** `name` empty draws the wordmark alone. `moving` ignores `place`. `size`
+ *  scales the whole lockup (1 is the default measure); `opacity` is 0–1. */
+export type Mark = { name: string; place: MarkPlace; moving: boolean; color: string; size: number; opacity: number }
+export const MARK_SIZE = { min: 0.5, max: 2, default: 1 }
+export const MARK_OPACITY_DEFAULT = 0.92
 
 /** The lockup's face: the masthead's Instrument Serif, as
  *  components/wordmark.tsx sets it, read off next/font's CSS variable (its
@@ -32,11 +35,11 @@ export const markFont = (): string => {
  * and light, in its own capitals at `nameSize`, tracked lightly: one lockup,
  * the publisher over the author. `lead` is top to top.
  */
-function metrics(h: number) {
-  const size = Math.max(14, Math.round(h * 0.026))
+function metrics(h: number, scale: number) {
+  const size = Math.max(10, Math.round(h * 0.026 * scale))
   return {
     size,
-    nameSize: Math.max(12, Math.round(size * 0.8)),
+    nameSize: Math.max(10, Math.round(size * 0.9)),
     pad: Math.round(h * 0.03),
     lead: Math.round(size * 1.2),
     track: size * 0.28,
@@ -86,7 +89,7 @@ function fillLit(ctx: CanvasRenderingContext2D, text: string, x: number, y: numb
  * range export puts it in the same place.
  */
 export function drawMark(ctx: CanvasRenderingContext2D, w: number, h: number, font: string, mark: Mark, time = 0) {
-  const { size, nameSize, pad, lead, track, stroke } = metrics(h)
+  const { size, nameSize, pad, lead, track, stroke } = metrics(h, mark.size)
   const name = mark.name.trim().slice(0, MARK_NAME_MAX)
   const cx = ctx as CanvasRenderingContext2D & { letterSpacing?: string }
   const brandFont = `400 ${size}px ${font}`
@@ -124,7 +127,7 @@ export function drawMark(ctx: CanvasRenderingContext2D, w: number, h: number, fo
   const lineX = (lw: number) => (align === "left" ? left : align === "center" ? left + (boxW - lw) / 2 : left + boxW - lw)
 
   ctx.fillStyle = mark.color
-  ctx.globalAlpha = 0.92
+  ctx.globalAlpha = Math.min(1, Math.max(0, mark.opacity))
   ctx.font = brandFont
   cx.letterSpacing = `${track.toFixed(1)}px`
   const lit = isLight(mark.color)
