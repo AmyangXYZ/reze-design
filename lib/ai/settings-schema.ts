@@ -123,7 +123,8 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
       grid: { kind: "color", about: "Grid line colour." },
       gridPattern: { kind: "enum", values: ["lines", "dots"], about: "Grid as lines, or a dot on every crossing." },
       gridSize: { kind: "number", min: 1, max: 20, about: "Pattern cell in world units (between lines or dots); 4.2 is the default." },
-      mirror: { kind: "boolean", about: "A true mirror: the scene reflected in the floor. Shows through as opacity drops." },
+      mirror: { kind: "boolean", about: "A true mirror: the scene reflected in the floor, over its colour." },
+      reflectivity: { kind: "number", min: 0, max: 1, about: "How much the mirror reflects looking straight down; it rises toward the horizon. 1 is a true mirror." },
     },
   },
   eyes: {

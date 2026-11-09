@@ -4395,8 +4395,6 @@ function Lab() {
   /** The cast as an effect can be aimed at it: the id the document stores and the
    *  name the panel shows. Memoised on the cast's contents rather than rebuilt per
    *  render — it is a prop on a popover that is open while someone reads it. */
-  /** The floor's opacity before Mirror cleared it, for Mirror off to restore. */
-  const mirrorPriorOpacity = useRef<number | null>(null)
   const castTargets = useMemo(() => cast.map((m) => ({ id: m.id, name: displayName(m.file) })), [cast])
   /**
    * Who can be scheduled: the cast and the props — a prop on cue is most of
@@ -9470,31 +9468,29 @@ function Lab() {
                               onChange={(v) => patch("ground", { gridSize: v })}
                               fmt={(v) => v.toFixed(1)}
                             />
-                            {/* The true mirror: the scene rendered again, reflected.
-                                It lies UNDER the floor's colour, so Opacity above is
-                                how much shows. Always sharp: no blur dial, by choice. */}
+                            {/* The true mirror: the scene rendered again, reflected,
+                                OVER the floor's colour. Reflectivity is how much it
+                                reflects looking straight down (it rises toward the
+                                horizon); Opacity above is only how see-through the
+                                floor is. Always sharp: no blur dial, by choice. */}
                             <div className="mt-2.5 flex items-center justify-between">
                               <span className="text-xs">{t.lab.ctl.mirror}</span>
                               <Switch
                                 size="sm"
                                 checked={!!ground.mirror}
-                                onCheckedChange={(v) => {
-                                  // The reflection lies UNDER the floor's colour, so a
-                                  // mirror turned on over an opaque floor is a tinted
-                                  // one. On clears the floor to show the true mirror
-                                  // (Opacity brings the tint back); off puts back the
-                                  // opacity it cleared, if nobody has moved it since.
-                                  if (v) {
-                                    mirrorPriorOpacity.current = ground.opacity
-                                    patch("ground", { mirror: true, opacity: 0 })
-                                  } else {
-                                    const prior = mirrorPriorOpacity.current
-                                    mirrorPriorOpacity.current = null
-                                    patch("ground", prior !== null && ground.opacity === 0 ? { mirror: false, opacity: prior } : { mirror: false })
-                                  }
-                                }}
+                                onCheckedChange={(v) => patch("ground", { mirror: v })}
                               />
                             </div>
+                            <SliderRow
+                              label={t.lab.ctl.reflectivity}
+                              value={ground.reflectivity ?? 1}
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              disabled={!ground.mirror}
+                              onChange={(v) => patch("ground", { reflectivity: v })}
+                              fmt={(v) => v.toFixed(2)}
+                            />
                           </fieldset>
                         </fieldset>
                       </TabsContent>

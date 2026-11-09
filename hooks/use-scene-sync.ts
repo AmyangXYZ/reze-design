@@ -348,6 +348,7 @@ export function useSceneSync({
         gridPattern: ground.gridPattern ?? "lines",
         // No reflection on a compositing background: the surface is gone there.
         mirror: !compositing && !!ground.mirror,
+        mirrorReflectivity: ground.reflectivity ?? 1,
         // Square plane, its radial fade in proportion to it.
         ...groundExtent(ground),
       }

@@ -219,10 +219,13 @@ export type SceneSettings = {
     gridSize?: number
     /**
      * A true mirror: the engine renders the scene again, reflected in the
-     * floor. Optional; absent is off, and off costs nothing. The reflection is
-     * a layer UNDER the floor's own colour, so Opacity is how much of it shows.
+     * floor. Optional; absent is off, and off costs nothing. The reflection
+     * lies OVER the floor's colour; opacity is only how see-through it is.
      */
     mirror?: boolean
+    /** How much the mirror reflects looking straight down, 0–1; it rises
+     *  toward the horizon (Fresnel). Absent is 1, a true mirror. */
+    reflectivity?: number
   }
   /** How the air behaves — what moves cloth and hair, not how anything looks.
    *  Lives in the document so a scene shared or exported keeps its motion. */

@@ -926,6 +926,7 @@ const en = {
       patternColor: "Pattern color",
       cellSize: "Cell size",
       mirror: "Mirror",
+      reflectivity: "Reflectivity",
       height: "Height",
       /** Sensor grain over the render. */
       grain: "Grain",
@@ -2027,6 +2028,7 @@ const zh: Dictionary = {
       patternColor: "图案颜色",
       cellSize: "格子大小",
       mirror: "镜面",
+      reflectivity: "反射率",
       height: "高度",
       grain: "颗粒",
       roll: "倾斜",
