@@ -1157,7 +1157,9 @@ export const RenderPanel = memo(function RenderPanel({
                 ? t.render.preparing
                 : progress.phase === "audio"
                   ? t.render.preparingAudio
-                  : t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))}
+                  : progress.phase === "scene"
+                    ? t.render.preparingScene
+                    : t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))}
             </div>
           </div>
         ) : result ? (

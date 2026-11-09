@@ -100,12 +100,14 @@ export type ExportResult = {
   bytes: number
 }
 
-/** "shot" walks the frames without encoding any — the AE-script pass. */
-export type ExportPhase = "audio" | "video" | "shot"
+/** "scene" is the warm-up before the first frame: physics settling and every
+ *  look and effect drawn once. "shot" walks the frames without encoding any —
+ *  the AE-script pass. */
+export type ExportPhase = "audio" | "scene" | "video" | "shot"
 
 export type ExportProgress = {
   phase: ExportPhase
-  /** Frames encoded so far (0 during the audio phase). */
+  /** Frames encoded so far (0 before the video phase). */
   frame: number
   total: number
   /** Encode throughput in output-frames per wall-second. */
@@ -119,6 +121,33 @@ const WARMUP_FRAMES = 30
  *  exportAeScript — so this is only large enough that a scene which reacts to
  *  its own resolution is not asked something absurd. */
 const SHOT_LONG_SIDE = 256
+/**
+ * Waits, in this task, until the GPU has finished the frame `canvas` shows.
+ *
+ * An export draws as fast as the CPU can issue frames, and nothing else holds
+ * it back: the warm-up issues thirty in one task, and a render loop whose
+ * output goes straight to the encoder never reads a pixel. The GPU queues all
+ * of it. With a heavy look at 4K that queue is seconds deep, and the system
+ * resets the GPU — the tab goes with it and reloads. Reading one pixel back is
+ * the browser's own way to wait for a canvas to be finished, so each frame is
+ * done before the next is issued and a heavy look exports more slowly instead
+ * of crashing.
+ *
+ * Synchronous, and called right after renderFrame: the canvas is read in the
+ * task that drew it, as everything here must be.
+ */
+function makeGpuWait(): (canvas: HTMLCanvasElement) => void {
+  const probe = document.createElement("canvas")
+  probe.width = 1
+  probe.height = 1
+  const ctx = probe.getContext("2d", { willReadFrequently: true })
+  return (canvas) => {
+    if (!ctx) return
+    ctx.drawImage(canvas, 0, 0, 1, 1)
+    ctx.getImageData(0, 0, 1, 1)
+  }
+}
+
 /** Yield to the event loop every N frames so the progress UI stays alive. */
 const YIELD_EVERY = 3
 /**
@@ -993,7 +1022,13 @@ export async function exportVideo(opts: {
     // audio, it states what time it is.
     engine.setAudioTime(startTime)
     engine.setMidiTime(startTime)
-    for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
+    progress({ phase: "scene", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
+    const gpuWait = makeGpuWait()
+    for (let i = 0; i < WARMUP_FRAMES; i++) {
+      engine.renderFrame(1 / fps)
+      gpuWait(canvas)
+      if (i % YIELD_EVERY === 0) await yieldToUI()
+    }
     for (const m of cast) m.play()
 
     const started = performance.now()
@@ -1042,6 +1077,7 @@ export async function exportVideo(opts: {
       // effect exported a still keyboard while everything else animated.
       engine.setMidiTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
+      gpuWait(canvas)
 
       // From here to the end of this iteration: no await before the canvas has
       // been consumed.
