@@ -4904,6 +4904,23 @@ function Lab() {
    *  the quick switch saves back into. */
   const draftGraphNamed = (name: string) => loadDrafts().graph.find((d) => nameKey(d.name) === nameKey(name))
   const freeGraphName = (wanted: string, editingId?: string) => freeName("graph", wanted, editingId)
+  /**
+   * A draft changed: every group wearing it takes the new version, on every
+   * model. A group holds its look by value, under the look's name, so a draft
+   * edited in one place used to reach only the group it was edited on — the
+   * others kept the copy they were applied with until each was re-applied.
+   * `was` is the name the groups know it by, which a rename changes.
+   */
+  const propagateDraftGraph = (was: string, graph: ShaderGraph, skip?: { modelId: string; groupId: string }) => {
+    const key = nameKey(was)
+    for (const [modelId, groups] of Object.entries(groupsByModel)) {
+      for (const g of groups) {
+        if (nameKey(g.graph.name) !== key || sameGraphLook(g.graph, graph)) continue
+        if (skip && skip.modelId === modelId && skip.groupId === g.id) continue
+        void upsertGroup(modelId, { ...g, graph })
+      }
+    }
+  }
   /** The group a group-session is bound to, resolved through the BASELINE's
    *  model rather than the inspector's — the inspector may have moved on. */
   const baselineGroup = () => {
@@ -4935,6 +4952,7 @@ function Lab() {
     // needs the dialog, so fall through to it rather than keeping a dud.
     if (draft && compileGraph(hit.group.graph).ok) {
       updateDraft("graph", draft.id, { payload: { graph: hit.group.graph } })
+      propagateDraftGraph(draft.name, hit.group.graph, hit.base)
       groupGraphBaseline.current = null
       setDrawerOpen(false)
       return
@@ -4951,8 +4969,10 @@ function Lab() {
     const graph = { ...hit.group.graph, name }
     const r = compileGraph(graph)
     if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? t.lab.compileFailed
-    if (keep) updateDraft("graph", keep.id, { payload: { graph } })
-    else createDraft("graph", { name, payload: { graph }, author: authorName })
+    if (keep) {
+      updateDraft("graph", keep.id, { payload: { graph } })
+      propagateDraftGraph(keep.name, graph, hit.base)
+    } else createDraft("graph", { name, payload: { graph }, author: authorName })
     // The group keeps it too, now under the saved name, so the scene and the
     // library agree about what this look is called.
     void upsertGroup(hit.base.modelId, { ...hit.group, graph })
@@ -4993,10 +5013,13 @@ function Lab() {
     // Editing your own draft saves as you go — closing it is then just closing,
     // and a crash or a stray reload costs nothing. Only drafts: a built-in or
     // someone else's published work has no local home to write to yet.
-    if (graphLibEdit && isDraft("graph", graphLibEdit.id))
+    if (graphLibEdit && isDraft("graph", graphLibEdit.id)) {
       updateDraftSoon("graph", graphLibEdit.id, {
         payload: { graph: { ...graph, name: graphLibEdit.name } },
       })
+      // And onto everything wearing it, as you go: the scene is the preview.
+      if (r.ok) propagateDraftGraph(graphLibEdit.name, { ...graph, name: graphLibEdit.name })
+    }
     return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
   }
   const requestCloseGraphDrawer = () => {
@@ -5023,8 +5046,10 @@ function Lab() {
     const graph = { ...(graphLibLatest.current ?? graphLibEdit.opened), name }
     const r = compileGraph(graph)
     if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? t.lab.compileFailed
-    if (keep) updateDraft("graph", keep, { name, payload: { graph } })
-    else
+    if (keep) {
+      updateDraft("graph", keep, { name, payload: { graph } })
+      propagateDraftGraph(graphLibEdit.name, graph)
+    } else
       // Remembered so the library opens ON it. This save applies the graph to
       // nothing — the library may have been opened with no group behind it — so
       // without this the copy you just made is the one thing the library cannot
@@ -5048,6 +5073,7 @@ function Lab() {
       updateDraft("graph", graphLibEdit.id, {
         payload: { graph: { ...graphLibEdit.opened, name: graphLibEdit.name } },
       })
+      propagateDraftGraph(graphLibEdit.name, { ...graphLibEdit.opened, name: graphLibEdit.name })
     }
     setGraphLibEdit(null)
     setDrawerOpen(false)
@@ -6479,8 +6505,10 @@ function Lab() {
       const keep = draftGraphNamed(wanted)
       const name = keep?.name ?? freeGraphName(wanted)
       const named = { ...graph, name }
-      if (keep) updateDraft("graph", keep.id, { payload: { graph: named } })
-      else createDraft("graph", { name, payload: { graph: named }, author: authorName })
+      if (keep) {
+        updateDraft("graph", keep.id, { payload: { graph: named } })
+        propagateDraftGraph(keep.name, named)
+      } else createDraft("graph", { name, payload: { graph: named }, author: authorName })
       return name
     },
     saveGradeDraft: (spec, wanted) => {
