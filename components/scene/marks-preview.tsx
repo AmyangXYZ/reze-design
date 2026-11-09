@@ -7,7 +7,7 @@
 // the export's, and the type is as sharp as the screen.
 
 import { useEffect, useRef, useState } from "react"
-import { drawMark, markFont, type Mark } from "@/lib/watermark"
+import { drawMark, loadMarkFont, markFont, type Mark } from "@/lib/watermark"
 
 const LINES = 1080
 
@@ -43,6 +43,7 @@ export function MarksPreview({
     const ctx = canvas?.getContext("2d")
     if (!canvas || !ctx) return
     const font = markFont()
+    let live = true
     const scale = pxH / LINES
     const draw = (time: number) => {
       ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -50,19 +51,22 @@ export function MarksPreview({
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
       drawMark(ctx, layoutW, LINES, font, mark, time)
     }
-    // A moving mark is drawn every frame; a placed one once.
-    if (!mark.moving) {
-      draw(0)
-      return
-    }
     let raf = 0
-    const start = performance.now()
-    const tick = (now: number) => {
-      draw((now - start) / 1000)
+    // Drawn once the face is in: a placed mark once, a moving one every frame.
+    void loadMarkFont(font, mark).then(() => {
+      if (!live) return
+      if (!mark.moving) return draw(0)
+      const start = performance.now()
+      const tick = (now: number) => {
+        draw((now - start) / 1000)
+        raf = requestAnimationFrame(tick)
+      }
       raf = requestAnimationFrame(tick)
+    })
+    return () => {
+      live = false
+      cancelAnimationFrame(raf)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
   }, [pxW, pxH, layoutW, mark])
 
   return (

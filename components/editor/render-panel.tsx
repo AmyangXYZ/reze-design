@@ -120,6 +120,7 @@ type ExportPrefs = {
   markColor: string
   markSize: number
   markOpacity: number
+  markItalic: boolean
 }
 const EXPORT_DEFAULTS: ExportPrefs = {
   aspect: "2.39:1",
@@ -134,6 +135,7 @@ const EXPORT_DEFAULTS: ExportPrefs = {
   markColor: MARK_DEFAULT_COLOR,
   markSize: MARK_SIZE.default,
   markOpacity: MARK_OPACITY_DEFAULT,
+  markItalic: false,
 }
 
 function readExportPrefs(): ExportPrefs {
@@ -155,6 +157,7 @@ function readExportPrefs(): ExportPrefs {
       markColor: typeof p.markColor === "string" && /^#[0-9a-f]{6}$/i.test(p.markColor) ? p.markColor : MARK_DEFAULT_COLOR,
       markSize: typeof p.markSize === "number" ? Math.min(MARK_SIZE.max, Math.max(MARK_SIZE.min, p.markSize)) : MARK_SIZE.default,
       markOpacity: typeof p.markOpacity === "number" ? Math.min(1, Math.max(0.1, p.markOpacity)) : MARK_OPACITY_DEFAULT,
+      markItalic: p.markItalic === true,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -465,6 +468,7 @@ export const RenderPanel = memo(function RenderPanel({
   const [markColor, setMarkColor] = useState(prefs.markColor)
   const [markSize, setMarkSize] = useState(prefs.markSize)
   const [markOpacity, setMarkOpacity] = useState(prefs.markOpacity)
+  const [markItalic, setMarkItalic] = useState(prefs.markItalic)
   // The field starts as the account's handle, a real value to edit. Once
   // edited, what was typed is the line, empty included.
   const handle = useSession().data?.user?.username
@@ -493,16 +497,16 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity })
-  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic })
+  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic])
   // What the frame gets: none on a compositing handoff, where the picture
   // goes on to be composited and a mark would be baked into the plate.
   const markOut = useMemo<Mark | null>(
     () =>
       !compositing && watermark
-        ? { name: shownName, place: markPlace, moving: markMoving, color: markColor, size: markSize, opacity: markOpacity }
+        ? { name: shownName, place: markPlace, moving: markMoving, color: markColor, size: markSize, opacity: markOpacity, italic: markItalic }
         : null,
-    [compositing, watermark, shownName, markPlace, markMoving, markColor, markSize, markOpacity],
+    [compositing, watermark, shownName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic],
   )
 
   // The frame this panel would render, for the rates the Bitrate options print
@@ -1070,6 +1074,9 @@ export const RenderPanel = memo(function RenderPanel({
                   onChange={(e) => setMarkName(e.target.value)}
                   className={cn(rangeInputCover, "w-32 text-right")}
                 />
+              </Row>
+              <Row label={t.render.markItalic}>
+                <Switch checked={markItalic} onCheckedChange={setMarkItalic} className="scale-75" />
               </Row>
               <Row label={t.render.markPlace}>
                 <PlacePicker value={markPlace} onChange={setMarkPlace} disabled={markMoving} labels={t.render.markPlaces} />

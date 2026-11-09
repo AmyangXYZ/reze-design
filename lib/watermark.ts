@@ -15,7 +15,7 @@ export const MARK_NAME_MAX = 40
 
 /** `name` empty draws the wordmark alone. `moving` ignores `place`. `size`
  *  scales the whole lockup (1 is the default measure); `opacity` is 0–1. */
-export type Mark = { name: string; place: MarkPlace; moving: boolean; color: string; size: number; opacity: number }
+export type Mark = { name: string; place: MarkPlace; moving: boolean; color: string; size: number; opacity: number; italic: boolean }
 export const MARK_SIZE = { min: 0.5, max: 2, default: 1 }
 export const MARK_OPACITY_DEFAULT = 0.92
 
@@ -25,6 +25,17 @@ export const MARK_OPACITY_DEFAULT = 0.92
 export const markFont = (): string => {
   const f = getComputedStyle(document.documentElement).getPropertyValue("--font-instrument-serif").trim()
   return f ? `${f}, serif` : "serif"
+}
+
+/** Waits for the face the mark is set in. The italic is a file of its own,
+ *  loaded on first use, and a canvas drawn before it arrives fakes the slant
+ *  and keeps it. */
+export async function loadMarkFont(font: string, mark: Mark): Promise<void> {
+  try {
+    await document.fonts.load(`${mark.italic ? "italic " : ""}400 20px ${font}`, "REZE DESIGN")
+  } catch {
+    // The canvas falls back as it would have.
+  }
 }
 
 /**
@@ -95,13 +106,15 @@ const sprites = new Map<string, Sprite>()
  */
 function lockup(h: number, font: string, mark: Mark, align: "left" | "center" | "right", scale: number): Sprite {
   const name = mark.name.trim().slice(0, MARK_NAME_MAX)
-  const key = [h, font, name, mark.size, mark.color, align, scale].join("|")
+  const key = [h, font, name, mark.size, mark.color, mark.italic, align, scale].join("|")
   const kept = sprites.get(key)
   if (kept) return kept
 
   const { size, nameSize, lead, track, stroke } = metrics(h, mark.size)
-  const brandFont = `400 ${size}px ${font}`
-  const nameFont = `400 ${nameSize}px ${font}`
+  // Italic slants both lines, so the lockup stays one voice.
+  const style = mark.italic ? "italic " : ""
+  const brandFont = `${style}400 ${size}px ${font}`
+  const nameFont = `${style}400 ${nameSize}px ${font}`
   const nameTrack = nameSize * 0.06
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!

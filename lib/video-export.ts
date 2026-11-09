@@ -1,7 +1,7 @@
 // Offline render-to-file — the video export, the PNG sequence that shares its
 // render loop, and the single still that shares its composite stack.
 
-import { drawMark, markFont, type Mark } from "@/lib/watermark"
+import { drawMark, loadMarkFont, markFont, type Mark } from "@/lib/watermark"
 import {
   AudioBufferSource,
   BufferTarget,
@@ -523,6 +523,10 @@ export async function captureStill(opts: {
   const bgFrame = bgFrames ? await bgFrames.next() : null
   bgFrames?.close()
 
+  // Before the engine is stopped, like the backdrop: the face may still be loading.
+  const stillFont = markFont()
+  if (settings.watermark) await loadMarkFont(stillFont, settings.watermark)
+
   const composite = document.createElement("canvas")
   composite.width = width
   composite.height = height
@@ -546,7 +550,7 @@ export async function captureStill(opts: {
     paintBase(ctx, background, backgroundColor, width, height)
     if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
     ctx.drawImage(canvas, 0, 0, width, height)
-    if (settings.watermark) drawMark(ctx, width, height, markFont(), settings.watermark, opts.atTime ?? 0)
+    if (settings.watermark) drawMark(ctx, width, height, stillFont, settings.watermark, opts.atTime ?? 0)
   } finally {
     engine.setRenderSize(prevW, prevH)
     engine.renderFrame(0)
@@ -906,6 +910,7 @@ export async function exportVideo(opts: {
    */
   const needsComposite = backdropFrames !== null || settings.watermark !== null
   const watermarkFont = needsComposite ? markFont() : ""
+  if (settings.watermark) await loadMarkFont(watermarkFont, settings.watermark)
 
   // Moving cards, opened at their OWN texture size — a card is a fixed
   // rectangle of texels and setPlaneFrame refuses any other, so there is no
