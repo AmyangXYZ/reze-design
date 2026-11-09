@@ -227,7 +227,6 @@ import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
   applyDefaults,
-  effectParams,
   stockEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
@@ -280,7 +279,7 @@ import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrG
 import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
-import { effectTexturesFor, loadParticleTextures } from "@/lib/effect-textures"
+import { loadParticleTextures } from "@/lib/effect-textures"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
@@ -3914,11 +3913,9 @@ function Lab() {
     [swapBgImage, t],
   )
 
-  // noteAppliedWgsl is the WGSL editor's half of the bargain: the editor
-  // compiles straight to the engine for its live preview, and telling the sync
-  // pass what is already on screen keeps it from compiling the same shader a
-  // second time when the applied effect lands in state.
-  const { noteAppliedWgsl, adoptInstall } = useSceneSync({
+  // installEffects is how the shader editor and the AI put a list on the
+  // canvas: the sync pass's own install, so nothing it carries is left out.
+  const { installEffects } = useSceneSync({
     engineRef,
     // ON `stageReady`, THE MOMENT THE GROUND IS UP — not on `ready`, which is
     // the whole scene loaded. The render loop starts at `onStage`, so anything
@@ -4187,51 +4184,46 @@ function Lab() {
    * previews the wrong picture.
    *
    * So the whole list installs, with the subject swapped into its own place —
-   * appended when the scene is not already wearing it, which is what opening
-   * the editor on a library card does. `base` is passed rather than read: this
-   * runs from the opener, in the same tick as the state that would carry it.
+   * appended when the scene is not already wearing it, as an effect opened
+   * from a library card is. `base` is the list the scene wore when the
+   * session opened.
    */
-  const commitEffectCode = useCallback(
-    async (base: AppliedEffect[], subject: AppliedEffect, wgsl: string) => {
-      const engine = engineRef.current
-      if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
-      // Stamped BEFORE installing, so the dials the install reports are filed
-      // under the uid the row will carry — a draft opened fresh has none yet.
-      const next = stampEffectUids(mergeEffect(base, { ...subject, wgsl }))
-      // with their pictures, as the sync pass installs them: this install is
-      // adopted as what is on screen, so one without them stays without them
-      const ticket = ++effectCommitRef.current
-      const rs = await engine.setEffects(
-        next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params), textures: effectTexturesFor(e.wgsl) })),
-      )
-      const current = ticket === effectCommitRef.current
-      const at = next.findIndex((e) => e.id === subject.id)
-      // The subject's own result. Another layer failing is not this edit's
-      // error to report, and reporting it would blame the panel you are typing
-      // in for a shader you are not.
-      const r = rs[at] ?? rs[0] ?? { ok: false, diagnostics: [t.lab.compileFailed] }
-      if (r.ok && current) {
-        // The sync pass keys on the WHOLE list, so what it must not recompile is
-        // the whole list — handing it one shader left it reinstalling every
-        // keystroke against a key that never matched. It also puts the strips
-        // back: these are fresh instances, and a fresh one plays unscheduled.
-        adoptInstall(next, rs)
-        setBgEffects(next)
-        // Same rule as grades: your own draft saves as you go.
-        if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
-      }
-      return r
-    },
-    [engineRef, adoptInstall, t, setBgEffects],
-  )
+  /** Install a whole list and report `subjectId`'s own result. Every compile,
+   *  close and save of the editor goes through here, so the scene's other
+   *  effects stay on through all of them. */
+  const installEffectList = async (list: AppliedEffect[], subjectId: string) => {
+    // Stamped BEFORE installing, so the dials the install reports are filed
+    // under the uid the row will carry — a draft opened fresh has none yet.
+    const next = stampEffectUids(list)
+    const ticket = ++effectCommitRef.current
+    const rs = await installEffects(next)
+    if (!rs) return { ok: false, diagnostics: [t.lab.engineNotReady] }
+    const current = ticket === effectCommitRef.current
+    const at = next.findIndex((e) => e.id === subjectId)
+    // The subject's own result. Another layer failing is not this edit's
+    // error to report, and reporting it would blame the panel you are typing
+    // in for a shader you are not.
+    const r = rs[at] ?? rs[0] ?? { ok: false, diagnostics: [t.lab.compileFailed] }
+    // A refusal leaves the scene's list as it was, and the sync pass puts it
+    // back on the canvas.
+    if (r.ok && current) setBgEffects(next)
+    return r
+  }
+  /** ⌘Enter: the edited shader into its place in the scene's list. */
+  const commitEffectCode = async (base: AppliedEffect[], subject: AppliedEffect, wgsl: string) => {
+    const r = await installEffectList(mergeEffect(base, { ...subject, wgsl }), subject.id)
+    // Same rule as grades: your own draft saves as you go.
+    if (r.ok && isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
+    return r
+  }
   // Memoized (unlike the grade editor's opener) because the command palette runs
   // it: a plain function in runCommand's dependency array is something the
   // compiler cannot keep memoized.
   const openEffectEditor = useCallback(
     (subject: AppliedEffect) => {
       effectSessionRef.current += 1
-      // Opening AUTO-APPLIES the subject, which is what makes the canvas behind
-      // the panel the preview rather than a separate thing to keep in sync.
+      // Opening shows the code and leaves the scene as it is: the shader goes
+      // on the canvas when ⌘Enter compiles it.
       setEffectEditor({
         sessionId: effectSessionRef.current,
         subject,
@@ -4239,9 +4231,8 @@ function Lab() {
         savePrompt: null,
       })
       ensureEffectPanelRect()
-      void commitEffectCode(bgEffects, subject, subject.wgsl)
     },
-    [bgEffects, ensureEffectPanelRect, commitEffectCode],
+    [bgEffects, ensureEffectPanelRect],
   )
 
   /**
@@ -4277,13 +4268,10 @@ function Lab() {
     // An existing draft saves in place when it compiles; a refusal (or a nameless
     // new effect) goes through the dialog.
     if (isDraft("effect", effectEditor.subject.id)) {
-      const engine = engineRef.current
-      const r = engine ? await engine.setEffect(code, undefined, effectTexturesFor(code)) : { ok: false }
+      const { id, name } = effectEditor.subject
+      const r = await installEffectList(mergeEffect(effectEditor.prior, { id, name, wgsl: code }), id)
       if (r.ok) {
-        noteAppliedWgsl(code)
-        const { id, name } = effectEditor.subject
         updateDraft("effect", id, { payload: { wgsl: code } })
-        setBgEffects(mergeEffect(effectEditor.prior, { id, name, wgsl: code }))
         setEffectEditor(null)
         return
       }
@@ -4311,12 +4299,12 @@ function Lab() {
     // A broken shader must not land in the library — it would be auto-applied on
     // every future pick. Compiling IS applying, which is also what save wants.
     const isExisting = isDraft("effect", subject.id)
-    const engine = engineRef.current
-    const r = engine ? await engine.setEffect(code, undefined, effectTexturesFor(code)) : { ok: false, diagnostics: [t.lab.engineNotReady] }
-    if (!r.ok) return r.diagnostics[0] ?? t.lab.compileFailed
-    noteAppliedWgsl(code)
     const keep = isExisting ? subject.id : undefined
     const name = freeEffectName(wanted, subject.id)
+    // Checked as the subject, in its place among the scene's other effects;
+    // the saved row is installed under its own id below.
+    const r = await installEffectList(mergeEffect(effectEditor.prior, { ...subject, wgsl: code }), subject.id)
+    if (!r.ok) return r.diagnostics?.[0] ?? t.lab.compileFailed
     let id = keep
     if (keep) updateDraft("effect", keep, { name, payload: { wgsl: code } })
     else
@@ -6454,14 +6442,13 @@ function Lab() {
         ? { id: tempId, name: wanted, wgsl, uid: target.uid, influence: target.influence, window: target.window, models: target.models, stage: target.stage }
         : { id: tempId, name: wanted, wgsl }
       const next = stampEffectUids(target ? supersedeEffect(base, target.id, trial) : mergeEffect(base, trial))
-      const install = (list: AppliedEffect[]) =>
-        engine.setEffects(list.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params), textures: effectTexturesFor(e.wgsl) })))
-      const rs = await install(next)
+      const rs = await installEffects(next)
+      if (!rs) return { ok: false, diagnostics: [t.lab.engineNotReady] }
       const at = next.findIndex((e) => e.id === tempId)
       const r = rs[at]
       if (!r?.ok) {
         // Put back what the scene was wearing.
-        adoptInstall(base, await install(base))
+        await installEffects(base)
         return { ok: false, diagnostics: r?.diagnostics?.length ? r.diagnostics : [t.lab.compileFailed] }
       }
       // Saved: a draft of the user's rewritten in place, anything else a new one.
@@ -6471,7 +6458,8 @@ function Lab() {
       if (keep) updateDraft("effect", keep.id, { payload: { wgsl } })
       else id = createDraft("effect", { name, payload: { wgsl }, author: authorName }).id
       const final = next.map((e) => (e.id === tempId ? { ...e, id: id!, name } : e))
-      adoptInstall(final, rs)
+      // Only the ids changed, under the same shaders in the same order: what
+      // was just installed is this list.
       setBgEffects(final)
       return {
         ok: true,

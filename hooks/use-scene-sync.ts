@@ -10,7 +10,7 @@
 // document and neither knows the difference.
 
 import { effectTexturesFor, effectTexturesVersion, subscribeEffectTextures } from "@/lib/effect-textures"
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   Vec3,
   parseHDR,
@@ -846,41 +846,59 @@ export function useSceneSync({
     }
   }, [hdri, compositing, engineRef])
 
-  // The WGSL editor compiles straight to the engine for its live preview; telling
-  // the sync pass what's already on screen keeps it from compiling it a second
-  // time when the applied effect lands in state.
-  return {
-    noteAppliedWgsl: (wgsl: string) => {
-      lastWgsl.current = installKey([wgsl], texturesVersion)
-      engineIndex.current = null
-    },
-    /**
-     * The editor installed a whole list itself: take it as what is on screen,
-     * and put the timing back on the instances it just built. An install makes
-     * fresh instances, and a fresh instance is unscheduled — so without this a
-     * recompile in the shader editor left every strip on the timeline pointing
-     * at nothing, and the effects played through the whole scene.
-     *
-     * And what each one exposes, for the same reason: the sync pass is the other
-     * place dials are reported from, and taking over from it without reporting
-     * left an effect made in the editor — every local draft — with no sliders
-     * until it was published and applied the ordinary way.
-     */
-    adoptInstall: (list: AppliedEffect[], results: { ok: boolean; params: EffectSurface["params"]; readsCast: boolean }[]) => {
+  /**
+   * Install a whole list now — the shader editor's ⌘Enter and the AI's
+   * authoring — and take it as what is on screen.
+   *
+   * The same install the sync pass makes, in its queue: each effect's dials,
+   * WHO it is on and its pictures ride along, and it waits for any install
+   * still compiling. An install built anywhere else leaves something out —
+   * an editor install without `subjects` put every effect on the whole cast
+   * until the editor closed and the sync pass installed the list properly.
+   *
+   * Then what this pass does after its own install: the key, so it does not
+   * compile the list a second time when it lands in state; the timing, since
+   * fresh instances are unscheduled and every strip would point at nothing;
+   * and the dials each one exposes, or a draft made in the editor would have
+   * no sliders until it was applied the ordinary way.
+   */
+  const installEffects = useCallback(
+    async (list: AppliedEffect[]) => {
+      const engine = engineRef.current
+      if (!engine) return null
+      const seq = ++installSeq.current
+      const job = installChain.current
+        .catch(() => {})
+        .then(() =>
+          engine.setEffects(
+            list.map((e) => ({
+              wgsl: e.wgsl,
+              params: effectParams(e.wgsl, e.params),
+              subjects: e.models ?? null,
+              textures: effectTexturesFor(e.wgsl),
+            })),
+          ),
+        )
+      installChain.current = job
+      const rs = await job
+      if (seq !== installSeq.current) return rs
       lastWgsl.current = installKey(
         list.map((e) => e.wgsl),
         texturesVersion,
       )
-      engineIndex.current = installedIndex(results)
-      const engine = engineRef.current
-      if (engine) applySchedules(engine, list, engineIndex.current)
+      lastWgslEngine.current = engine
+      engineIndex.current = installedIndex(rs)
+      applySchedules(engine, list, engineIndex.current)
       onEffectSurface?.(
         Object.fromEntries(
-          results.map((r, i) => [list[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const),
+          rs.map((r, i) => [list[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const),
         ) as Record<string, EffectSurface>,
       )
+      return rs
     },
-  }
+    [engineRef, texturesVersion, onEffectSurface],
+  )
+  return { installEffects }
 }
 
 /**
