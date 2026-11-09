@@ -227,8 +227,8 @@ const COVER_WORD =
   "mt-1.5 flex min-h-6 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground first:mt-0 hover:text-foreground disabled:opacity-40"
 
 /**
- * The watermark's place as the frame in miniature: three dots along the top, three
- * along the bottom, the chosen one filled.
+ * The watermark's place as the frame in miniature: three rows of three dots,
+ * the chosen one filled.
  */
 function PlacePicker({
   value,
