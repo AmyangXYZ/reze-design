@@ -88,9 +88,10 @@ export type SceneSettings = {
   }
   /** Camera depth of field. Focus is ALWAYS automatic — the engine tracks the
    *  character's own depth span every frame, which is both the right answer and
-   *  one nobody can dial in by hand while a dance moves. That leaves the switch
-   *  and one dial, how much blur, so there is no focus mode to store. */
-  dof: { enabled: boolean; aperture: number }
+   *  one nobody can dial in by hand while a dance moves. That leaves the switch,
+   *  one dial, how much blur, and WHO: `model` is the cast member it tracks, by
+   *  id. Absent, or naming someone who has left, is the first character. */
+  dof: { enabled: boolean; aperture: number; model?: string }
   /** The inverted-hull outline pass, scene-wide. A preference most scenes never
    *  touch — no dock row, reachable from the palette — but it changes how the
    *  scene LOOKS, so it travels with the document like any other look setting. */
@@ -210,6 +211,18 @@ export type SceneSettings = {
     grid: string
     /** Show the ground grid lines. */
     gridEnabled: boolean
+    /** What the grid draws: lines, or a dot on every crossing. Optional;
+     *  absent is lines, what every scene before it had. */
+    gridPattern?: "lines" | "dots"
+    /** The pattern's cell in world units: between lines, or between dots.
+     *  Optional; absent is GRID_SIZE_DEFAULT, the engine's own spacing. */
+    gridSize?: number
+    /**
+     * A true mirror: the engine renders the scene again, reflected in the
+     * floor. Optional; absent is off, and off costs nothing. The reflection is
+     * a layer UNDER the floor's own colour, so Opacity is how much of it shows.
+     */
+    mirror?: boolean
   }
   /** How the air behaves — what moves cloth and hair, not how anything looks.
    *  Lives in the document so a scene shared or exported keeps its motion. */
@@ -490,7 +503,11 @@ export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
  */
 export const GROUND_FADE = { start: 0.6, end: 1 }
 
-/** The ground plane's side and its radial fade in world units, as addGround takes them. */
+/** The ground pattern's cell when a scene names none — the engine's default
+ *  spacing, which every scene before the dial was drawn with. */
+export const GRID_SIZE_DEFAULT = 4.2
+
+/** The ground plane's side, its radial fade and its pattern's cell in world units, as addGround takes them. */
 export function groundExtent(ground: SceneSettings["ground"]) {
   const half = ground.size / 2
   const fade = ground.fade ?? GROUND_FADE
@@ -498,6 +515,7 @@ export function groundExtent(ground: SceneSettings["ground"]) {
     width: ground.size,
     height: ground.size,
     y: ground.y ?? 0,
+    gridSpacing: Math.max(0.2, ground.gridSize ?? GRID_SIZE_DEFAULT),
     fadeStart: half * fade.start,
     fadeEnd: half * fade.end,
   }

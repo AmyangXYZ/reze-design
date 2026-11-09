@@ -415,6 +415,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     shadowStrength: s.sun.shadow === false ? 0 : 1,
     shadowSoftness: s.sun.softness ?? 0,
     gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
+    gridPattern: s.ground.gridPattern ?? "lines",
+    mirror: !!s.ground.mirror,
     ...groundExtent(s.ground),
   })
   applyCamera(engine, scene.state.camera, null)

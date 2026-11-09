@@ -121,6 +121,9 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
       size: { kind: "number", min: 40, max: 800, about: "Side length; the character is about 18 units tall." },
       gridEnabled: { kind: "boolean", about: "Grid lines on the floor." },
       grid: { kind: "color", about: "Grid line colour." },
+      gridPattern: { kind: "enum", values: ["lines", "dots"], about: "Grid as lines, or a dot on every crossing." },
+      gridSize: { kind: "number", min: 1, max: 20, about: "Pattern cell in world units (between lines or dots); 4.2 is the default." },
+      mirror: { kind: "boolean", about: "A true mirror: the scene reflected in the floor. Shows through as opacity drops." },
     },
   },
   eyes: {

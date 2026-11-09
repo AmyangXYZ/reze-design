@@ -218,19 +218,28 @@ export function ColorRow({
   onChange,
   dense,
   labelClass,
+  disabled,
 }: {
   label: string
   value: string
   onChange: (hex: string) => void
+  /** Shown but inert, like SliderRow's: the row keeps its place and its gap. */
+  disabled?: boolean
   /** The tighter rhythm and type size SliderRow's dense rows use, so a colour
    *  and a number sitting in one panel read as one list rather than two. */
   dense?: boolean
   labelClass?: string
 }) {
   return (
-    <div className={cn("flex items-center justify-between first:mt-0", dense ? "mt-1.5 gap-1.5" : "mt-2.5")}>
+    <div
+      className={cn(
+        "flex items-center justify-between first:mt-0",
+        dense ? "mt-1.5 gap-1.5" : "mt-2.5",
+        disabled && "pointer-events-none opacity-40",
+      )}
+    >
       <span className={cn("shrink-0 truncate", dense ? "text-2xs" : "text-xs", labelClass)}>{label}</span>
-      <ColorField value={value} onChange={onChange} />
+      <ColorField value={value} onChange={onChange} disabled={disabled} />
     </div>
   )
 }

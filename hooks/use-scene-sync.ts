@@ -235,7 +235,12 @@ export function useSceneSync({
       // Focus mode is stated on every push rather than stored: "auto" is the
       // only mode this app offers, so it is a property of the caller, not of
       // the document.
-      engine.setDepthOfField({ enabled: dof.enabled, focusMode: "auto", aperture: dof.aperture })
+      engine.setDepthOfField({
+        enabled: dof.enabled,
+        focusMode: "auto",
+        focusModel: dof.model ?? null,
+        aperture: dof.aperture,
+      })
     }
     if (!p || p.settings.outline !== outline) {
       engine.setOutlineEnabled(outline.enabled)
@@ -340,6 +345,9 @@ export function useSceneSync({
         // A property of the light, applied where the light lands.
         shadowSoftness: sun.softness ?? 0,
         gridLineOpacity: compositing || !ground.gridEnabled ? 0 : 0.4,
+        gridPattern: ground.gridPattern ?? "lines",
+        // No reflection on a compositing background: the surface is gone there.
+        mirror: !compositing && !!ground.mirror,
         // Square plane, its radial fade in proportion to it.
         ...groundExtent(ground),
       }

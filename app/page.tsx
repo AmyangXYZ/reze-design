@@ -285,7 +285,7 @@ import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -693,6 +693,11 @@ type PaletteValues = {
  * value ends up reading 0.35 in one place and 0.4 in the other.
  */
 const deg = (v: number) => `${Math.round(v)}°`
+
+/** A dock row's selector: right-aligned, as tall as the slider rows, and in
+ *  the row's own type size — the size of its label and of the items it opens.
+ *  One string, so a new row cannot pick a smaller face than its neighbours. */
+const DOCK_SELECT = "ml-auto max-w-[9.5rem] data-[size=sm]:h-4"
 const dec1 = (v: number) => v.toFixed(1)
 const dec2 = (v: number) => v.toFixed(2)
 const xyz = (v: readonly [number, number, number]) => v.map(dec1).join(", ")
@@ -746,7 +751,8 @@ const DOCK_CONTROLS: {
   { id: "ground-fade", en: "Ground fade", zh: "地面渐隐", row: "stage", stageTab: "ground", keywords: ["edge", "falloff", "horizon", "边缘", "淡出"], value: (v) => { const f = v.settings.ground.fade ?? GROUND_FADE; return `${Math.round(f.start * 100)}–${Math.round(f.end * 100)}%` } },
   { id: "shadow", en: "Shadow", zh: "阴影", row: "light", lightTab: "sun", value: (v) => sw(v.settings.sun.shadow !== false, v.t) },
   { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
-  { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
+  { id: "grid", en: "Ground pattern", zh: "地面图案", row: "stage", stageTab: "ground", keywords: ["grid", "lines", "dots", "网格", "点"], value: (v) => v.t.lab.ctl.gridPatterns[!v.settings.ground.gridEnabled ? "none" : v.settings.ground.gridPattern === "dots" ? "dots" : "grid"] },
+  { id: "ground-mirror", en: "Mirror floor", zh: "镜面地面", row: "stage", stageTab: "ground", keywords: ["reflection", "reflect", "glossy", "反射", "倒影"], value: (v) => sw(!!v.settings.ground.mirror, v.t) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
   { id: "bg-360", en: "Skybox", zh: "天空盒", row: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
@@ -787,6 +793,7 @@ const DOCK_CONTROLS: {
   { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
   { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics", value: (v) => dec2(v.settings.physics.windFrequency) },
   { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics", value: (v) => deg(v.settings.physics.windAzimuth) },
+  { id: "wind-elevation", en: "Wind elevation", zh: "风仰角", row: "physics", keywords: ["up", "updraft", "lift", "上升", "向上"], value: (v) => deg(v.settings.physics.windElevation) },
 ]
 
 /** Icon and name for a palette entry's `row`. EVERY row a control entry names
@@ -2601,6 +2608,10 @@ function Lab() {
         return { ...e, models: models.length ? models : undefined }
       }),
     )
+    // The focus, for the same reason: the next model can land on this id, and
+    // a focus left naming it would quietly move to whoever that is. Dropped,
+    // it reads as the first character, which is what the engine falls back to.
+    setSettings((s2) => (s2.dof.model === id ? { ...s2, dof: { ...s2.dof, model: undefined } } : s2))
   }
 
   /**
@@ -4384,6 +4395,8 @@ function Lab() {
   /** The cast as an effect can be aimed at it: the id the document stores and the
    *  name the panel shows. Memoised on the cast's contents rather than rebuilt per
    *  render — it is a prop on a popover that is open while someone reads it. */
+  /** The floor's opacity before Mirror cleared it, for Mirror off to restore. */
+  const mirrorPriorOpacity = useRef<number | null>(null)
   const castTargets = useMemo(() => cast.map((m) => ({ id: m.id, name: displayName(m.file) })), [cast])
   /**
    * Who can be scheduled: the cast and the props — a prop on cue is most of
@@ -5916,8 +5929,11 @@ function Lab() {
         // looking from.
         rebindCameraFollow(newId, next)
       }
+      // The focus follows the slot too: a replaced cast member is still who
+      // the shot was keeping sharp.
+      if (settings.dof.model === oldId) patch("dof", { model: newId })
     },
-    [loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast, setInspectedId],
+    [loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast, setInspectedId, settings.dof.model, patch],
   )
 
   // A dialog rather than a toggle: two locales fit in a switch, but "Toggle
@@ -9403,18 +9419,81 @@ function Lab() {
                               onChange={([start, end]) => patch("ground", { fade: { start, end } })}
                               fmt={(v) => `${Math.round(v * 100)}%`}
                             />
+                            {/* ONE choice for what the floor wears: nothing, the
+                                grid, or a dot on every crossing. The document keeps
+                                its old switch (gridEnabled) beside the pattern, so
+                                None is the switch off and the colour you picked
+                                survives it. */}
+                            <div className="mt-2.5 flex items-center gap-2">
+                              <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.pattern}</span>
+                              <Select
+                                value={!ground.gridEnabled ? "none" : ground.gridPattern === "dots" ? "dots" : "grid"}
+                                onValueChange={(v) =>
+                                  patch(
+                                    "ground",
+                                    v === "none"
+                                      ? { gridEnabled: false }
+                                      : { gridEnabled: true, gridPattern: v === "dots" ? "dots" : "lines" },
+                                  )
+                                }
+                              >
+                                <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(["none", "grid", "dots"] as const).map((p) => (
+                                    <SelectItem key={p} value={p}>
+                                      {t.lab.ctl.gridPatterns[p]}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {/* The pattern's colour and cell, one row each for grid
+                                and dots alike: always here, inert under None. The
+                                cell is the distance between lines, or between
+                                dots; both draw in proportion to it. */}
+                            <ColorRow
+                              label={t.lab.ctl.patternColor}
+                              value={ground.grid}
+                              disabled={!ground.gridEnabled}
+                              onChange={(hex) => patch("ground", { grid: hex })}
+                            />
+                            <SliderRow
+                              label={t.lab.ctl.cellSize}
+                              value={ground.gridSize ?? GRID_SIZE_DEFAULT}
+                              min={1}
+                              max={20}
+                              step={0.1}
+                              inputMin={0.2}
+                              disabled={!ground.gridEnabled}
+                              onChange={(v) => patch("ground", { gridSize: v })}
+                              fmt={(v) => v.toFixed(1)}
+                            />
+                            {/* The true mirror: the scene rendered again, reflected.
+                                It lies UNDER the floor's colour, so Opacity above is
+                                how much shows. Always sharp: no blur dial, by choice. */}
                             <div className="mt-2.5 flex items-center justify-between">
-                              <span className="text-xs">{t.lab.ctl.grid}</span>
-                              <div className="flex items-center gap-2">
-                                {ground.gridEnabled && (
-                                  <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
-                                )}
-                                <Switch
-                                  size="sm"
-                                  checked={ground.gridEnabled}
-                                  onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
-                                />
-                              </div>
+                              <span className="text-xs">{t.lab.ctl.mirror}</span>
+                              <Switch
+                                size="sm"
+                                checked={!!ground.mirror}
+                                onCheckedChange={(v) => {
+                                  // The reflection lies UNDER the floor's colour, so a
+                                  // mirror turned on over an opaque floor is a tinted
+                                  // one. On clears the floor to show the true mirror
+                                  // (Opacity brings the tint back); off puts back the
+                                  // opacity it cleared, if nobody has moved it since.
+                                  if (v) {
+                                    mirrorPriorOpacity.current = ground.opacity
+                                    patch("ground", { mirror: true, opacity: 0 })
+                                  } else {
+                                    const prior = mirrorPriorOpacity.current
+                                    mirrorPriorOpacity.current = null
+                                    patch("ground", prior !== null && ground.opacity === 0 ? { mirror: false, opacity: prior } : { mirror: false })
+                                  }
+                                }}
+                              />
                             </div>
                           </fieldset>
                         </fieldset>
@@ -9762,7 +9841,7 @@ function Lab() {
                                           setPropAttach(prop.id, v === NO_PARENT ? null : { model: v, bone: defaultBoneFor(v) })
                                         }
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                                        <SelectTrigger size="sm" className={DOCK_SELECT}>
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -9785,7 +9864,7 @@ function Lab() {
                                         disabled={!att}
                                         onValueChange={(v) => att && setPropAttach(prop.id, { model: att.model, bone: v })}
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                                        <SelectTrigger size="sm" className={DOCK_SELECT}>
                                           <SelectValue placeholder={t.lab.ctl.none} />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -10074,7 +10153,7 @@ function Lab() {
                                             patchLight(l.id, { aim: aimAt(l.position, to), angle: l.angle ?? SPOT_ANGLE })
                                           }}
                                         >
-                                          <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                                          <SelectTrigger size="sm" className={DOCK_SELECT}>
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -10099,7 +10178,7 @@ function Lab() {
                                                   patchLight(l.id, { cookie: v === NO_COOKIE ? undefined : (v as LightCookie) })
                                                 }
                                               >
-                                                <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                                                <SelectTrigger size="sm" className={DOCK_SELECT}>
                                                   <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -10574,6 +10653,18 @@ function Lab() {
                         onChange={(v) => patch("physics", { windAzimuth: v })}
                         fmt={(v) => `${v.toFixed(0)}°`}
                       />
+                      {/* Tilt off level, the sun's word for it: + blows up
+                          (an updraft lifts the hair and the skirt), − down. */}
+                      <SliderRow
+                        label={t.lab.ctl.elevation}
+                        value={physics.windElevation}
+                        min={-90}
+                        max={90}
+                        step={1}
+                        disabled={physics.wind === 0}
+                        onChange={(v) => patch("physics", { windElevation: v })}
+                        fmt={(v) => `${v.toFixed(0)}°`}
+                      />
                     </>
                   ) : (
                     // Camera, one page: the scene's camera motion, then the
@@ -10661,7 +10752,7 @@ function Lab() {
                               disabled={!camera.follow || !!cameraClip}
                               onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
                             >
-                              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
+                              <SelectTrigger size="sm" className={DOCK_SELECT}>
                                 <SelectValue placeholder={t.lab.ctl.none} />
                               </SelectTrigger>
                               <SelectContent>
@@ -10839,6 +10930,29 @@ function Lab() {
                           onChange={(v) => patch("dof", v > 0 ? { enabled: true, aperture: v } : { enabled: false })}
                           fmt={(v) => v.toFixed(2)}
                         />
+                        {/* Who stays sharp, the same row as follow's bone:
+                            always here, inert while the blur is off. Shows
+                            the first character when the document names no
+                            one, or someone who has left, as the engine does. */}
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.focusOn}</span>
+                          <Select
+                            value={castTargets.find((c) => c.id === dof.model)?.id ?? castTargets[0]?.id ?? ""}
+                            disabled={!dof.enabled || castTargets.length === 0}
+                            onValueChange={(v) => patch("dof", { model: v })}
+                          >
+                            <SelectTrigger size="sm" className={DOCK_SELECT}>
+                              <SelectValue placeholder={t.lab.ctl.none} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {castTargets.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                     </>
                   )}
                 </LayerRow>

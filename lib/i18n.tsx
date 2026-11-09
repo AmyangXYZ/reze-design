@@ -922,6 +922,10 @@ const en = {
       bloom: "Bloom",
       grid: "Grid lines",
       fade: "Fade",
+      gridPatterns: { none: "None", grid: "Grid", dots: "Dots" } as Record<string, string>,
+      patternColor: "Pattern color",
+      cellSize: "Cell size",
+      mirror: "Mirror",
       height: "Height",
       /** Sensor grain over the render. */
       grain: "Grain",
@@ -988,6 +992,8 @@ const en = {
       target: (axis: string) => `Target ${axis}`,
       offset: (axis: string) => `Offset ${axis}`,
       dof: "Depth of field",
+      /** Who the depth of field keeps sharp. */
+      focusOn: "Focus on",
       image: "Media",
       dome: "Skybox",
       // The HDRI slot. Blender's word for the seat it fills — the thing that
@@ -2017,6 +2023,10 @@ const zh: Dictionary = {
       bloom: "泛光",
       grid: "网格",
       fade: "渐隐",
+      gridPatterns: { none: "无", grid: "网格", dots: "圆点" } as Record<string, string>,
+      patternColor: "图案颜色",
+      cellSize: "格子大小",
+      mirror: "镜面",
       height: "高度",
       grain: "颗粒",
       roll: "倾斜",
@@ -2066,6 +2076,7 @@ const zh: Dictionary = {
       target: (axis: string) => `目标 ${axis}`,
       offset: (axis: string) => `偏移 ${axis}`,
       dof: "景深",
+      focusOn: "对焦",
       image: "媒体",
       dome: "天空盒",
       world: "世界",
