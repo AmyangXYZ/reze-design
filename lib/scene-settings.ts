@@ -395,7 +395,13 @@ export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false, strength:
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the
  *  variation derived from them cannot drift apart. */
-export const WIND_MAX = 60
+/** The wind dial's top: twice the default gravity, so an updraft can outpull
+ *  gravity (98) and lift a hem. Wind is an acceleration summed with gravity,
+ *  so straight up at less than 98 only makes cloth lighter. */
+export const WIND_MAX = 200
+/** Where the gusts reach full swing. A gale at 60 already swings hard, and
+ *  every scene written before the dial reached 200 gusted on this scale. */
+export const WIND_GALE = 60
 export const WIND_FREQ_MIN = 0.05
 export const WIND_FREQ_MAX = 3
 
@@ -432,7 +438,7 @@ export function windSliderFromFreq(hz: number): number {
  * steady air at the top.
  */
 export function windVariation(wind: number, frequencyHz: number): number {
-  const byStrength = Math.min(1, Math.max(0, wind / WIND_MAX))
+  const byStrength = Math.min(1, Math.max(0, wind / WIND_GALE))
   return byStrength * (1 - windSliderFromFreq(frequencyHz))
 }
 

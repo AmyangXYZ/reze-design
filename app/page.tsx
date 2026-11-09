@@ -266,6 +266,7 @@ import {
   type EffectParamValue,
   type MaterialPreset,
   type OverlayPrimitive,
+  lineBetween,
   type ShaderGraph,
   type StyleGroup,
   parseLRC,
@@ -285,7 +286,7 @@ import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -2314,6 +2315,42 @@ const NO_COOKIE = "__none"
  *  deriving once rather than eyeballing, since it is what the inner ring means. */
 const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
 
+/** A world-space arrow along `dir` (unit), 12 units long, about the height of
+ *  a character's torso. "into" ends at `at`, as light arriving there;
+ *  "through" is centred on it, as air passing. Its head is four barbs, so it
+ *  reads as an arrow from any side. */
+function arrowOverlay(
+  at: [number, number, number],
+  dir: [number, number, number],
+  mode: "into" | "through",
+  color: [number, number, number, number],
+): OverlayPrimitive[] {
+  const L = 12
+  const [dx, dy, dz] = dir
+  const back = mode === "into" ? L : L / 2
+  const from: [number, number, number] = [at[0] - dx * back, at[1] - dy * back, at[2] - dz * back]
+  const tip: [number, number, number] = [from[0] + dx * L, from[1] + dy * L, from[2] + dz * L]
+  // Two axes square to the shaft, for the barbs.
+  const ref = Math.abs(dy) < 0.9 ? [0, 1, 0] : [1, 0, 0]
+  let ux = dy * ref[2] - dz * ref[1], uy = dz * ref[0] - dx * ref[2], uz = dx * ref[1] - dy * ref[0]
+  const n = Math.hypot(ux, uy, uz)
+  ux /= n; uy /= n; uz /= n
+  const vx = dy * uz - dz * uy, vy = dz * ux - dx * uz, vz = dx * uy - dy * ux
+  const head = 1.6
+  const out: OverlayPrimitive[] = []
+  const shaft = lineBetween(from, tip, color)
+  if (shaft) out.push({ ...shaft, thickness: 2 })
+  for (const [px, py, pz] of [[ux, uy, uz], [-ux, -uy, -uz], [vx, vy, vz], [-vx, -vy, -vz]]) {
+    const barb = lineBetween(
+      tip,
+      [tip[0] - dx * head * 1.6 + px * head, tip[1] - dy * head * 1.6 + py * head, tip[2] - dz * head * 1.6 + pz * head],
+      color,
+    )
+    if (barb) out.push({ ...barb, thickness: 2 })
+  }
+  return out
+}
+
 /** The editor waits for the built-ins: auto-style, the look packs and the scene
  *  it opens on all name them (lib/stock). */
 export default function Page() {
@@ -4007,6 +4044,37 @@ function Lab() {
     }
     engine.setOverlay("lights", marks)
   }, [lights, lampOpen, ready, engineRef, editingLamps])
+
+  /**
+   * An arrow for the direction being dialled, while its slider moves and a
+   * moment after. The sun's arrives at the orbit's centre from where the light
+   * comes; the wind's passes through it the way the air travels.
+   */
+  const [aiming, setAiming] = useState<"sun" | "wind" | null>(null)
+  const aimingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const showAim = useCallback((what: "sun" | "wind") => {
+    setAiming(what)
+    clearTimeout(aimingTimer.current)
+    aimingTimer.current = setTimeout(() => setAiming(null), 1200)
+  }, [])
+  useEffect(() => () => clearTimeout(aimingTimer.current), [])
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine) return
+    if (!aiming) {
+      engine.setOverlay("aim", [])
+      return
+    }
+    const t = engine.getCameraOrbit().target
+    const at: [number, number, number] = [t.x, t.y, t.z]
+    const isSun = aiming === "sun"
+    const d = isSun
+      ? azElToDirection(settings.sun.azimuth, settings.sun.elevation)
+      : windDirection(settings.physics.windAzimuth, settings.physics.windElevation)
+    const ink = coverInk(settings.background.color) === "dark" ? 0 : 1
+    const c = isSun ? hexToLinearVec3(settings.sun.color) : { x: ink, y: ink, z: ink }
+    engine.setOverlay("aim", arrowOverlay(at, [d.x, d.y, d.z], isSun ? "into" : "through", [c.x, c.y, c.z, 0.9]))
+  }, [aiming, ready, engineRef, settings.sun, settings.physics, settings.background.color])
 
   // Effects: drafts and community rows, for resolving what the scene wears.
   const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
@@ -10013,7 +10081,7 @@ function Lab() {
                             min={0}
                             max={360}
                             step={1}
-                            onChange={(v) => patch("sun", { azimuth: v })}
+                            onChange={(v) => (showAim("sun"), patch("sun", { azimuth: v }))}
                             fmt={(v) => `${v.toFixed(0)}°`}
                           />
                           <SliderRow
@@ -10022,7 +10090,7 @@ function Lab() {
                             min={0}
                             max={90}
                             step={1}
-                            onChange={(v) => patch("sun", { elevation: v })}
+                            onChange={(v) => (showAim("sun"), patch("sun", { elevation: v }))}
                             fmt={(v) => `${v.toFixed(0)}°`}
                           />
                           <SliderRow
@@ -10646,7 +10714,7 @@ function Lab() {
                         max={360}
                         step={1}
                         disabled={physics.wind === 0}
-                        onChange={(v) => patch("physics", { windAzimuth: v })}
+                        onChange={(v) => (showAim("wind"), patch("physics", { windAzimuth: v }))}
                         fmt={(v) => `${v.toFixed(0)}°`}
                       />
                       {/* Tilt off level, the sun's word for it: + blows up
@@ -10658,7 +10726,7 @@ function Lab() {
                         max={90}
                         step={1}
                         disabled={physics.wind === 0}
-                        onChange={(v) => patch("physics", { windElevation: v })}
+                        onChange={(v) => (showAim("wind"), patch("physics", { windElevation: v }))}
                         fmt={(v) => `${v.toFixed(0)}°`}
                       />
                     </>
