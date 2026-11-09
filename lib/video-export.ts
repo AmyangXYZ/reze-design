@@ -1,6 +1,7 @@
 // Offline render-to-file — the video export, the PNG sequence that shares its
 // render loop, and the single still that shares its composite stack.
 
+import { drawMark, markFont, type Mark } from "@/lib/watermark"
 import {
   AudioBufferSource,
   BufferTarget,
@@ -84,8 +85,8 @@ export type ExportSettings = {
    *  back to the next that it can, rather than failing the export. */
   codec?: ExportCodec
   audioSource: ExportAudioSource
-  /** Draw the Reze Design wordmark bottom-right. */
-  watermark: boolean
+  /** The REZE DESIGN and author lockup, and where it goes. Null draws none. */
+  watermark: Mark | null
   background: ExportBackground
   target: ExportTarget
 }
@@ -235,47 +236,6 @@ export async function canEncodeAt(width: number, height: number, fps: number, we
   if (webm) return (await getFirstEncodableVideoCodec(["vp9", "vp8"], probeOptions(width, height, bitrate, fps))) !== null
   if (await getFirstEncodableVideoCodec(["avc", "av1"], probeOptions(width, height, bitrate, fps))) return true
   return canEncodeHevc(width, height, bitrate, fps)
-}
-
-// Watermark: "REZE DESIGN" wordmark, top-left
-
-/** Geist via next/font gets a hashed family name — read it off the CSS variable. */
-const brandFontFamily = () => {
-  const fam = getComputedStyle(document.documentElement).getPropertyValue("--font-geist-sans").trim()
-  return fam ? `${fam}, system-ui, sans-serif` : "system-ui, sans-serif"
-}
-
-/**
- * The wordmark, in the engine demo's own style (web/components/header.tsx):
- * uppercase, ONE regular weight, 0.3em tracking, and a two-part shadow — a soft
- * white bloom over a tight dark drop, so it reads as lit on dark footage and
- * stays legible on bright. No second weight, no icon, no colour: the spacing
- * carries it, which is why that header works.
- *
- * Canvas allows one shadow per fill, so the bloom and the drop are two passes.
- */
-function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font: string) {
-  const size = Math.max(14, Math.round(h * 0.028))
-  const pad = Math.round(h * 0.024)
-  const cx = ctx as CanvasRenderingContext2D & { letterSpacing?: string }
-  ctx.save()
-  ctx.textBaseline = "top"
-  ctx.font = `400 ${size}px ${font}`
-  cx.letterSpacing = `${(size * 0.3).toFixed(1)}px`
-  ctx.fillStyle = "rgba(255, 255, 255, 0.92)"
-
-  // 0 0 20px rgba(255,255,255,0.3) — the demo's bloom, scaled to type size.
-  ctx.shadowColor = "rgba(255, 255, 255, 0.3)"
-  ctx.shadowBlur = size * 0.83
-  ctx.shadowOffsetY = 0
-  ctx.fillText("REZE DESIGN", pad, pad)
-
-  // 0 2px 10px rgba(0,0,0,0.5) — and its drop.
-  ctx.shadowColor = "rgba(0, 0, 0, 0.5)"
-  ctx.shadowBlur = size * 0.42
-  ctx.shadowOffsetY = size * 0.083
-  ctx.fillText("REZE DESIGN", pad, pad)
-  ctx.restore()
 }
 
 /**
@@ -586,7 +546,7 @@ export async function captureStill(opts: {
     paintBase(ctx, background, backgroundColor, width, height)
     if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
     ctx.drawImage(canvas, 0, 0, width, height)
-    if (settings.watermark) drawWatermark(ctx, width, height, brandFontFamily())
+    if (settings.watermark) drawMark(ctx, width, height, markFont(), settings.watermark, opts.atTime ?? 0)
   } finally {
     engine.setRenderSize(prevW, prevH)
     engine.renderFrame(0)
@@ -944,8 +904,8 @@ export async function exportVideo(opts: {
    * modes that need the speed — green screen and transparent both arrive here
    * with no backdrop, and both force the watermark off.
    */
-  const needsComposite = backdropFrames !== null || settings.watermark
-  const watermarkFont = needsComposite ? brandFontFamily() : ""
+  const needsComposite = backdropFrames !== null || settings.watermark !== null
+  const watermarkFont = needsComposite ? markFont() : ""
 
   // Moving cards, opened at their OWN texture size — a card is a fixed
   // rectangle of texels and setPlaneFrame refuses any other, so there is no
@@ -1085,7 +1045,7 @@ export async function exportVideo(opts: {
         // Already cover-fitted to the output — see BackdropFrames.
         if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
         ctx.drawImage(canvas, 0, 0, width, height)
-        if (settings.watermark) drawWatermark(ctx, width, height, watermarkFont)
+        if (settings.watermark) drawMark(ctx, width, height, watermarkFont, settings.watermark, startTime + t)
       }
 
       await sink.add(i, t)

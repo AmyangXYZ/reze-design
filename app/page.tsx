@@ -273,6 +273,7 @@ import {
   UNLIT_GRAPH,
 } from "reze-engine"
 import { LampMarkers } from "@/components/scene/lamp-markers"
+import { MarksPreview } from "@/components/scene/marks-preview"
 import { aimAt, aimOf, blendOf, coneSegments, innerOf, pitchYawOf, rotate, SPOT_ANGLE } from "@/lib/spot"
 import { accessoryFiles, carryXFile, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
@@ -784,7 +785,7 @@ const DOCK_CONTROLS: {
   { id: "aspect", en: "Aspect ratio", zh: "画面比例", row: "export", keywords: ["16:9", "9:16", "square", "vertical"] },
   { id: "duration", en: "Export duration", zh: "导出时长", row: "export", keywords: ["length", "range", "seconds"] },
   { id: "green-screen", en: "Green screen", zh: "绿幕", row: "export", keywords: ["chroma", "key", "transparent", "抠像"] },
-  { id: "watermark", en: "Watermark", zh: "水印", row: "export", keywords: ["logo", "brand"] },
+  { id: "watermark", en: "Watermark", zh: "水印", row: "export", keywords: ["logo", "brand", "author", "name", "signature", "credit", "moving", "作者", "署名"] },
   // "after effects" and "composite" are what someone is thinking when they want
   // this; "jsx" and "camera" are what they will type once they know it exists.
   { id: "ae-script", en: "AE composition script", zh: "AE 合成脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
@@ -2934,7 +2935,7 @@ function Lab() {
   // Not on a phone: its scene stays full screen whatever is open, the render's
   // settings on its options card.
   const shownFrame =
-    framing.activeFrame ?? (!phone && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: false } : null)
+    framing.activeFrame ?? (!phone && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: null } : null)
   const framed = shownFrame !== null
   const frameRect =
     shownFrame && framing.frameVp
@@ -7117,7 +7118,7 @@ function Lab() {
       return await captureStill({
         engine,
         canvas,
-        settings: { width, height, watermark: false, background: "scene" },
+        settings: { width, height, watermark: null, background: "scene" },
         backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
         backgroundColor: settings.background.color,
         atTime: engine.getModel(masterId ?? primaryId ?? "")?.getAnimationProgress().current ?? 0,
@@ -7776,26 +7777,8 @@ function Lab() {
               canvas that would not be exported, and there are no such parts:
               the canvas IS the frame. What surrounds it is the editor's own
               ground, which needs no dimming to read as not-the-shot. */}
-          {/* The watermark, WHERE the export will put it — same layout maths as
-              drawWatermark in lib/video-export.ts (size h·0.028, pad h·0.024)
-              and the engine demo's own type style, so what you frame is what you
-              get. Keep the two in step. */}
-          {framing.activeFrame?.watermark && (
-            <div
-              className="absolute font-sans text-white/90 uppercase"
-              style={{
-                left: frameRect.x + frameRect.h * 0.024,
-                top: frameRect.y + frameRect.h * 0.024,
-                fontSize: Math.max(14, Math.round(frameRect.h * 0.028)),
-                lineHeight: 1,
-                fontWeight: 400,
-                letterSpacing: "0.3em",
-                textShadow: "0 0 0.83em rgba(255,255,255,0.3), 0 0.083em 0.42em rgba(0,0,0,0.5)",
-              }}
-            >
-              Reze Design
-            </div>
-          )}
+          {/* The watermark, where the export will put it. */}
+          {framing.activeFrame?.watermark && <MarksPreview rect={frameRect} mark={framing.activeFrame.watermark} />}
         </div>
       )}
 

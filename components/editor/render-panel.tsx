@@ -3,7 +3,7 @@
 // Right dock · Render tab — where a finished scene becomes an exported video.
 
 import { Input } from "@/components/ui/input"
-import { memo, useEffect, useRef, useState, type RefObject } from "react"
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
 import { Camera, Film, Square } from "lucide-react"
@@ -39,6 +39,17 @@ import type { SceneTimeline } from "@/lib/timeline"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
+import { useSession } from "@/lib/auth-client"
+import { ColorField } from "@/components/color-picker"
+import {
+  MARK_DEFAULT_COLOR,
+  MARK_DEFAULT_PLACE,
+  MARK_NAME_MAX,
+  MARK_PLACES,
+  type Mark,
+  type MarkPlace,
+} from "@/lib/watermark"
 
 /** The frame rates offered. 60 is the web's; 120 is what Bilibili takes at
  *  4K; 240 is for a 240 Hz screen and for slow motion. Each is offered only
@@ -90,8 +101,32 @@ const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "14
  * putting the panel into a state with no matching option.
  */
 const EXPORT_PREFS_KEY = "reze-design.export"
-type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; bitrate: ExportBitrate; codec: ExportCodec; fps: Fps }
-const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, bitrate: "standard", codec: "h264", fps: 60 }
+type ExportPrefs = {
+  aspect: Aspect
+  quality: Quality
+  watermark: boolean
+  bitrate: ExportBitrate
+  codec: ExportCodec
+  fps: Fps
+  /** The watermark's author line as typed. Null until it is first edited,
+   *  and while null the field holds the account's handle. */
+  markName: string | null
+  markPlace: MarkPlace
+  markMoving: boolean
+  markColor: string
+}
+const EXPORT_DEFAULTS: ExportPrefs = {
+  aspect: "2.39:1",
+  quality: "4k",
+  watermark: true,
+  bitrate: "standard",
+  codec: "h264",
+  fps: 60,
+  markName: null,
+  markPlace: MARK_DEFAULT_PLACE,
+  markMoving: false,
+  markColor: MARK_DEFAULT_COLOR,
+}
 
 function readExportPrefs(): ExportPrefs {
   if (typeof window === "undefined") return EXPORT_DEFAULTS
@@ -106,6 +141,10 @@ function readExportPrefs(): ExportPrefs {
       bitrate: p.bitrate === "high" ? "high" : "standard",
       codec: p.codec === "hevc" ? "hevc" : "h264",
       fps: FPS_OPTIONS.includes(p.fps as Fps) ? (p.fps as Fps) : EXPORT_DEFAULTS.fps,
+      markName: typeof p.markName === "string" ? p.markName.slice(0, MARK_NAME_MAX) : null,
+      markPlace: MARK_PLACES.includes(p.markPlace as MarkPlace) ? (p.markPlace as MarkPlace) : MARK_DEFAULT_PLACE,
+      markMoving: p.markMoving === true,
+      markColor: typeof p.markColor === "string" && /^#[0-9a-f]{6}$/i.test(p.markColor) ? p.markColor : MARK_DEFAULT_COLOR,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -177,6 +216,47 @@ const rangeInputCover =
 const COVER_WORD =
   "mt-1.5 flex min-h-6 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground first:mt-0 hover:text-foreground disabled:opacity-40"
 
+/**
+ * The watermark's place as the frame in miniature: three dots along the top, three
+ * along the bottom, the chosen one filled.
+ */
+function PlacePicker({
+  value,
+  onChange,
+  disabled,
+  labels,
+}: {
+  value: MarkPlace
+  onChange: (p: MarkPlace) => void
+  disabled?: boolean
+  labels: Record<MarkPlace, string>
+}) {
+  return (
+    <div role="radiogroup" className={cn("grid grid-cols-3 gap-x-1 gap-y-0.5", disabled && "pointer-events-none opacity-40")}>
+      {MARK_PLACES.map((p) => (
+        <Button
+          key={p}
+          variant="bare"
+          role="radio"
+          aria-checked={p === value}
+          aria-label={labels[p]}
+          title={labels[p]}
+          disabled={disabled}
+          onClick={() => onChange(p)}
+          className="group flex size-4 items-center justify-center rounded-full"
+        >
+          <span
+            className={cn(
+              "size-1.5 rounded-full border border-foreground transition-transform group-hover:scale-125",
+              p === value && "bg-foreground",
+            )}
+          />
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
   name: string
@@ -208,7 +288,7 @@ async function scratchFile(ext: string): Promise<SaveHandle | null> {
 }
 
 /** Live framing state the page mirrors into the viewport while this tab is open */
-export type FramePreview = { aspect: number; watermark: boolean }
+export type FramePreview = { aspect: number; watermark: Mark | null }
 
 export const RenderPanel = memo(function RenderPanel({
   active,
@@ -298,6 +378,14 @@ export const RenderPanel = memo(function RenderPanel({
   const [bitrate, setBitrate] = useState<ExportBitrate>(prefs.bitrate)
   const [codec, setCodec] = useState<ExportCodec>(prefs.codec)
   const [fps, setFps] = useState<Fps>(prefs.fps)
+  const [markName, setMarkName] = useState<string | null>(prefs.markName)
+  const [markPlace, setMarkPlace] = useState<MarkPlace>(prefs.markPlace)
+  const [markMoving, setMarkMoving] = useState(prefs.markMoving)
+  const [markColor, setMarkColor] = useState(prefs.markColor)
+  // The field starts as the account's handle, a real value to edit. Once
+  // edited, what was typed is the line, empty included.
+  const handle = useSession().data?.user?.username
+  const shownName = markName ?? (handle ? `@${handle}` : "")
   // Read through the store rather than seeded into state like the prefs above:
   // those render the same on both sides because they have real defaults, while a
   // stored yes here would have the server paint the switch off and the client
@@ -322,8 +410,17 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps })
-  }, [aspect, quality, watermark, bitrate, codec, fps])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor })
+  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor])
+  // What the frame gets: none on a compositing handoff, where the picture
+  // goes on to be composited and a mark would be baked into the plate.
+  const markOut = useMemo<Mark | null>(
+    () =>
+      !compositing && watermark
+        ? { name: shownName, place: markPlace, moving: markMoving, color: markColor }
+        : null,
+    [compositing, watermark, shownName, markPlace, markMoving, markColor],
+  )
 
   // The frame this panel would render, for the rates the Bitrate options print
   // and for asking whether HEVC can be encoded at it.
@@ -403,9 +500,9 @@ export const RenderPanel = memo(function RenderPanel({
   // While this tab is open, the viewport frames the shot live
   useEffect(() => {
     if (!active) return
-    onFramePreviewChange({ aspect: width / height, watermark: watermark && !compositing })
+    onFramePreviewChange({ aspect: width / height, watermark: markOut })
     return () => onFramePreviewChange(null)
-  }, [active, width, height, watermark, compositing, onFramePreviewChange])
+  }, [active, width, height, markOut, onFramePreviewChange])
 
   // reze-design-<scene>-<resolution>[-<fps>fps]-<date>[.ext] — the folder a PNG
   // sequence lands in is the same name without one. A still has no frame rate.
@@ -440,7 +537,7 @@ export const RenderPanel = memo(function RenderPanel({
       const blob = await captureStill({
         engine,
         canvas,
-        settings: { width, height, watermark: compositing ? false : watermark, background },
+        settings: { width, height, watermark: markOut, background },
         backdrop,
         backgroundColor,
         // The still is the pose on screen, so a moving backdrop has to be the
@@ -456,7 +553,7 @@ export const RenderPanel = memo(function RenderPanel({
       // silently unpins a framed-aspect canvas — the amber border then no
       // longer matches what renders. Re-emitting the preview as a FRESH object
       // makes the host's framing effect re-run and re-assert the pin.
-      if (active) onFramePreviewChange({ aspect: width / height, watermark: watermark && !compositing })
+      if (active) onFramePreviewChange({ aspect: width / height, watermark: markOut })
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -615,7 +712,7 @@ export const RenderPanel = memo(function RenderPanel({
           bitrate: rate,
           codec: hevc ? "hevc" : "h264",
           audioSource: audioSource ?? (musicUrl || footsteps ? "music" : "none"),
-          watermark: compositing ? false : watermark,
+          watermark: markOut,
           background,
           target,
         },
@@ -849,15 +946,6 @@ export const RenderPanel = memo(function RenderPanel({
             </Select>
           </Row>
           )}
-          {/* Disabled (not hidden — layout stays put) for a compositing handoff */}
-          <Row label={t.render.watermark}>
-            <Switch
-              checked={compositing ? false : watermark}
-              onCheckedChange={setWatermark}
-              disabled={exporting || compositing}
-              className="scale-75"
-            />
-          </Row>
           {/* Background and container as one choice — see OutputMode. */}
           <Row label={t.render.output}>
             <Select value={mode} onValueChange={(v) => changeMode(v as OutputMode)} disabled={exporting}>
@@ -878,6 +966,39 @@ export const RenderPanel = memo(function RenderPanel({
               {t.render.upscaleWarn}
             </Notice>
           )}
+          {/* The watermark, past a hairline: one switch for the lockup, then its
+              author line, place, motion and colour, always there and inert
+              while off. Disabled (not hidden) for a compositing handoff. */}
+          <div className="mt-2.5 border-t border-line pt-2.5">
+            <Row label={t.render.watermark}>
+              <Switch
+                checked={compositing ? false : watermark}
+                onCheckedChange={setWatermark}
+                disabled={exporting || compositing}
+                className="scale-75"
+              />
+            </Row>
+            <div className={cn("mt-1.5", (!watermark || compositing || exporting) && "pointer-events-none opacity-40")}>
+              <Row label={t.render.markName}>
+                <Input
+                  variant="bare"
+                  value={shownName}
+                  maxLength={MARK_NAME_MAX}
+                  onChange={(e) => setMarkName(e.target.value)}
+                  className={cn(rangeInputCover, "w-32 text-right")}
+                />
+              </Row>
+              <Row label={t.render.markPlace}>
+                <PlacePicker value={markPlace} onChange={setMarkPlace} disabled={markMoving} labels={t.render.markPlaces} />
+              </Row>
+              <Row label={t.render.markMoving}>
+                <Switch checked={markMoving} onCheckedChange={setMarkMoving} className="scale-75" />
+              </Row>
+              <Row label={t.render.markColor}>
+                <ColorField value={markColor} onChange={setMarkColor} />
+              </Row>
+            </div>
+          </div>
         </div>
 
         {/* No section title (the surface hosting this already says Export) and
@@ -890,7 +1011,7 @@ export const RenderPanel = memo(function RenderPanel({
             clip to walk. */}
         {/* The still and the script are words; Render is the one solid thing
             on this edge. */}
-        <div data-ink-zone className="mt-1.5 flex flex-col">
+        <div data-ink-zone className="mt-2.5 flex flex-col border-t border-line pt-2.5">
             <Button variant="bare" disabled={!canRender} onClick={() => void aeScript()} className={COVER_WORD}>
               <Film className="size-3.5" />
               {t.render.aeScript}
