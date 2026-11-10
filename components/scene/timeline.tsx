@@ -43,18 +43,19 @@ import {
   cameraChannelsForTab,
   cameraIpPair,
   isCameraTab,
-  boneDisplayLabel,
   AXIS,
 } from "@/lib/animation"
-import { motionFrameCount } from "@/lib/clip"
-import type { AppliedEffect } from "@/lib/effects"
+import { FPS, motionFrameCount } from "@/lib/clip"
 import {
   EffectLanes,
   EffectLanesMenu,
+  LANE_H,
   type EffectLanesApi,
   type EffectLanesData,
   type LaneRow,
 } from "@/components/scene/effect-lanes"
+import { DialCurves, type DialCurvesData } from "@/components/scene/dial-curves"
+import { OUTLINER_W } from "@/components/timeline/outliner"
 
 // ─── Timeline constants ─────────────────────────────────────────────────
 export const DOPE_H = 26
@@ -90,6 +91,36 @@ function minPxPerFrameForViewport(trackWidthPx: number, frameCount: number): num
 /** Frames between ruler ticks: 1, 5 and 10 close up, then whole seconds and
  *  minutes as a long scene zooms out, keeping ticks at least 5px apart. */
 const TICK_STEPS = [30, 60, 150, 300, 900, 1800]
+/** What the ruler and the counter count in: frames, or time as m:ss:ff. */
+export type TimeUnit = "frames" | "time"
+
+/** A frame as timecode, the way video editors write it: minutes, seconds, and
+ *  the frame within the second — exact on the 30fps grid, unlike decimals. */
+function timecode(frame: number): string {
+  const f = Math.max(0, Math.round(frame))
+  const sec = Math.floor(f / FPS)
+  const m = Math.floor(sec / 60)
+  return `${m}:${String(sec % 60).padStart(2, "0")}:${String(f % FPS).padStart(2, "0")}`
+}
+
+/** The counter's reading of a frame, in the unit showing. */
+function formatFrame(frame: number, unit: TimeUnit): string {
+  return unit === "time" ? timecode(frame) : padFrame4(frame)
+}
+
+/** A typed position back to a frame: m:ss:ff, ss:ff or a frame number,
+ *  whichever unit is showing. Null when it reads as neither. */
+function parseFrame(raw: string): number | null {
+  const parts = raw.trim().split(":").map((x) => Number(x))
+  if (parts.length === 0 || parts.some((n) => !Number.isFinite(n))) return null
+  if (parts.length === 1) return Math.round(parts[0])
+  const [ff, ss, mm = 0] = [...parts].reverse()
+  return Math.round((mm * 60 + ss) * FPS + ff)
+}
+
+/** Whole seconds between labelled ticks on a time ruler. */
+const SECOND_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300]
+
 function tickStep(pxPerFrame: number): number {
   if (pxPerFrame >= 12) return 1
   if (pxPerFrame >= 6) return 5
@@ -343,6 +374,14 @@ export function defaultTabForSelection(kind: SelectionKind): string {
 }
 
 /** Scrub playhead 0…frameCount — track/thumb aligned with toolbar (Tailwind tokens). */
+/**
+ * The position bar's length, set so the outliner's edge below falls midway
+ * between the bar's end and the counter box. Tied to the outliner's width, so
+ * the two move together; the offset is the header's content left of the bar
+ * plus half the gap after it, as measured on screen.
+ */
+const FRAME_BAR_W = OUTLINER_W - 108.5
+
 function TransportFrameSlider({
   thumbRef,
   frameCount,
@@ -417,9 +456,10 @@ function TransportFrameSlider({
           e.preventDefault()
         }}
         className={cn(
-          "relative h-5 w-16 shrink-0 touch-none",
+          "relative h-5 shrink-0 touch-none",
           disabled ? "pointer-events-none opacity-50" : "cursor-pointer",
         )}
+        style={{ width: FRAME_BAR_W }}
       >
         {/* The hairline slider's look (components/ui/slider): a 1px rule, the
             played part in the ink, a 2×12 tick. The tick and the fill are
@@ -548,6 +588,7 @@ interface TimelineCanvasProps {
   visibleBones: string[]
   selectedKeyframes: SelectedKeyframe[]
   tab: string
+  unit: TimeUnit
   onSetCurrentFrame: (f: number) => void
   onSelectKeyframe: (kf: SelectedKeyframe, multi: boolean) => void
   /** Clicking anything that is NOT a keyframe. See the ruler branch of
@@ -605,6 +646,7 @@ function TimelineCanvas({
   visibleBones,
   selectedKeyframes,
   tab,
+  unit,
   onSetCurrentFrame,
   onSelectKeyframe: onSelectKeyframeProp,
   onClearSelection: onClearSelectionProp,
@@ -666,6 +708,7 @@ function TimelineCanvas({
     blank: boolean
     parentHolds: readonly ParentHold[] | null
     tab: string
+    unit: TimeUnit
     dragVersion: number
     ink: string
   }>({
@@ -685,6 +728,7 @@ function TimelineCanvas({
     blank: false,
     parentHolds: null,
     tab: "",
+    unit: "frames",
     dragVersion: 0,
     ink: "",
   })
@@ -813,6 +857,7 @@ function TimelineCanvas({
       cache.visibleBones !== visibleBones ||
       cache.selectedKeyframes !== selectedKeyframes ||
       cache.tab !== tab ||
+      cache.unit !== unit ||
       cache.blank !== blank ||
       cache.parentHolds !== parentHolds ||
       cache.dragVersion !== dragVersionRef.current ||
@@ -877,10 +922,17 @@ function TimelineCanvas({
     const rulerTickTop = (maj: boolean) => (maj ? 2 : RULER_H - 4)
     const minRulerLabelGapPx = 32
     let lastRulerLabelX = -1e9
+    // Counting in time, the labels sit on whole seconds, spaced as wide as
+    // the longest one needs; the ticks between stay on the frame grid.
+    const secStep =
+      unit === "time"
+        ? (SECOND_STEPS.find((n) => n * FPS * pxPerFrame >= ctx.measureText(timecode(frameCount).slice(0, -3)).width + 16) ??
+          SECOND_STEPS[SECOND_STEPS.length - 1])
+        : 0
     for (let f = 0; f <= frameCount; f += fStep) {
       const x = ox + f * pxPerFrame
       if (x < LABEL_W - 10 || x > w + 10) continue
-      const isM = f % fMajor === 0
+      const isM = unit === "frames" && f % fMajor === 0
       ctx.strokeStyle = isM ? C.rulerMajor : C.rulerTick
       ctx.beginPath()
       ctx.moveTo(Math.round(x) + 0.5, rulerTickTop(isM))
@@ -890,6 +942,20 @@ function TimelineCanvas({
         ctx.fillStyle = C.rulerText
         ctx.fillText(String(f), x, RULER_H - 2)
         lastRulerLabelX = x
+      }
+    }
+    // Seconds on their own walk: the frame step need not land on them.
+    if (unit === "time") {
+      for (let f = 0; f <= frameCount; f += secStep * FPS) {
+        const x = ox + f * pxPerFrame
+        if (x < LABEL_W - 10 || x > w + 10) continue
+        ctx.strokeStyle = C.rulerMajor
+        ctx.beginPath()
+        ctx.moveTo(Math.round(x) + 0.5, rulerTickTop(true))
+        ctx.lineTo(Math.round(x) + 0.5, RULER_H)
+        ctx.stroke()
+        ctx.fillStyle = C.rulerText
+        ctx.fillText(timecode(f).slice(0, -3), x, RULER_H - 2)
       }
     }
 
@@ -1087,12 +1153,6 @@ function TimelineCanvas({
             }
           }
         }
-      } else {
-        ctx.fillStyle = C.label
-        ctx.font = `13px ${FONT}`
-        ctx.textAlign = "center"
-        ctx.textBaseline = "middle"
-        ctx.fillText(dict.lab.timeline.noKeys(dict.lab.timeline.camera), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
     } else if (isMorphTab) {
       // ── Morph weight curve ──
@@ -1130,19 +1190,7 @@ function TimelineCanvas({
           }
 
           // (value readout is drawn in the per-tick overlay below)
-        } else {
-          ctx.fillStyle = C.label
-          ctx.font = `13px ${FONT}`
-          ctx.textAlign = "center"
-          ctx.textBaseline = "middle"
-          ctx.fillText(dict.lab.timeline.noKeys(selectedMorph), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
         }
-      } else {
-        ctx.fillStyle = C.label
-        ctx.font = `13px ${FONT}`
-        ctx.textAlign = "center"
-        ctx.textBaseline = "middle"
-        ctx.fillText(dict.lab.timeline.pickMorph, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
     } else if (selectedBone) {
       const keyframes = clip.boneTracks.get(selectedBone)
@@ -1285,19 +1333,7 @@ function TimelineCanvas({
         }
 
         // (value readout is drawn in the per-tick overlay below)
-      } else {
-        ctx.fillStyle = C.label
-        ctx.font = `13px ${FONT}`
-        ctx.textAlign = "center"
-        ctx.textBaseline = "middle"
-        ctx.fillText(dict.lab.timeline.noKeys(boneDisplayLabel(selectedBone)), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
-    } else {
-      ctx.fillStyle = C.label
-      ctx.font = `13px ${FONT}`
-      ctx.textAlign = "center"
-      ctx.textBaseline = "middle"
-      ctx.fillText(dict.lab.timeline.pickBone, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
     }
 
     // Persistent selection box — the RECTANGLE the user actually dragged to
@@ -1479,6 +1515,7 @@ function TimelineCanvas({
       cache.visibleBones = visibleBones
       cache.selectedKeyframes = selectedKeyframes
       cache.tab = tab
+      cache.unit = unit
       cache.blank = blank
       cache.parentHolds = parentHolds
       cache.dragVersion = dragVersionRef.current
@@ -1585,7 +1622,7 @@ function TimelineCanvas({
     }
     // dict.lab.timeline, because the canvas PAINTS its own empty states — a
     // language change has to repaint them, and nothing else here would.
-  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, blank, parentHolds, getDopeFrames, dict.lab.timeline])
+  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, unit, blank, parentHolds, getDopeFrames, dict.lab.timeline])
   useLayoutEffect(() => {
     drawRef2.current = draw
   }, [draw])
@@ -2297,9 +2334,11 @@ function TimelineCanvas({
           ? "ew-resize"
           : hit?.zone === "curve" || hit?.zone === "morph-curve" || hit?.zone === "camera-curve"
             ? "grab"
-            : hit?.zone === "ruler"
+            // The time axis scrubs (↔); empty space anywhere below it is a
+            // crosshair: a click moves the playhead there, a drag boxes keys.
+            : hit?.zone === "ruler" && e.clientY - el.getBoundingClientRect().top < RULER_H
               ? "col-resize"
-              : hit?.zone === "dope-empty" || hit?.zone === "curve-empty"
+              : hit?.zone === "ruler" || hit?.zone === "dope-empty" || hit?.zone === "curve-empty"
                 ? "crosshair"
                 : "default"
     },
@@ -2507,12 +2546,16 @@ interface TimelineProps {
   trailing?: ReactNode
   /** The Effects tab's rows and how to change them, drawn over the curve band
    *  on this component's own axis while the tab shows. */
-  effectLanes?: EffectLanesData<AppliedEffect> | null
+  effectLanes?: EffectLanesData<LaneRow> | null
   /** The Visibility tab's rows: the cast, and the stretches each is on stage
    *  for. The same band, drawn the same way — a separate prop rather than a
    *  shared one because the two hand back different row types, and one callback
    *  cannot be both. Only one is ever non-null. */
   visibilityLanes?: EffectLanesData<LaneRow> | null
+  /** An effect's dials as curves, in place of its lanes, while they are open. */
+  dialCurves?: DialCurvesData | null
+  /** Beside the tracks, under the toolbar: the outliner. */
+  aside?: ReactNode
 }
 
 export function Timeline({
@@ -2532,6 +2575,8 @@ export function Timeline({
   trailing,
   effectLanes = null,
   visibilityLanes = null,
+  dialCurves = null,
+  aside = null,
 }: TimelineProps) {
   const dict = useT()
   const clip = useClipSelector((s) => s.clip)
@@ -2589,6 +2634,25 @@ export function Timeline({
   const fc = Math.max(spanFrames, hasMotion ? (clip?.frameCount ?? 0) : Math.max(clip?.frameCount ?? 0, lastCameraFrame))
   const [endDraft, setEndDraft] = useState<string | null>(null)
   const [frameDraft, setFrameDraft] = useState<string | null>(null)
+  // Frames or time, remembered per browser: a convenience of whoever is
+  // looking, never part of the scene.
+  const [unit, setUnitState] = useState<TimeUnit>(() => {
+    try {
+      return localStorage.getItem("reze.timeline.unit") === "frames" ? "frames" : "time"
+    } catch {
+      return "time"
+    }
+  })
+  const setUnit = (u: TimeUnit) => {
+    setUnitState(u)
+    try {
+      localStorage.setItem("reze.timeline.unit", u)
+    } catch {}
+  }
+  const unitRef = useRef(unit)
+  useEffect(() => {
+    unitRef.current = unit
+  }, [unit])
   // Lazy-initialized from a restored draft's view, read once at first mount —
   // NOT patched in afterward. `currentFrame` above is global playback state,
   // already settled by the time this component exists; if scrollX/pxPerFrame
@@ -2614,6 +2678,37 @@ export function Timeline({
   })
   const timelineAreaRef = useRef<HTMLDivElement>(null)
   const lanesApi = useRef<EffectLanesApi | null>(null)
+  // The clip lanes scroll on their own: picking a row in the outliner brings
+  // its lane into view, and a vertical wheel over them scrolls them.
+  const [areaH, setAreaH] = useState(0)
+  const [laneScroll, setLaneScroll] = useState(0)
+  const activeLanes = dialCurves ? null : (visibilityLanes ?? effectLanes)
+  const laneView = Math.max(LANE_H, areaH - RULER_H - DOPE_H - AUDIO_H - 1)
+  const laneSpan = (activeLanes?.effects.length ?? 0) * LANE_H
+  const laneMax = Math.max(0, laneSpan - laneView)
+  const [laneFollowed, setLaneFollowed] = useState<string | null>(null)
+  const laneWanted = activeLanes?.selectedEffect ?? null
+  if (laneWanted !== laneFollowed) {
+    setLaneFollowed(laneWanted)
+    // The lanes draw their last row on top.
+    const shown = activeLanes ? [...activeLanes.effects].reverse() : []
+    const at = shown.findIndex((r) => (r.uid ?? r.id) === laneWanted)
+    if (at >= 0) {
+      const top = at * LANE_H
+      if (top < laneScroll) setLaneScroll(top)
+      else if (top + LANE_H > laneScroll + laneView) setLaneScroll(Math.min(laneMax, top + LANE_H - laneView))
+    }
+  }
+  const laneTop = Math.min(laneScroll, laneMax)
+  const laneScrollRef = useRef({ max: 0 })
+  useEffect(() => {
+    laneScrollRef.current.max = laneMax
+  })
+  // The overview shows the effect lanes and the visibility lanes together; the
+  // right-click menu acts on whichever one was pressed.
+  const fxApi = useRef<EffectLanesApi | null>(null)
+  const visApi = useRef<EffectLanesApi | null>(null)
+  const [menuKind, setMenuKind] = useState<"fx" | "vis">("fx")
   const [trackWidth, setTrackWidth] = useState(0)
 
   const minPxPerFrame = useMemo(() => minPxPerFrameForViewport(trackWidth, fc), [trackWidth, fc])
@@ -2643,7 +2738,10 @@ export function Timeline({
       measurable.current = true
       setSettled(true)
       const el = timelineAreaRef.current
-      if (el) setTrackWidth(el.clientWidth)
+      if (el) {
+        setTrackWidth(el.clientWidth)
+        setAreaH(el.clientHeight)
+      }
     }, FOLD_SETTLE_MS)
     return () => clearTimeout(t)
   }, [open])
@@ -2665,6 +2763,7 @@ export function Timeline({
     const ro = new ResizeObserver(() => {
       if (!measurable.current) return
       setTrackWidth(el.clientWidth)
+      setAreaH(el.clientHeight)
     })
     ro.observe(el)
     setTrackWidth(el.clientWidth)
@@ -2878,7 +2977,7 @@ export function Timeline({
       const field = frameFieldRef.current
       // Never while it is focused — that is someone typing a frame to jump to,
       // and overwriting it under the caret would make the field unusable.
-      if (field && document.activeElement !== field) field.value = padFrame4(frame)
+      if (field && document.activeElement !== field) field.value = formatFrame(frame, unitRef.current)
       const thumb = thumbElRef.current
       if (thumb) {
         const total = fcRef.current
@@ -2928,6 +3027,10 @@ export function Timeline({
       e.preventDefault()
       if (e.ctrlKey || e.metaKey) {
         zoomTo(pxRef.current * Math.exp(-e.deltaY * 0.005))
+      } else if (!e.shiftKey && laneScrollRef.current.max > 0 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        // Lanes taller than the band: a vertical wheel scrolls the rows.
+        const max = laneScrollRef.current.max
+        setLaneScroll((p) => Math.max(0, Math.min(max, Math.min(p, max) + e.deltaY)))
       } else if (e.shiftKey) {
         // macOS remaps shift+wheel vertical delta onto deltaX — take whichever is non-zero.
         const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX
@@ -3326,22 +3429,26 @@ export function Timeline({
             setCurrentFrame(f)
           }}
         />
-        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/5 px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
-          <span>F</span>
+        {/* In the timeline's own face, as the rest of the header: the app's
+            mono (Geist) stands larger at the same size. */}
+        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/5 px-1 py-px text-2xs tabular-nums text-muted-foreground">
           <Input variant="bare"
             type="text"
             inputMode="numeric"
             ref={frameFieldRef}
             aria-label={dict.lab.timeline.currentFrame}
             disabled={!clip}
-            value={frameDraft ?? padFrame4(currentFrame)}
-            onFocus={() => setFrameDraft(padFrame4(currentFrame))}
+            value={frameDraft ?? formatFrame(currentFrame, unit)}
+            // Monospace, so a width in characters fits the reading exactly,
+            // in either unit.
+            style={{ width: `${(frameDraft ?? formatFrame(currentFrame, unit)).length}ch` }}
+            onFocus={() => setFrameDraft(formatFrame(currentFrame, unit))}
             onChange={(e) => setFrameDraft(e.target.value)}
             onBlur={() => {
               const raw = frameDraft ?? ""
               setFrameDraft(null)
-              const v = parseInt(raw.replace(/\s/g, ""), 10)
-              if (!Number.isFinite(v) || !clip) return
+              const v = parseFrame(raw)
+              if (v === null || !clip) return
               setPlaying(false)
               setCurrentFrame(Math.max(0, Math.min(fc, v)))
             }}
@@ -3349,7 +3456,7 @@ export function Timeline({
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
+              "box-content h-4 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
@@ -3360,25 +3467,45 @@ export function Timeline({
             inputMode="numeric"
             aria-label={dict.lab.timeline.endFrame}
             disabled={!clip}
-            value={endDraft ?? padFrame4(fc)}
-            onFocus={() => setEndDraft(padFrame4(fc))}
+            value={endDraft ?? formatFrame(fc, unit)}
+            style={{ width: `${(endDraft ?? formatFrame(fc, unit)).length}ch` }}
+            onFocus={() => setEndDraft(formatFrame(fc, unit))}
             onChange={(e) => setEndDraft(e.target.value)}
             onBlur={() => {
               const raw = endDraft ?? ""
               setEndDraft(null)
-              const v = parseInt(raw.replace(/\s/g, ""), 10)
-              if (!Number.isFinite(v) || !clip) return
+              const v = parseFrame(raw)
+              if (v === null || !clip) return
               commit({ ...clip, frameCount: v })
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
+              "box-content h-4 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
           />
+        </div>
+        {/* What the counter and the ruler count in. */}
+        <div className="flex shrink-0 items-center">
+          {(["frames", "time"] as const).map((u) => (
+            <Button
+              key={u}
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-pressed={unit === u}
+              onClick={() => setUnit(u)}
+              className={cn(
+                "h-5 max-h-5 min-h-5 rounded-chip px-1 text-2xs",
+                unit === u ? "text-foreground underline decoration-blue-400 underline-offset-4" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {u === "frames" ? dict.lab.timeline.unitFrames : dict.lab.timeline.unitTime}
+            </Button>
+          ))}
         </div>
         <div className="mx-0.5 h-3.5 w-px shrink-0 bg-line" />
         {/* Channel tabs.
@@ -3393,56 +3520,47 @@ export function Timeline({
             visible bar — an 8px track inside a 26px toolbar is most of the
             toolbar. */}
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-0 overflow-x-auto">
-        {visibleTabs.map((t) => {
+        {dialCurves && (
+          // An effect's curves: the way back to its lanes, then a tab a dial.
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={dialCurves.onClose}
+              className="mr-1 h-5 max-h-5 min-h-5 shrink-0 gap-0.5 rounded-chip border-line-strong pr-1.5 pl-1 text-2xs font-medium text-foreground hover:bg-white/10"
+            >
+              <ChevronLeft className="size-3.5" />
+              <span className="max-w-[8rem] truncate">{dialCurves.name}</span>
+            </Button>
+            <div className="mx-0.5 h-3.5 w-px shrink-0 bg-line" />
+          </>
+        )}
+        {(dialCurves
+          ? dialCurves.decls.map((d) => ({ key: d.name, label: d.label ?? d.name, color: null, sep: false }))
+          : visibleTabs
+        ).map((t) => {
           if (t.sep)
             return <div key={t.key} className="mx-px h-3.5 w-px shrink-0 bg-line" />
-          const active = tab === t.key
+          const active = dialCurves ? dialCurves.tab === t.key : tab === t.key
           return (
             <Button
               type="button"
               key={t.key}
               variant="ghost"
               size="sm"
-              onClick={() => setTab(t.key)}
+              onClick={() => (dialCurves ? dialCurves.onTab(t.key) : setTab(t.key))}
+              // Words in the ink, the axis hue a dot beside them, the active
+              // one underlined in the accent — the editor's other tab bars.
               className={cn(
-                "h-5 max-h-5 min-h-5 shrink-0 overflow-hidden rounded-chip px-1.5 font-mono text-2xs",
+                "h-5 max-h-5 min-h-5 shrink-0 gap-1 rounded-chip px-1.5 text-2xs font-normal transition-none hover:bg-transparent dark:hover:bg-transparent",
                 "focus-visible:outline-none focus-visible:ring-0",
-                // The Button base ships `transition-all`, which fades the fill
-                // in over ~150ms. That was invisible while the active chip was
-                // barely a shade off the toolbar; against a solid fill it reads
-                // as the highlight lagging the click. A tab is a statement of
-                // where you are, not an animation — it should land at once.
-                "transition-none",
-                // The ghost variant ships `hover:text-accent-foreground` and
-                // `dark:hover:bg-accent/50`, both of which out-specify a plain
-                // `text-*`/`bg-*` here — so the tab you just clicked kept
-                // showing HOVER styling (dark fill, light text) for as long as
-                // the pointer stayed on it, which looked like the highlight
-                // never arrived. An active tab has nothing to advertise on
-                // hover: it is already where you are. So its hover state is
-                // pinned to its active state, dark: variant included.
                 active
-                  ? t.color
-                    ? "text-zinc-950 hover:text-zinc-950 hover:opacity-90 dark:hover:bg-transparent"
-                    // The aggregate tabs (Rotation / Translation / Target) and
-                    // Weight carry no hue of their own, so they cannot use the
-                    // solid-fill treatment the axis tabs get from `t.color`.
-                    // bg-secondary is barely a shade off the toolbar and read
-                    // as inactive; a solid light chip gives them the same
-                    // weight as a coloured one without claiming a hue that
-                    // belongs to a channel.
-                    : "bg-foreground/90 text-background hover:bg-foreground hover:text-background dark:hover:bg-foreground"
-                  : "opacity-65 hover:opacity-100 hover:bg-transparent dark:hover:bg-transparent active:bg-muted/50",
-                !active && !t.color && "text-muted-foreground",
+                  ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-4 hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
-              style={
-                active && t.color
-                  ? { backgroundColor: t.color }
-                  : !active && t.color
-                    ? { color: t.color }
-                    : undefined
-              }
             >
+              {t.color && <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />}
               {dict.lab.timeline.labels[t.label] ?? t.label}
             </Button>
           )
@@ -3454,15 +3572,20 @@ export function Timeline({
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>
-      {/* Canvas */}
+      {/* Canvas, with the outliner beside it */}
+      <div className="flex min-h-0 flex-1">
+      {aside}
+      <div className="flex min-w-0 flex-1 flex-col">
       <EffectLanesMenu
         apiRef={lanesApi}
-        enabled={blank && (effectLanes !== null || visibilityLanes !== null) && clip !== null}
+        enabled={blank && (effectLanes !== null || visibilityLanes !== null) && clip !== null && !dialCurves}
+        onEditCurves={menuKind === "fx" ? effectLanes?.onEditCurves : undefined}
       >
       <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {clip ? (
           <>
           <TimelineCanvas
+            unit={unit}
             open={open}
             clip={clip}
             pxPerFrame={pxPerFrame}
@@ -3498,11 +3621,9 @@ export function Timeline({
             playheadDrawRef={innerDrawRef}
             dragRedrawRef={dragRedrawRef}
           />
-          {effectLanes && (
-            <EffectLanes
-              {...effectLanes}
-              visible={blank}
-              apiRef={lanesApi}
+          {dialCurves && (
+            <DialCurves
+              data={dialCurves}
               pxPerFrame={pxPerFrame}
               scrollX={scrollX}
               frameCount={fc}
@@ -3511,17 +3632,26 @@ export function Timeline({
                 setPlaying(false)
                 setCurrentFrame(f)
               }}
-              onScrollX={setRevealX}
               top={RULER_H}
               bottom={DOPE_H + AUDIO_H + 1}
               labelWidth={LABEL_W}
             />
           )}
-          {visibilityLanes && (
+          {effectLanes && !dialCurves && (
+            <div
+              className="contents"
+              onContextMenuCapture={() => {
+                lanesApi.current = fxApi.current
+                setMenuKind("fx")
+              }}
+            >
             <EffectLanes
-              {...visibilityLanes}
+              {...effectLanes}
+              scrollTop={laneTop}
+              keepEmpty
+              ramps={false}
               visible={blank}
-              apiRef={lanesApi}
+              apiRef={fxApi}
               pxPerFrame={pxPerFrame}
               scrollX={scrollX}
               frameCount={fc}
@@ -3535,6 +3665,35 @@ export function Timeline({
               bottom={DOPE_H + AUDIO_H + 1}
               labelWidth={LABEL_W}
             />
+            </div>
+          )}
+          {visibilityLanes && (
+            <div
+              className="contents"
+              onContextMenuCapture={() => {
+                lanesApi.current = visApi.current
+                setMenuKind("vis")
+              }}
+            >
+            <EffectLanes
+              {...visibilityLanes}
+              scrollTop={laneTop}
+              visible={blank}
+              apiRef={visApi}
+              pxPerFrame={pxPerFrame}
+              scrollX={scrollX}
+              frameCount={fc}
+              playhead={currentFrame}
+              onSeek={(f) => {
+                setPlaying(false)
+                setCurrentFrame(f)
+              }}
+              onScrollX={setRevealX}
+              top={RULER_H}
+              bottom={DOPE_H + AUDIO_H + 1}
+              labelWidth={LABEL_W}
+            />
+            </div>
           )}
           </>
         ) : (
@@ -3554,6 +3713,8 @@ export function Timeline({
         )}
       </div>
       </EffectLanesMenu>
+      </div>
+      </div>
     </div>
   )
 }

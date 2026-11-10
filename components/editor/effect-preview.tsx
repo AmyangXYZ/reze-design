@@ -752,6 +752,7 @@ const stripDirectives = (wgsl: string) => wgsl.replace(/^[ \t]*#[^\n]*$/gm, "")
 function paramsBlock(wgsl: string): string {
   const fields: string[] = []
   const values: string[] = []
+  const bones: string[] = []
   for (const line of wgsl.split("\n")) {
     const m = /^[ \t]*#param[ \t]+(\w+)[ \t]+(\w+)[ \t]+(.*)$/.exec(line)
     if (!m) continue
@@ -774,6 +775,22 @@ function paramsBlock(wgsl: string): string {
       if (!Number.isFinite(v)) continue
       fields.push(`  ${name}: f32,`)
       values.push(v.toFixed(6))
+    } else if (kind === "int") {
+      const v = Number(args[0])
+      if (!Number.isFinite(v)) continue
+      fields.push(`  ${name}: f32,`)
+      values.push(Math.round(v).toFixed(1))
+    } else if (kind === "point") {
+      const v = args.slice(0, 3).map(Number)
+      if (v.length !== 3 || v.some((x) => !Number.isFinite(x))) continue
+      fields.push(`  ${name}: vec3f,`)
+      values.push(`vec3f(${v.map((x) => x.toFixed(6)).join(", ")})`)
+    } else if (kind === "bone") {
+      // A card has no characters: the bone reads as absent, and an effect that
+      // checks .valid draws nothing from it, as on a rig without the bone.
+      fields.push(`  ${name}: vec3f,`, `  ${name}__fwd: vec3f,`, `  ${name}__ok: f32,`)
+      values.push("vec3f(0.0)", "vec3f(0.0, 0.0, -1.0)", "0.0")
+      bones.push(name)
     } else if (kind === "bool") {
       // One f32 like a slider: 1 on, 0 off.
       const on = /^(true|1|on)$/i.test(args[0] ?? "")
@@ -787,7 +804,12 @@ function paramsBlock(wgsl: string): string {
     }
   }
   if (fields.length === 0) return ""
-  return `struct EffectParams {\n${fields.join("\n")}\n}\nvar<private> params: EffectParams = EffectParams(${values.join(", ")});\n`
+  // rzBone_NAME(), as the engine generates it, so a card compiles the file.
+  const boneFns = bones.length
+    ? "struct RzBoneParam { pos: vec3f, fwd: vec3f, valid: bool, }\n" +
+      bones.map((n) => `fn rzBone_${n}() -> RzBoneParam { return RzBoneParam(params.${n}, params.${n}__fwd, params.${n}__ok > 0.5); }\n`).join("")
+    : ""
+  return `struct EffectParams {\n${fields.join("\n")}\n}\nvar<private> params: EffectParams = EffectParams(${values.join(", ")});\n${boneFns}`
 }
 
 /** The author's source as a card compiles it: dials declared, directives gone. */

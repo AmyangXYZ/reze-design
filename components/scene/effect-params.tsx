@@ -34,9 +34,10 @@
 // reports whether an effect reads the cast at all (`readsCast`), and that is what
 // decides whether the list is here: rain falls on the scene.
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Check, RotateCcw } from "lucide-react"
-import type { EffectParamDecl, EffectParamValue } from "reze-engine"
+import type { EffectBoneValue, EffectParamDecl, EffectParamValue, EffectPointValue } from "reze-engine"
+import { dialAt, HOLDING_KINDS, type DialKey } from "@/lib/effects"
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -53,7 +54,7 @@ const hexToVec = (hex: string): EffectParamValue => {
 }
 
 const vecToHex = (v: EffectParamValue): string => {
-  if (typeof v === "number") return "#000000"
+  if (typeof v === "number" || !("x" in v)) return "#000000"
   const b = (c: number) => Math.round(Math.min(1, Math.max(0, c)) * 255)
   return `#${((b(v.x) << 16) | (b(v.y) << 8) | b(v.z)).toString(16).padStart(6, "0")}`
 }
@@ -71,6 +72,10 @@ export function EffectParams({
   cast = [],
   models,
   onModels,
+  keys,
+  onKeys,
+  frameNow,
+  boneNames,
 }: {
   decls: EffectParamDecl[]
   /** Only what this scene moved. Anything absent shows the shader's own default,
@@ -90,10 +95,46 @@ export function EffectParams({
   /** Undefined means everyone, which is also what unticking the last model
    *  gives back — an effect on nobody is a dark effect with no sign of why. */
   onModels?: (next: string[] | undefined) => void
+  /** This copy's keyed dials, by name. A dial with keys shows its value at the
+   *  playhead and moving it writes a key there. */
+  keys?: Record<string, DialKey[]>
+  /** A dial's keys replaced; undefined takes the dial off keys. */
+  onKeys?: (name: string, keys: DialKey[] | undefined) => void
+  /** The playhead, in frames. Keying needs it; without it no stopwatch shows. */
+  frameNow?: () => number
+  /** A character's bone names, for a bone dial — null asks for the first. */
+  boneNames?: (modelId: string | null) => string[]
 }) {
   const { t, locale } = useI18n()
   const zh = locale === "zh"
   const labelOf = (d: EffectParamDecl) => (zh ? (d.labelZh ?? d.label) : d.label) ?? d.name
+  // The playhead, followed while any dial is keyed, so a keyed dial shows the
+  // value it has under the playhead as someone scrubs or plays.
+  const anyKeyed = keys !== undefined && Object.values(keys).some((k) => k.length > 0)
+  const [frame, setFrame] = useState(() => Math.round(frameNow?.() ?? 0))
+  useEffect(() => {
+    if (!frameNow || !anyKeyed) return
+    let raf = 0
+    const tick = () => {
+      const f = Math.round(frameNow())
+      setFrame((p) => (p === f ? p : f))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [frameNow, anyKeyed])
+  /** The keys a dial is on, sorted, or null when it is not keyed. */
+  const keysOf = (name: string) => (keys?.[name]?.length ? keys[name] : null)
+  /** A key at the playhead, written or moved; the playhead read fresh. */
+  const putKey = (d: EffectParamDecl, value: EffectParamValue) => {
+    const at = Math.round(frameNow?.() ?? frame)
+    const old = keysOf(d.name) ?? []
+    const rest = old.filter((k) => k.frame !== at)
+    const kept = old.find((k) => k.frame === at)
+    onKeys?.(d.name, [...rest, { ...(kept ?? {}), frame: at, value }].sort((a, b) => a.frame - b.frame))
+  }
+  /** A dial changed: a key at the playhead when it is keyed, its value when not. */
+  const change = (d: EffectParamDecl, value: EffectParamValue) => (keysOf(d.name) ? putKey(d, value) : onChange(d.name, value))
   // Whether this scene has moved anything. Drives the button's disabled state,
   // which is also how the panel says "these are the author's numbers".
   const touched = values !== undefined && Object.keys(values).length > 0
@@ -117,6 +158,163 @@ export function EffectParams({
     // stored as nothing at all so a retuned scene does not churn on save.
     onModels?.(next.length === 0 || next.length === cast.length ? undefined : next)
   }
+  /** One dial's control, by kind, showing `set` (or the author's default). */
+  const dialControl = (d: EffectParamDecl, set: EffectParamValue | undefined): ReactNode => {
+    if (d.kind === "bool") {
+      const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+          <Switch size="sm" className="ml-auto" checked={value >= 0.5} onCheckedChange={(v) => change(d, v ? 1 : 0)} />
+        </div>
+      )
+    }
+    if (d.kind === "enum") {
+      const options = d.options ?? []
+      const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
+      const at = Math.min(options.length - 1, Math.max(0, Math.round(value)))
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+          <Select value={String(at)} onValueChange={(v) => change(d, Number(v))}>
+            <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((o, i) => (
+                <SelectItem key={o.id} value={String(i)}>
+                  {zh ? (o.labelZh ?? o.id) : o.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )
+    }
+    if (d.kind === "color") {
+      const fallback = typeof d.value === "string" ? d.value : "#ffffff"
+      return (
+        <ColorRow
+          label={labelOf(d)}
+          value={set === undefined ? fallback : vecToHex(set)}
+          onChange={(hex) => change(d, hexToVec(hex))}
+          dense
+          labelClass="w-[4.75rem]"
+        />
+      )
+    }
+    if (d.kind === "bone") {
+      const v: EffectBoneValue = set && typeof set === "object" && "bone" in set ? set : { bone: typeof d.value === "string" ? d.value : "", model: null }
+      const names = boneNames?.(v.model ?? null) ?? []
+      const list = names.includes(v.bone) || !v.bone ? names : [v.bone, ...names]
+      const FIRST = "\u0000first"
+      return (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+            <Select value={v.model ?? FIRST} onValueChange={(m) => change(d, { ...v, model: m === FIRST ? null : m })}>
+              <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FIRST}>{t.lab.ctl.firstCharacter}</SelectItem>
+                {cast.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-[4.75rem] shrink-0" />
+            <Select value={v.bone} onValueChange={(b) => change(d, { ...v, bone: b })}>
+              <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {list.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )
+    }
+    if (d.kind === "vec3" || d.kind === "point") {
+      const base = Array.isArray(d.value) ? d.value : [0, 0, 0]
+      const v: EffectPointValue =
+        set !== undefined && typeof set === "object" && "x" in set ? set : { x: base[0], y: base[1], z: base[2] }
+      // A point is a place in the world: a range that reaches round a stage.
+      const reach = (i: number) => (d.kind === "point" ? Math.max(20, Math.abs(base[i]) * 2) : impliedMax(base[i]))
+      const NOBODY = "\u0000nobody"
+      return (
+        <div className="flex flex-col">
+          {/* Three sliders rather than a vector widget: these are wind, an
+              offset, a place — quantities you nudge one axis of. */}
+          {(["x", "y", "z"] as const).map((axis, i) => (
+            <SliderRow
+              key={axis}
+              label={`${labelOf(d)}.${axis}`}
+              value={v[axis]}
+              min={-reach(i)}
+              max={reach(i)}
+              step={reach(i) / 100}
+              onChange={(n) => change(d, { ...v, [axis]: n })}
+              fmt={(n) => n.toFixed(2)}
+              dense
+              labelClass="w-[4.75rem]"
+            />
+          ))}
+          {d.kind === "point" && cast.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.follow}</span>
+              <Select
+                value={v.model ?? NOBODY}
+                onValueChange={(m) => change(d, { x: v.x, y: v.y, z: v.z, ...(m === NOBODY ? {} : { model: m }) })}
+              >
+                <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NOBODY}>{t.lab.ctl.none}</SelectItem>
+                  {cast.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )
+    }
+    const base = typeof d.value === "number" ? d.value : 0
+    const whole = d.kind === "int"
+    const min = d.min ?? Math.min(0, base)
+    const max = d.max ?? impliedMax(base)
+    return (
+      <SliderRow
+        label={labelOf(d)}
+        value={typeof set === "number" ? set : base}
+        min={min}
+        max={max}
+        // A hundred steps across whatever range the author gave, so a dial
+        // that runs 0..1 and one that runs 0..60 both drag at the same feel;
+        // a whole number steps by one.
+        step={whole ? 1 : (max - min) / 100 || 0.01}
+        onChange={(n) => change(d, whole ? Math.round(n) : n)}
+        fmt={(n) => (whole ? String(Math.round(n)) : Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2))}
+        dense
+        labelClass="w-[4.75rem]"
+      />
+    )
+  }
+
   if (rows.length === 0 && !aimable) return null
 
   return (
@@ -178,97 +376,24 @@ export function EffectParams({
           </Button>
         </div>
       )}
-      {rows.map(({ d, set }) => {
-        if (d.kind === "bool") {
-          const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
-          return (
-            <div key={d.name} className="mt-1.5 flex items-center gap-1.5 first:mt-0">
-              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
-              <Switch size="sm" className="ml-auto" checked={value >= 0.5} onCheckedChange={(on) => onChange(d.name, on ? 1 : 0)} />
-            </div>
-          )
-        }
-
-        if (d.kind === "enum") {
-          const options = d.options ?? []
-          const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
-          const at = Math.min(options.length - 1, Math.max(0, Math.round(value)))
-          return (
-            <div key={d.name} className="mt-1.5 flex items-center gap-1.5 first:mt-0">
-              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
-              <Select value={String(at)} onValueChange={(v) => onChange(d.name, Number(v))}>
-                <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.map((o, i) => (
-                    <SelectItem key={o.id} value={String(i)}>
-                      {zh ? (o.labelZh ?? o.id) : o.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )
-        }
-
-        if (d.kind === "color") {
-          const fallback = typeof d.value === "string" ? d.value : "#ffffff"
-          return (
-            <ColorRow
-              key={d.name}
-              label={labelOf(d)}
-              value={set === undefined ? fallback : vecToHex(set)}
-              onChange={(hex) => onChange(d.name, hexToVec(hex))}
-              dense
-              labelClass="w-[4.75rem]"
-            />
-          )
-        }
-
-        if (d.kind === "vec3") {
-          const base = Array.isArray(d.value) ? d.value : [0, 0, 0]
-          const v = set === undefined || typeof set === "number" ? { x: base[0], y: base[1], z: base[2] } : set
-          // Three sliders rather than a vector widget: these are wind, an offset,
-          // a scale per axis — quantities you nudge one axis of, not a direction
-          // you aim. A gizmo for something with no position in the scene would be
-          // a control for a thing that is not there.
-          return (["x", "y", "z"] as const).map((axis, i) => (
-            <SliderRow
-              key={`${d.name}.${axis}`}
-              label={`${labelOf(d)}.${axis}`}
-              value={v[axis]}
-              min={-impliedMax(base[i])}
-              max={impliedMax(base[i])}
-              step={impliedMax(base[i]) / 100}
-              onChange={(n) => onChange(d.name, { ...v, [axis]: n })}
-              fmt={(n) => n.toFixed(2)}
-              dense
-              labelClass="w-[4.75rem]"
-            />
-          ))
-        }
-
-        const base = typeof d.value === "number" ? d.value : 0
-        const min = d.min ?? Math.min(0, base)
-        const max = d.max ?? impliedMax(base)
+      {rows.map(({ d, set: plain }) => {
+        const keyed = keysOf(d.name)
+        // What the dial shows: its value under the playhead when it is keyed.
+        const set = keyed ? (dialAt(keyed, frame, HOLDING_KINDS.has(d.kind)) ?? plain) : plain
         return (
-          <SliderRow
-            key={d.name}
-            label={labelOf(d)}
-            value={typeof set === "number" ? set : base}
-            min={min}
-            max={max}
-            // A hundred steps across whatever range the author gave, so a dial
-            // that runs 0..1 and one that runs 0..60 both drag at the same feel.
-            step={(max - min) / 100 || 0.01}
-            onChange={(n) => onChange(d.name, n)}
-            fmt={(n) => (Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2))}
-            dense
-            labelClass="w-[4.75rem]"
-          />
+          <div key={d.name} className="mt-1.5 first:mt-0">
+            {dialControl(d, set)}
+          </div>
         )
       })}
     </>
   )
+}
+
+/** A dial's value when it has never been set: the author's default. */
+export function defaultOf(d: EffectParamDecl): EffectParamValue {
+  if (d.kind === "color" && typeof d.value === "string") return hexToVec(d.value)
+  if (d.kind === "bone") return { bone: typeof d.value === "string" ? d.value : "", model: null }
+  if (Array.isArray(d.value)) return { x: d.value[0], y: d.value[1], z: d.value[2] }
+  return typeof d.value === "number" ? d.value : 0
 }

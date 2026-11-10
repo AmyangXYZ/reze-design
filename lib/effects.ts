@@ -10,7 +10,7 @@
 // files: nobody hand-edits these (they're authored in the app's editor or with
 // an AI), and one shape for every library kind beats one convenient one.
 
-import { parseDirectives, type EffectParamDecl, type EffectParamValue } from "reze-engine"
+import { bezierInterpolate, parseDirectives, type EffectParamDecl, type EffectParamValue } from "reze-engine"
 import { stockEffects } from "@/lib/stock"
 import type { EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
@@ -21,6 +21,66 @@ import type { EffectWindow } from "@/lib/effect-schedule"
  *  on the stage's bones (wicks, splashes) and shows nothing without them. The
  *  library and the picker list these after everything else. */
 export const STAGE_BOUND_TAG = "needs-stage-bones"
+
+/**
+ * One key of a dial, in FRAMES at 30fps like every lane. `ease` shapes the way
+ * INTO it from the previous key, as a VMD key does — straight, eased in and
+ * out, or held at the previous value and stepped on arrival.
+ * Switches, lists and bones always hold, whatever it says.
+ */
+export type DialKey = {
+  frame: number
+  value: EffectParamValue
+  ease?: "linear" | "ease" | "hold"
+  /** The way into this key as a bezier, x1 y1 x2 y2 in 0..127 — the units
+   *  the bone editor's curve speaks. Used unless the key holds. */
+  curve?: [number, number, number, number]
+}
+
+/**
+ * Whether an effect follows a character — her bones (an `#anchor`, a trail, a
+ * bone dial) or where she stands (rzSubject: her floor, her hips, her bounds).
+ * Such an effect is on someone and belongs to them in the timeline. One that
+ * only senses the cast — how near it is (rzCastDistance), how many there are —
+ * is part of the scene, like rain or a wall the dancers brush past.
+ *
+ * Read off the source, not the engine's broader `readsCast`, and so known the
+ * moment an effect is applied rather than once it has compiled.
+ */
+export function followsCharacter(wgsl: string): boolean {
+  return /\brz(?:Subject|Anchor|Trail|TrailCount)\s*\(/.test(wgsl) || /^#anchor\b/m.test(wgsl) || /^#param\s+bone\b/m.test(wgsl)
+}
+
+/** Kinds whose keys hold rather than travel: a switch, a list, a bone. */
+export const HOLDING_KINDS = new Set(["bool", "enum", "bone"])
+
+/** A dial's value at a frame, read from its keys as the engine reads them —
+ *  for the panel to show what the playhead is on. Holds outside the keys. */
+export function dialAt(keys: readonly DialKey[], frame: number, holds = false): EffectParamValue | undefined {
+  if (keys.length === 0) return undefined
+  if (frame <= keys[0].frame) return keys[0].value
+  const last = keys[keys.length - 1]
+  if (frame >= last.frame) return last.value
+  let i = 0
+  while (i < keys.length - 2 && keys[i + 1].frame <= frame) i++
+  const a = keys[i]
+  const b = keys[i + 1]
+  // A key carries the way INTO it, as a VMD key does.
+  if (holds || b.ease === "hold" || b.frame === a.frame) return frame >= b.frame ? b.value : a.value
+  const u = (frame - a.frame) / (b.frame - a.frame)
+  const c = b.curve
+  const k = c
+    ? bezierInterpolate(c[0] / 127, c[2] / 127, c[1] / 127, c[3] / 127, u)
+    : b.ease === "ease"
+      ? u * u * (3 - 2 * u)
+      : u
+  const lerp = (x: number, y: number) => x + (y - x) * k
+  if (typeof a.value === "number" && typeof b.value === "number") return lerp(a.value, b.value)
+  if (typeof a.value === "object" && typeof b.value === "object" && "x" in a.value && "x" in b.value) {
+    return { ...a.value, x: lerp(a.value.x, b.value.x), y: lerp(a.value.y, b.value.y), z: lerp(a.value.z, b.value.z) }
+  }
+  return a.value
+}
 
 export type AppliedEffect = {
   /** WHICH LIBRARY ENTRY this is — shared by every copy of it in the scene.
@@ -51,6 +111,12 @@ export type AppliedEffect = {
    * instead of forking the shader.
    */
   params?: Record<string, EffectParamValue>
+  /**
+   * The dials this copy KEYS over time, by name: each a list of keys sorted by
+   * frame. A dial with keys follows them, and its `params` value is what it
+   * goes back to when the keys are cleared. Absent = no dial is keyed.
+   */
+  keys?: Record<string, DialKey[]>
   /** The stage it came with, by model id — a stage's galaxy, its fog. Deleting
    *  that stage takes it along, and uploading a stage replaces every effect the
    *  last one brought. Absent on an effect added by hand. */
@@ -121,7 +187,9 @@ export function effectParams(
       out[d.name] = set
       continue
     }
-    if (d.kind === "color" && typeof d.value === "string") {
+    if (d.kind === "bone" && typeof d.value === "string") {
+      out[d.name] = { bone: d.value, model: null }
+    } else if (d.kind === "color" && typeof d.value === "string") {
       const n = parseInt(d.value.slice(1), 16)
       out[d.name] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }
     } else if (Array.isArray(d.value)) {

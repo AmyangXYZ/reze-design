@@ -73,18 +73,13 @@ export const FX_FRAMES = 15
  * the whole app; the rate she comes apart at is arithmetic, so it can be
  * anything, per clip, for free.
  */
-export type FadeCurve = "linear" | "ease" | "steps"
-
-/** How many stages `steps` goes in. Few enough to count, which is what makes it
- *  read as stages rather than as a coarse fade. */
-const FADE_STEPS = 6
+export type FadeCurve = "linear" | "ease"
 
 /** A ramp position, curved. Clamped first so a caller cannot push it out of
  *  range and get a dissolve above whole or below gone. */
 function shaped(t: number, curve: FadeCurve): number {
   const u = Math.max(0, Math.min(1, t))
   if (curve === "linear") return u
-  if (curve === "steps") return Math.round(u * FADE_STEPS) / FADE_STEPS
   return u * u * (3 - 2 * u)
 }
 

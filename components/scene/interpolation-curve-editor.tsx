@@ -21,13 +21,11 @@ import { AXIS } from "@/lib/animation"
 // with eight preset chips; at 160 the chips were 58px of truncated words, and
 // the block was the tallest thing in a panel whose subject is the sliders above
 // it. The 127-space is unchanged — only how many device pixels it is drawn in.
-const SIZE = 144
-// The plot's inset, and it is sized by the LABELS rather than by taste. A
-// control point at y=127 sits exactly on the top of the plot, and its readout
-// is drawn above it — so anything less than the label's own height plus the
-// handle's half-width puts "(52, 127)" through the top edge, which is where it
-// was. 18 = 9px of type + 4 of handle + room to breathe.
-const PAD = 18
+const SIZE = 120
+// The plot's inset: the handle's half-width and a little air. A readout with
+// no room above its handle is drawn below it instead (see the labels below),
+// so the inset need not hold a line of type.
+const PAD = 10
 const GX = PAD
 const GY = PAD
 const GW = SIZE - PAD * 2
@@ -36,9 +34,16 @@ const GH = SIZE - PAD * 2
 /** Main spline stroke — readable on the dock's ground without competing with
  *  the axis hues the sliders above it use. */
 const CURVE = "#0e94b0"
-/** Dashed handles from endpoints to P1/P2 — brighter than the grid so tangents
- *  read clearly. */
-const HANDLE_DASH = "rgba(255,255,255,0.42)"
+/** The ink the chart draws in, as "r,g,b": the sheet's, as the timeline reads
+ *  it — black on light paper, white on dark, else the element's own colour. */
+function inkOf(el: HTMLElement): string {
+  const paper = el.closest<HTMLElement>("[data-paper]")?.dataset.paper
+  const side = paper === "auto" ? (el.closest<HTMLElement>(".cover")?.dataset.ink === "dark" ? "light" : "dark") : paper
+  if (side === "light") return "0,0,0"
+  if (side === "dark") return "255,255,255"
+  const rgb = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
+  return rgb ? rgb.slice(0, 3).join(",") : "255,255,255"
+}
 const CP_RECT = 8
 const CP_HALF = CP_RECT / 2
 /** Generous next to the 8px square it hits: these are dragged, and a target the
@@ -56,9 +61,6 @@ export const PRESETS: { label: string; p1: CurvePoint; p2: CurvePoint }[] = [
   { label: "In", p1: { x: 64, y: 0 }, p2: { x: 107, y: 107 } },
   { label: "Out", p1: { x: 20, y: 20 }, p2: { x: 64, y: 127 } },
   { label: "InOut", p1: { x: 64, y: 0 }, p2: { x: 64, y: 127 } },
-  { label: "Slow In", p1: { x: 100, y: 0 }, p2: { x: 107, y: 107 } },
-  { label: "Slow Out", p1: { x: 20, y: 20 }, p2: { x: 27, y: 127 } },
-  { label: "Slow IO", p1: { x: 100, y: 0 }, p2: { x: 27, y: 127 } },
   { label: "Over", p1: { x: 0, y: 127 }, p2: { x: 127, y: 0 } },
 ]
 
@@ -131,12 +133,15 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
+      const INK = inkOf(canvas)
+      const ink = (a: number) => `rgba(${INK},${a})`
+
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, SIZE, SIZE)
 
       // Grid
-      ctx.strokeStyle = "rgba(255,255,255,0.15)"
+      ctx.strokeStyle = ink(0.15)
       ctx.lineWidth = 0.5
       for (let i = 0; i <= 4; i++) {
         const x = GX + (i / 4) * GW
@@ -152,7 +157,7 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
       }
 
       // The straight line the curve is being bent away from.
-      ctx.strokeStyle = "rgba(255,255,255,0.1)"
+      ctx.strokeStyle = ink(0.1)
       ctx.lineWidth = 0.5
       ctx.setLineDash([3, 3])
       ctx.beginPath()
@@ -167,7 +172,8 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
       const c2 = toCanvas(b.x, b.y)
 
       // Tangents
-      ctx.strokeStyle = HANDLE_DASH
+      // Dashed handles, brighter than the grid so the tangents read.
+      ctx.strokeStyle = ink(0.42)
       ctx.lineWidth = 1
       ctx.setLineDash([4, 3])
       ctx.beginPath()
@@ -194,7 +200,7 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
       // Endpoints — fixed at (0,0) and (127,127); drawn so the curve reads as
       // spanning a segment rather than floating.
       for (const pt of [s, e]) {
-        ctx.fillStyle = "rgba(255,255,255,0.4)"
+        ctx.fillStyle = ink(0.4)
         ctx.beginPath()
         ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2)
         ctx.fill()
@@ -206,7 +212,7 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
         const cpColor = i === 0 ? AXIS.x : AXIS.y
         ctx.fillStyle = cpColor
         ctx.fillRect(pt.x - CP_HALF, pt.y - CP_HALF, CP_RECT, CP_RECT)
-        ctx.strokeStyle = "rgba(255,255,255,0.45)"
+        ctx.strokeStyle = ink(0.45)
         ctx.lineWidth = 1
         ctx.strokeRect(pt.x - CP_HALF, pt.y - CP_HALF, CP_RECT, CP_RECT)
 

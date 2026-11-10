@@ -18,10 +18,10 @@ import {
 } from "react";
 import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { Timeline, defaultTabForSelection, tabsForSelection, type ParentHold, type SelectionKind } from "@/components/scene/timeline"
-import { TrackPicker } from "@/components/scene/track-picker";
-import { EditorRail } from "@/components/scene/editor-rail";
 import type { EffectLanesData, LaneRow } from "@/components/scene/effect-lanes";
-import type { AppliedEffect } from "@/lib/effects";
+import type { DialCurvesData } from "@/components/scene/dial-curves";
+import { TimelineOutliner, useOutlineRows, type OutlineData } from "@/components/timeline/outliner";
+import { RULER_H } from "@/components/scene/timeline";
 import {
   useClipActions,
   useClipSelector,
@@ -61,14 +61,17 @@ import { useT } from "@/lib/i18n";
  * way — the difference is whether anyone asked for it.
  */
 /**
- * The floor, and the height it opens at — one number, because the size this
- * shipped at is a size every band was laid out against: toolbar, ruler, curve
- * half, dope strip and the music lane all fit it. Anything shorter was reachable
- * by dragging and looked like the editor had been squashed rather than resized,
- * so the drag only goes UP from here.
+ * The floor: every band — toolbar, ruler, curve half, dope strip, music lane —
+ * was laid out against it, and anything shorter looked squashed rather than
+ * resized, so the drag only goes UP from here.
  */
 const MIN_H = 272;
-const DEFAULT_H = MIN_H;
+/**
+ * The height it opens at: the Properties column's largest body, whole — a
+ * bone's header (37), rotation and translation (205), interpolation with its
+ * chart (178), operations (129) and the foot (12). The window still caps it.
+ */
+const DEFAULT_H = 560;
 
 /** The ceiling, measured against the window at drag time rather than fixed.
  *
@@ -78,7 +81,7 @@ const DEFAULT_H = MIN_H;
  *  over a scene and becomes the whole page. Measured on every clamp so a height
  *  stored on a large monitor cannot open past the bottom of a laptop, and so a
  *  window that shrinks takes the room back. */
-const roomFor = () => Math.max(MIN_H, window.innerHeight - 180);
+const roomFor = () => (typeof window === "undefined" ? Infinity : Math.max(MIN_H, window.innerHeight - 180));
 const clampH = (h: number) => Math.min(Math.max(h, MIN_H), roomFor());
 
 export function Dopesheet({
@@ -97,12 +100,6 @@ export function Dopesheet({
   onTogglePlay,
   /** Named group to narrow the gutter to, or null for every keyed bone. */
   group = null,
-  /** The rail: which kind of track, and how to change it. */
-  onKind,
-  /** The Objects tab's subjects, the one being edited, and how to pick another. */
-  objects = [],
-  objectId = null,
-  onObject,
   /** The edited prop's holds, for the Parent row's band. */
   parentHolds = null,
   /** The Visibility tab's lanes: the cast, and when each is on stage. */
@@ -112,6 +109,12 @@ export function Dopesheet({
   spanFrames = 0,
   /** The scene's effects for the Effects tab: its list and its lanes. */
   effectLanes = null,
+  /** An effect's dials as curves, while they are open on the Effects tab. */
+  dialCurves = null,
+  /** The left column: every track by who it belongs to. */
+  outline = null,
+  /** The right column: the picked track's properties. */
+  inspector = null,
 }: {
   playheadDrawRef: RefObject<((frame: number) => void) | null>;
   audioPeaks: readonly number[] | null;
@@ -122,28 +125,18 @@ export function Dopesheet({
   enginePlaying: boolean;
   onTogglePlay: () => void;
   group?: string | null;
-  onKind: (kind: ClipEditKind) => void;
-  objects?: { id: string; label: string }[];
-  objectId?: string | null;
-  onObject?: (id: string) => void;
   parentHolds?: ParentHold[] | null;
   visibilityLanes?: Omit<EffectLanesData<LaneRow>, "scrollTop"> | null;
   spanFrames?: number;
-  effectLanes?: Omit<EffectLanesData<AppliedEffect>, "scrollTop"> | null;
+  effectLanes?: Omit<EffectLanesData<LaneRow>, "scrollTop"> | null;
+  dialCurves?: DialCurvesData | null;
+  outline?: OutlineData | null;
+  inspector?: ReactNode;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
   const cameraSelected = useClipSelector((s) => s.cameraSelected);
   const parentSelected = useClipSelector((s) => s.parentSelected);
-  const morphNames = useClipSelector((s) => s.morphNames);
-  // Read by the open-on-morph effect without making it a dependency — it must
-  // run when the editor opens, not every time a keyframe moves.
-  const clipRef = useRef(clip);
-  const morphNamesRef = useRef(morphNames);
-  useEffect(() => {
-    clipRef.current = clip;
-    morphNamesRef.current = morphNames;
-  });
   const modelId = useClipSelector((s) => s.modelId);
   const clipName = useClipSelector((s) => s.clipName);
   // Which curve you are looking at is not part of the document and does not
@@ -154,9 +147,9 @@ export function Dopesheet({
   const { restored, save } = useTimelineView();
   // Clamped on the way in: a height stored on a large monitor must not open
   // taller than the window it is reopened on.
-  const [height, setHeight] = useState(() => (restored?.height ? clampH(restored.height) : DEFAULT_H));
-  // The Effects list and its lanes scroll as one: the list is the scrollbar.
-  const [laneScroll, setLaneScroll] = useState(0);
+  // A height stored at the old opening size or under was never chosen, only
+  // inherited: it opens at the new one. One dragged taller is kept.
+  const [height, setHeight] = useState(() => clampH(restored?.height && restored.height > MIN_H ? restored.height : DEFAULT_H));
   // SHARED chrome now, so it lives in the store rather than here.
   //
   // It was local state, which was right while the timeline was the only thing
@@ -166,6 +159,16 @@ export function Dopesheet({
   // which is there on exactly the same argument. Persisting it stays here, with
   // the rest of the view.
   const tab = useClipSelector((s) => s.tab);
+
+  // The outliner's rows, which the overview beside it draws one for one, and
+  // how far the list has scrolled, which the tracks follow.
+  const rows = useOutlineRows(outline);
+  // Effects and visibility are clips: the picked kind's lanes, from the top,
+  // in the outliner's order. The lanes draw their last row on top: the
+  // visibility rows come built that way (model, then its materials in the
+  // model's own order), the effects in list order, so those are reversed.
+  // Bones, morphs and the camera are keys, on the curve editor.
+  const clipKind = kind === "effect" || kind === "visibility";
 
   // ─── Transport, both directions ─────────────────────────────────────────
   //
@@ -200,17 +203,9 @@ export function Dopesheet({
       setSelectedBone(null);
       setSelectedMorph(null);
     } else if (kind === "morph") {
+      // Nothing is picked for you: the morph you pick in the outliner is the
+      // one shown, and none until you do.
       setSelectedBone(null);
-      // Land on a morph the clip actually keys, so the curve half has something
-      // to draw. Falls back to the first morph the model has: an empty weight
-      // track you can key is a better arrival than no selection at all.
-      setSelectedMorph((prev) => {
-        if (prev) return prev;
-        for (const [name, track] of clipRef.current?.morphTracks ?? []) {
-          if (track.length > 0) return name;
-        }
-        return morphNamesRef.current[0] ?? null;
-      });
     } else {
       setSelectedMorph(null);
     }
@@ -464,25 +459,10 @@ export function Dopesheet({
               clip and reading across is how you work — pick a bone on the left,
               read its curve on the right. */}
           <div className="flex h-full w-full">
-            <EditorRail kind={kind} onKind={onKind} />
-            <TrackPicker
-              kind={kind}
-              objects={objects}
-              objectId={objectId}
-              onObject={onObject}
-              effects={effectLanes?.effects ?? null}
-              selectedEffect={effectLanes?.selectedEffect ?? null}
-              onSelectEffect={effectLanes?.onSelectEffect}
-              onLaneScroll={setLaneScroll}
-              models={visibilityLanes?.effects ?? null}
-              selectedModel={visibilityLanes?.selectedEffect ?? null}
-              onSelectModel={visibilityLanes?.onSelectEffect}
-              onToggleModel={visibilityLanes?.onToggle}
-            />
             <div className="min-w-0 flex-1">
               <Timeline
                 visibleBones={visibleBones}
-                blank={kind === "effect" || kind === "visibility"}
+                blank={clipKind}
                 parentHolds={kind === "object" ? parentHolds : null}
                 // The cast's lanes and the effects' run on the SCENE's clock
                 // rather than the edited clip's: a model can leave the stage
@@ -513,10 +493,13 @@ export function Dopesheet({
                     : undefined
                 }
                 onViewChange={onViewChange}
-                effectLanes={effectLanes ? { ...effectLanes, scrollTop: laneScroll } : null}
-                visibilityLanes={visibilityLanes ? { ...visibilityLanes, scrollTop: laneScroll } : null}
+                effectLanes={effectLanes && kind === "effect" ? { ...effectLanes, effects: [...effectLanes.effects].reverse(), scrollTop: 0 } : null}
+                visibilityLanes={visibilityLanes && kind === "visibility" ? { ...visibilityLanes, scrollTop: 0 } : null}
+                dialCurves={kind === "effect" ? dialCurves : null}
+                aside={outline ? <TimelineOutliner outline={outline} rows={rows} firstH={RULER_H} /> : null}
               />
             </div>
+            {inspector}
           </div>
         </div>
       </div>

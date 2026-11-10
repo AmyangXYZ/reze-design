@@ -32,8 +32,10 @@
 // stay with their loaders.
 
 import { windowToEngine, type EffectWindow } from "@/lib/effect-schedule"
+import { FPS } from "@/lib/clip"
+import type { DialKey } from "@/lib/effects"
 import type { SceneParentKey } from "@/lib/scene"
-import type { ModelParentKey, EffectWindow as EngineWindow } from "reze-engine"
+import type { EffectParamKey, ModelParentKey, EffectWindow as EngineWindow } from "reze-engine"
 import { parentKeysToEngine, parentTrackOf, type PropTrackSource } from "./parents"
 import { visibilityAt, type VisibilityWindow } from "./visibility"
 import { applyLampFrame } from "./lights"
@@ -53,6 +55,8 @@ export type EffectTrack = {
   window: EffectWindow[] | null
   /** Who it is on, by model id, or null for everyone. */
   models: string[] | null
+  /** Its keyed dials, in frames, or null when none is keyed. */
+  keys: Record<string, DialKey[]> | null
 }
 
 /** Everything in a scene that changes with the frame and is not a clip. */
@@ -90,7 +94,7 @@ export type TimelineSource = {
     materialVisibility?: Readonly<Record<string, VisibilityWindow[]>>
   }[]
   props?: readonly (PropTrackSource & { id: string })[]
-  effects?: readonly { influence?: number; window?: EffectWindow[]; models?: string[] }[]
+  effects?: readonly { influence?: number; window?: EffectWindow[]; models?: string[]; keys?: Record<string, DialKey[]> }[]
 }
 
 /** The scene's timed parts, read off its state. Pure. */
@@ -107,16 +111,22 @@ export function timelineOf({ models = [], props = [], effects = [] }: TimelineSo
   return {
     visibility,
     parts,
-    effects: effects.map((e) => ({ influence: e.influence ?? 1, window: e.window ?? null, models: e.models ?? null })),
+    effects: effects.map((e) => ({ influence: e.influence ?? 1, window: e.window ?? null, models: e.models ?? null, keys: e.keys ?? null })),
     parents,
   }
 }
+
+/** Which dials were keyed on which instance at the last push, per engine — so
+ *  a dial whose keys were all removed is handed back rather than left playing
+ *  its old track. */
+const pushedDials = new WeakMap<object, Map<number, Set<string>>>()
 
 /** As much of the engine as the declarative push needs. */
 type TimelineEngine = {
   setEffectInfluence(index: number, influence: number): void
   setEffectSchedule(index: number, windows: readonly EngineWindow[] | null): void
   setEffectSubjects(index: number, models: readonly string[] | null): void
+  setEffectParamTrack(index: number, name: string, keys: readonly EffectParamKey[] | null): boolean
   setModelParentKeys(name: string, keys: readonly ModelParentKey[] | null): boolean
 }
 
@@ -138,18 +148,42 @@ type TimelineEngine = {
  * A prop's track owns its position and rotation while it is set; its scale is
  * the transform's, and stays with whoever places it.
  */
+/** A dial key as the engine reads it: seconds, and the curve in 0..1. */
+const keyToEngine = (key: DialKey): EffectParamKey => ({
+  time: key.frame / FPS,
+  value: key.value,
+  ...(key.ease ? { ease: key.ease } : {}),
+  ...(key.curve ? { curve: key.curve.map((n) => n / 127) as [number, number, number, number] } : {}),
+})
+
 export function pushTimeline(
   engine: TimelineEngine,
   timeline: SceneTimeline,
   effectIndex: readonly (number | null)[] | null = null,
 ): void {
+  const prior = pushedDials.get(engine) ?? new Map<number, Set<string>>()
+  const next = new Map<number, Set<string>>()
   timeline.effects.forEach((e, i) => {
     const k = effectIndex ? effectIndex[i] : i
     if (k == null) return
-    engine.setEffectInfluence(k, e.influence)
-    engine.setEffectSchedule(k, windowToEngine(e.window))
+    // A lane emptied of clips is SILENT — kept, so a clip can be pasted back
+    // into it — where no lane at all plays throughout. The engine reads an
+    // empty schedule as none, so the silence goes as the level.
+    engine.setEffectInfluence(k, e.window && e.window.length === 0 ? 0 : e.influence)
+    // No clips plays from frame 0 throughout — what its lane draws — on the
+    // transport like every other: unscheduled, the engine would run it on its
+    // own clock from whenever it was installed.
+    engine.setEffectSchedule(k, windowToEngine(e.window) ?? [{ start: 0 }])
     engine.setEffectSubjects(k, e.models)
+    // Its keyed dials, frames crossing as seconds like the strips. A dial keyed
+    // last push and not now is handed back to its plain value.
+    const keyed = Object.entries(e.keys ?? {}).filter(([, ks]) => ks.length > 0)
+    const names = new Set(keyed.map(([n]) => n))
+    for (const n of prior.get(k) ?? []) if (!names.has(n)) engine.setEffectParamTrack(k, n, null)
+    for (const [n, ks] of keyed) engine.setEffectParamTrack(k, n, ks.map(keyToEngine))
+    next.set(k, names)
   })
+  pushedDials.set(engine, next)
   for (const id in timeline.parents) engine.setModelParentKeys(id, parentKeysToEngine(timeline.parents[id]))
 }
 

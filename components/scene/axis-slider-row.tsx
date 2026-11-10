@@ -111,15 +111,12 @@ export const AxisSliderRow = memo(function AxisSliderRow({
     // the gap above Translation came out 6px wider than the gap above Rotation
     // — one spacing value, applied consistently, still producing two.
     <div className={cn("mt-1.5 flex items-center gap-1.5 first:mt-0", disabled && "pointer-events-none opacity-40")}>
-      {/* The left dock's row label exactly — text-xs, normal weight — with the
-          axis hue as the only difference. It has been both too heavy (11px
-          semibold, where the weight and the colour together made three letters
-          the loudest ink in the row) and too quiet (10px). Body size at normal
-          weight is what "Ground opacity" and "Camera distance" are, and an
-          axis is the same kind of thing: the name of the value beside it.
-          w-8 rather than their w-16 — these are letters, not words, and the
+      {/* The timeline's row size: 11px at normal weight, as the outliner's
+          rows and the left dock's dense dial rows are, with the axis hue as
+          the only difference. Semibold at this size made three letters the
+          loudest ink in the row. w-8 — these are letters, not words, and the
           widest is "Dist". */}
-      <span className="w-8 shrink-0 truncate text-xs" style={{ color }}>
+      <span className="w-8 shrink-0 truncate text-2xs" style={{ color }}>
         {axis}
       </span>
       <Slider

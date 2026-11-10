@@ -583,20 +583,26 @@
    transport's line (--paper-w × --paper-h, bottom centre) and shrinks back
    into it. Its content is uncovered by a clip; its sheet is a layer behind,
    never under the clip, that grows in step, so it blurs from the first frame. */
+/* The contents fade as well as uncover: a clip alone showed the strips at
+   the bottom (the keys, the music) at full strength first and took them last. */
 @keyframes fold-reveal {
   from {
     clip-path: inset(calc(100% - var(--paper-h)) calc(50% - var(--paper-w) / 2) 0 round 8px);
+    opacity: 0;
   }
   to {
     clip-path: inset(0 0 0 0 round 8px);
+    opacity: 1;
   }
 }
 @keyframes fold-conceal {
   from {
     clip-path: inset(0 0 0 0 round 8px);
+    opacity: 1;
   }
   to {
     clip-path: inset(calc(100% - var(--paper-h)) calc(50% - var(--paper-w) / 2) 0 round 8px);
+    opacity: 0;
   }
 }
 [data-fold] > [data-fold-sheet] {
@@ -1023,6 +1029,10 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
      the default scale lacks; it carries no line height of its own, exactly as
      the text-[11px] it replaced, so it sits in whatever line it is set in. */
   --text-2xs: 11px;
+  /* The timeline's figures and nothing else: a track's key count beside its
+     name, a step under the row's own type. A
+     count is a figure you glance at, not a word you read. */
+  --text-figure: 10px;
   /* The cover's title: the scene's name, set in the display serif, italic.
      The one size above base. --font-display sets it and the masthead (the
      REZE DESIGN wordmark, upright at base), and nothing else. */

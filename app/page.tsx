@@ -19,6 +19,7 @@
 import { Input } from "@/components/ui/input"
 import { LIGHT_COOKIES, type LightCookie } from "@/lib/light-cookies"
 import {
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -144,7 +145,8 @@ import { ClipBridge } from "@/components/scene/clip-bridge"
 import { ConfirmDialog, confirmSnoozed } from "@/components/ui/confirm-dialog"
 import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
-import { ClipInspector } from "@/components/scene/clip-inspector"
+import { ClipInspectorColumn, type DialEditing, type ObjectEditing } from "@/components/scene/clip-inspector"
+import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, propRow, SCENE_ROW, STAGE_ROW, toggleRow, type RowLabels, type RowSource, type TimelineRow } from "@/lib/timeline/rows"
 import { holdsOf } from "@/lib/prop-throw"
 import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
@@ -193,6 +195,8 @@ import { upgradeSceneDoc, type V1SceneDoc } from "@/lib/scene-upgrade"
 import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
 import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
+import type { LaneRow } from "@/components/scene/effect-lanes"
+import { curveable, type DialCurvesData } from "@/components/scene/dial-curves"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, loadLocalBundle, loadModelLooks, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
@@ -230,6 +234,8 @@ import {
   stockEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
+  followsCharacter,
+  type DialKey,
   type EffectSurface,
 } from "@/lib/effects"
 import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
@@ -262,6 +268,7 @@ import {
   type CompileOptions,
   VMDLoader,
   type Diagnostic,
+  type EffectParamDecl,
   type EffectParamValue,
   type MaterialPreset,
   type OverlayPrimitive,
@@ -347,7 +354,7 @@ const LINE_ACTION =
  * subtraction goes negative and the panel would resolve to nothing, and keeping
  * it out of the arbitrary value leaves that value a plain comma-free calc.
  */
-const OPEN_TIMELINE_W = "min-w-[20rem] max-w-[calc(100vw_-_35rem)]"
+const OPEN_TIMELINE_W = "min-w-[20rem] max-w-[calc(100vw_-_17.5rem)]"
 
 /**
  * The working area — what the canvas has left between the docks — is 35rem
@@ -422,6 +429,21 @@ const CHECKERBOARD: React.CSSProperties = {
 /** A material's row id on the Visibility tab: model and material, which no
  *  model id can collide with. */
 const partRowId = (modelId: string, material: string) => `${modelId}\u0000${material}`
+
+/**
+ * The Effects tab's rows back into the list: each row's strips onto its effect.
+ * An effect whose row the band dropped is gone.
+ */
+function effectsFromRows(list: AppliedEffect[], rows: readonly LaneRow[]): AppliedEffect[] {
+  const byUid = new Map(list.map((e) => [e.uid ?? e.id, e]))
+  return rows.flatMap((r) => {
+    const e = byUid.get(r.uid ?? r.id)
+    if (!e) return []
+    const next: AppliedEffect = { ...e, window: r.window }
+    if (!r.window) delete next.window
+    return [next]
+  })
+}
 
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
 const DOME_ACCEPT = "image/*,.tga"
@@ -3566,6 +3588,29 @@ function Lab() {
     [],
   )
 
+  /** The playhead in clip frames, read live — what a dial's key lands on. */
+  const masterRef = useRef<string | null>(null)
+  useEffect(() => {
+    masterRef.current = masterId
+  })
+  const playheadFrame = useCallback(() => {
+    const id = masterRef.current
+    return id ? (engineRef.current?.getModel(id)?.getAnimationProgress().current ?? 0) * FPS : 0
+  }, [engineRef])
+
+  /** One dial's keys replaced, or taken off keys with undefined. */
+  const setEffectKeys = useCallback((uid: string, name: string, keys: DialKey[] | undefined) => {
+    setBgEffectsState((list) =>
+      list.map((e) => {
+        if (e.uid !== uid) return e
+        const next = { ...(e.keys ?? {}) }
+        if (keys?.length) next[name] = keys
+        else delete next[name]
+        return { ...e, keys: Object.keys(next).length ? next : undefined }
+      }),
+    )
+  }, [])
+
   /** Every dial back to what the shader declared. One write rather than one per
    *  param: the whole point of the reset is that the scene stores NOTHING for
    *  this effect afterwards, and deleting keys one at a time would leave the
@@ -4527,6 +4572,8 @@ function Lab() {
   const onVisibilityRows = (next: { id: string; uid?: string; window?: VisibilityWindow[] }[]) => {
     const byId = new Map(next.map((r) => [r.uid ?? r.id, r.window ?? []]))
     for (const m of laneModels) {
+      // Only the open section's lanes were on screen; the others stay as they are.
+      if (!sectionModels.has(m.id)) continue
       const want = byId.get(m.id) ?? []
       const have = m.visibility ?? []
       if (JSON.stringify(want) !== JSON.stringify(have)) setCastVisibility(m.id, want)
@@ -4556,17 +4603,6 @@ function Lab() {
         : null,
     [editingProp, models, t],
   )
-  /** The rail. Each side of it goes back to the subject it last had: a cast
-   *  member for motion, morph, camera and effects, a prop for objects. */
-  const lastSubject = useRef<{ cast: string | null; object: string | null }>({ cast: null, object: null })
-  const switchEditKind = (kind: ClipEditKind) => {
-    if (editingModelId) lastSubject.current[editingKind === "object" ? "object" : "cast"] = editingModelId
-    const modelId =
-      kind === "object"
-        ? (props.find((p) => p.id === lastSubject.current.object)?.id ?? props[0]?.id ?? "")
-        : (cast.find((m) => m.id === lastSubject.current.cast)?.id ?? cast[0]?.id ?? "")
-    setEditTarget({ modelId, kind })
-  }
   const inspected = models.find((m) => m.id === inspectedId) ?? null
   // Which group the node editor is bound to. Per MODEL, which is why moving the
   // inspector to another character clears it: group ids are per model ("hair"
@@ -6066,6 +6102,196 @@ function Lab() {
   // shows both, each written in its own script, with the current one ticked —
   // the same shape as "Which model?" in the upload flow.
   const { locale, setLocale } = useI18n()
+  /** An effect's curves, open in place of its lanes: which effect, which dial,
+   *  which key. */
+  const [curveFx, setCurveFx] = useState<{ uid: string; tab: string; keys: number[] } | null>(null)
+  const curveEffect = curveFx ? (bgEffects.find((e) => (e.uid ?? e.id) === curveFx.uid) ?? null) : null
+  const curveDecls = useMemo(
+    (): EffectParamDecl[] =>
+      (curveFx ? (effectSurface[curveFx.uid]?.params ?? []) : [])
+        .filter(curveable)
+        // The tab reads in the viewer's language, as the dial panel does.
+        .map((d) => ({ ...d, label: (locale === "zh" ? (d.labelZh ?? d.label) : d.label) ?? d.name })),
+    [curveFx, effectSurface, locale],
+  )
+  // The plain values the curves start from: the dials'.
+  const curvePlain: Record<string, EffectParamValue> | undefined = curveEffect?.params
+  const curveTab = curveFx && curveDecls.some((d) => d.name === curveFx.tab) ? curveFx.tab : (curveDecls[0]?.name ?? "")
+  const dialCurves: DialCurvesData | null =
+    curveFx && curveEffect && curveDecls.length && editingKind === "effect"
+      ? {
+          name: curveEffect.name,
+          decls: curveDecls,
+          tab: curveTab,
+          onTab: (tab) => setCurveFx((c) => (c ? { ...c, tab, keys: [] } : c)),
+          keys: curveEffect.keys ?? {},
+          plain: curvePlain,
+          onKeys: (name, keys) => setEffectKeys(curveFx.uid, name, keys),
+          selected: curveFx.keys,
+          onSelect: (keys) => setCurveFx((c) => (c ? { ...c, keys } : c)),
+          onClose: () => setCurveFx(null),
+          zh: locale === "zh",
+        }
+      : null
+  /** The key the curves have picked, for the Properties panel. */
+  const curveKeys = curveEffect?.keys?.[curveTab] ?? []
+  const curveDecl = curveDecls.find((d) => d.name === curveTab) ?? null
+
+  /** The Effects tab's rows: each effect, by its strips. */
+  const effectRows = useMemo(
+    () => bgEffects.map((e): LaneRow => ({ id: e.id, uid: e.uid, name: e.name, ...(e.window ? { window: e.window } : {}) })),
+    [bgEffects],
+  )
+
+  // ── The outliner ──
+  // Every track by who it belongs to, one section open at a time: the open
+  // section is whose tracks are being edited. Absent a choice it follows what
+  // the editor was opened on.
+  const [outlineSection, setOutlineSection] = useState<string | null>(null)
+  const [outlineOpen, setOutlineOpen] = useState<ReadonlySet<string>>(() => new Set())
+  const [outlinePicked, setOutlinePicked] = useState<string | null>(null)
+  const section =
+    outlineSection ??
+    (editingKind === "object" && editingModelId ? propRow(editingModelId) : editingModelId ? charRow(editingModelId) : SCENE_ROW)
+  const stageModels = models.filter((m) => stageIds.has(m.id) && !props.some((p) => p.id === m.id))
+  // Keyed bones and morphs are the outliner's to fill: it reads the clip.
+  const outlineSource: RowSource = {
+      cast: cast.map((m) => ({ id: m.id, name: displayName(m.file), bones: [], morphs: [], materials: [...new Set(m.materials.map((x) => x.name))] })),
+      stages: stageModels.map((m) => ({ id: m.id, name: displayName(m.file), part: false, materials: [...new Set(m.materials.map((x) => x.name))] })),
+      props: props.map((p) => ({ id: p.id, name: displayName(p.file) })),
+      // A character's when it follows one (her bones, where she stands); else the scene's.
+      effects: bgEffects.map((e) => ({ uid: e.uid ?? e.id, name: e.name, models: e.models, cast: followsCharacter(e.wgsl), keyCount: Object.values(e.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
+      // Always: a camera with no clip yet is still one you can key.
+      camera: true,
+  }
+  const outlineLabels: RowLabels = {
+      scene: t.lab.timeline.outline.scene,
+      stage: t.lab.timeline.outline.stage,
+      camera: t.lab.timeline.outline.camera,
+      motion: t.lab.timeline.outline.motion,
+      morphs: t.lab.timeline.outline.morphs,
+      visibility: t.lab.timeline.outline.visibility,
+      parent: t.lab.timeline.outline.holds,
+      effects: t.lab.timeline.outline.effects,
+      materials: t.lab.timeline.outline.materials,
+      group: (n) => (n === "Other" ? t.lab.timeline.outline.other : (t.lab.timeline.boneGroups[n] ?? n)),
+  }
+  /** A bone picked elsewhere (the viewport, the curves): her section, her
+   *  motion and its group open, and the bone's row picked. Unchanged state is
+   *  handed back as it was, so following the selection costs nothing. */
+  const onRevealBone = useCallback((modelId: string, bone: string) => {
+    const motion = `${charRow(modelId)}/motion`
+    const group = `${motion}/${boneGroupsOf([bone])[0]?.name ?? "Other"}`
+    const row = `${group}/${bone}`
+    setOutlineSection((prev) => (prev === charRow(modelId) || prev === null ? prev : charRow(modelId)))
+    setOutlineOpen((prev) => (prev.has(motion) && prev.has(group) ? prev : new Set([...prev, motion, group])))
+    setOutlinePicked((prev) => (prev === row ? prev : row))
+  }, [])
+  /** A section heading: open it, folding the one before, and edit its owner. */
+  const onOutlineSection = (row: TimelineRow) => {
+    // The open one folds, leaving none open; whose clip is edited stays put.
+    if (row.id === section) {
+      setOutlineSection("")
+      return
+    }
+    setOutlineSection(row.id)
+    setOutlinePicked(null)
+    setCurveFx(null)
+    // The section opens on the click; loading her clip into the editor is the
+    // heavy part, so it follows as a transition rather than holding the click.
+    const owner = row.owner
+    if (row.kind === "character" && owner) {
+      const kind: ClipEditKind = editingKind === "object" || editingKind === "camera" ? "motion" : editingKind
+      startTransition(() => setEditTarget({ modelId: owner, kind }))
+    } else if (row.kind === "prop" && owner) startTransition(() => setEditTarget({ modelId: owner, kind: "object" }))
+  }
+  /** A row inside the open section: the editor turns to it. */
+  const onOutlinePick = (row: TimelineRow) => {
+    setOutlinePicked(row.id)
+    const go = (target: { modelId: string; kind: ClipEditKind }) => startTransition(() => setEditTarget(target))
+    // An effect's curves belong to that effect: anything else picked closes them.
+    if (row.kind !== "effect" && row.kind !== "effects") setCurveFx(null)
+    const owner = row.owner ?? editingModelId ?? cast[0]?.id ?? ""
+    switch (row.kind) {
+      case "camera":
+        go({ modelId: owner, kind: "camera" })
+        break
+      case "motion":
+      case "group":
+      case "bone":
+        go({ modelId: owner, kind: "motion" })
+        break
+      case "morphs":
+      case "morph":
+        go({ modelId: owner, kind: "morph" })
+        break
+      case "materials":
+      case "visibility":
+      case "model":
+      case "stageModel":
+      case "material":
+        go({ modelId: section.startsWith("char/") ? owner : (cast[0]?.id ?? owner), kind: "visibility" })
+        setSelectedVisibility(row.kind === "material" ? partRowId(owner, row.ref!) : owner)
+        if (row.kind === "material") setOpenLanes((s) => new Set(s).add(owner))
+        break
+      case "effects":
+      case "effect":
+        go({ modelId: section.startsWith("char/") ? owner : (cast[0]?.id ?? owner), kind: "effect" })
+        if (row.ref) {
+          setSelectedEffect(row.ref)
+          // Curves open stay open, on the effect just picked.
+          const uid = row.ref
+          setCurveFx((c) => (c ? { uid, tab: "", keys: [] } : c))
+        } else setCurveFx(null)
+        break
+      case "parent":
+        go({ modelId: owner, kind: "object" })
+        break
+    }
+  }
+  /** The Properties column's subjects: an effect dial's curve, or a prop. */
+  const inspectorDial: DialEditing | null = dialCurves && curveDecl
+                  ? {
+                      label: `${dialCurves.name} · ${curveDecl.label ?? curveDecl.name}`,
+                      decl: curveDecl,
+                      keys: curveKeys,
+                      plain: curvePlain?.[curveDecl.name],
+                      frameNow: playheadFrame,
+                      selected: curveFx?.keys ?? [],
+                      onKeys: (keys) => setEffectKeys(curveFx!.uid, curveDecl.name, keys),
+                      onSelect: (keys) => setCurveFx((c) => (c ? { ...c, keys } : c)),
+                    }
+                  : null
+  const inspectorObject: ObjectEditing | null = editingProp
+                  ? {
+                      prop: editingProp,
+                      cast: cast.map((m) => ({ id: m.id, name: displayName(m.file), bones: leadWith(m.bones, ATTACH_BONES) })),
+                      engineRef,
+                      setParentKeys: setPropParentKeys,
+                      setStart: setPropStart,
+                    }
+                  : null
+  // A model's visibility row opens to its materials in the outliner and in its
+  // lanes alike: one open set for both, the lanes'.
+  const visRowId = (id: string) => (castIdList.includes(id) ? `${charRow(id)}/vis/mats` : `stage/${id}`)
+  const outlineOpenShown = new Set([...outlineOpen, ...[...openLanes].map(visRowId)])
+  const onOutlineToggle = (row: TimelineRow) => {
+    if ((row.kind === "materials" || row.kind === "stageModel") && row.owner) toggleLane(row.owner)
+    else setOutlineOpen((open) => toggleRow(open, row))
+  }
+  /** Which models the open section's lanes are about. */
+  const sectionModels = new Set(
+    section === STAGE_ROW ? stageModels.map((m) => m.id) : section.startsWith("char/") ? [section.slice(5)] : [],
+  )
+  const sectionOwner = section.startsWith("char/") ? section.slice(5) : null
+  /** The open section's effects: the scene's shared ones, or hers. */
+  const shownEffectRows = effectRows.filter((r) => {
+    const e = bgEffects.find((x) => (x.uid ?? x.id) === (r.uid ?? r.id))
+    if (!e) return false
+    const cast = followsCharacter(e.wgsl)
+    return sectionOwner === null ? !cast : effectOn({ models: e.models, cast }, sectionOwner)
+  })
+  const shownVisibilityRows = visibilityRows.filter((r) => sectionModels.has((r.uid ?? r.id).split("\u0000")[0]))
   const [langOpen, setLangOpen] = useState(false)
   const [backing, setBacking] = usePanelBacking()
   const [inkChoice, setInkChoice] = useInkChoice()
@@ -9637,9 +9863,15 @@ function Lab() {
                                 decls={effectFxDecls}
                                 values={effectFx.params}
                                 onChange={(name, value) => setEffectParam(effectFxUid, name, value)}
-                                cast={effectFxAimable ? castTargets : []}
+                                cast={effectFxAimable || effectFxDecls.some((d) => d.kind === "bone" || d.kind === "point") ? castTargets : []}
                                 models={effectFx.models}
-                                onModels={(models) => patchEffect(effectFxUid, { models })}
+                                onModels={effectFxAimable ? (models) => patchEffect(effectFxUid, { models }) : undefined}
+                                keys={effectFx.keys}
+                                onKeys={(name, keys) => setEffectKeys(effectFxUid, name, keys)}
+                                frameNow={playheadFrame}
+                                boneNames={(id) =>
+                                  models.find((m) => m.id === (id ?? effectFx.models?.[0] ?? cast[0]?.id))?.bones ?? []
+                                }
                               />
                             </div>
                           )}
@@ -11373,7 +11605,15 @@ function Lab() {
             scrubRef={scrubRef}
             viewportRef={viewportRef}
             editingModelId={editingModelId}
-            propClipName={editingProp ? (animByModel[editingProp.id]?.name ?? "motion.vmd") : null}
+            // A prop, or a character with no motion yet, keys into an empty
+            // clip as long as the scene: the first key makes it her motion file.
+            propClipName={
+              editingProp
+                ? (animByModel[editingProp.id]?.name ?? "motion.vmd")
+                : editingModelId && !animByModel[editingModelId]
+                  ? "motion.vmd"
+                  : null
+            }
             propFrames={Math.round(animDuration * FPS)}
           />
           {/* ⌘Z over keyframe edits. Headless, and scoped by DOM: the timeline
@@ -11433,7 +11673,10 @@ function Lab() {
             data-edge="bottom"
             data-ink-zone={!timelineShown || undefined}
             className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center"
-            style={timelineShown ? { zIndex: timelineZ.z } : undefined}
+            // Open, the box reaches over the docks' inner halves, so it stays
+            // above them whichever was pressed last; the stack still orders it
+            // against everything else.
+            style={timelineShown ? { zIndex: Math.max(timelineZ.z, dockZ.z + 1) } : undefined}
             onPointerDownCapture={timelineZ.onPointerDownCapture}
             onFocusCapture={timelineZ.onFocusCapture}
           >
@@ -11514,29 +11757,45 @@ function Lab() {
                   // clip out of the engine at all — see editingModelId.
                   ({ chrome, playing, togglePlay }) => (
                     <Dopesheet
+                      dialCurves={dialCurves}
                       playheadDrawRef={dopePlayheadRef}
                       audioPeaks={musicPeaks}
                       audioDuration={animDuration}
                       open={timelineShown}
                       kind={editingKind}
-                      onKind={switchEditKind}
-                      objects={props.map((p) => ({ id: p.id, label: displayName(p.file) }))}
-                      objectId={editingProp?.id ?? null}
-                      onObject={(id) => setEditTarget({ modelId: id, kind: "object" })}
                       parentHolds={parentHolds}
                       visibilityLanes={
-                        editingKind === "visibility"
-                          ? {
-                              effects: visibilityRows,
+                        {
+                              effects: shownVisibilityRows,
                               onEffects: onVisibilityRows,
                               selectedEffect: selectedVisibility,
                               onSelectEffect: setSelectedVisibility,
                               onToggle: toggleLane,
                             }
-                          : null
                       }
                       spanFrames={Math.round(animDuration * FPS)}
                       trailing={chrome}
+                      outline={{
+                        source: outlineSource,
+                        section,
+                        open: outlineOpenShown,
+                        labels: outlineLabels,
+                        selected: outlinePicked,
+                        onSection: onOutlineSection,
+                        onToggle: onOutlineToggle,
+                        onPick: onOutlinePick,
+                        onRevealBone,
+                        cast: cast.map((m) => ({ id: m.id, name: displayName(m.file) })),
+                        onCopyTo: (uid: string, to: string) => setBgEffects((list) => copyEffectTo(list, uid, to, castIdList)),
+                        onMoveTo: (uid: string, from: string, to: string) => setBgEffects((list) => moveEffectTo(list, uid, from, to, castIdList)),
+                      }}
+                      inspector={
+                        <ClipInspectorColumn
+                          dial={inspectorDial}
+                          onClose={() => setTimelineOpen(false)}
+                          object={inspectorObject}
+                        />
+                      }
                       enginePlaying={playing}
                       onTogglePlay={togglePlay}
                       // While an effect's code is open the list is narrowed to
@@ -11546,16 +11805,29 @@ function Lab() {
                         // band, and the Visibility tab is blank too — handed
                         // both, the timeline stacked the effect clips on top of
                         // the model clips.
-                        effectEditor || editingKind !== "effect"
+                        effectEditor
                           ? null
                           : {
-                              effects: bgEffects,
-                              // A wrapper, not the setter itself: handed into
-                              // an object, the compiler counts the setter as
-                              // mutable and drops every callback that uses it.
-                              onEffects: (next: SetStateAction<AppliedEffect[]>) => setBgEffects(next),
+                              effects: shownEffectRows,
+                              // The section's effects back into the whole list:
+                              // the ones not on screen stay as they are.
+                              onEffects: (rows: LaneRow[]) =>
+                                setBgEffects((list) => {
+                                  const shown = new Set(shownEffectRows.map((r) => r.uid ?? r.id))
+                                  const edited = new Map(effectsFromRows(list, rows).map((e) => [e.uid ?? e.id, e]))
+                                  return list.flatMap((e) => {
+                                    const k = e.uid ?? e.id
+                                    if (!shown.has(k)) return [e]
+                                    const got = edited.get(k)
+                                    return got ? [got] : []
+                                  })
+                                }),
                               selectedEffect,
                               onSelectEffect: setSelectedEffect,
+                              onEditCurves: (uid: string) => {
+                                setSelectedEffect(uid)
+                                setCurveFx({ uid, tab: "", keys: [] })
+                              },
                             }
                       }
                     />
@@ -11574,23 +11846,6 @@ function Lab() {
               costs no space to make room for, either: the open timeline is
               already capped at `100vw - 35rem` so it stops clear of both
               columns, and this lands in the one on the right. */}
-          {timelineShown && (
-            <ClipInspector
-              leaving={timelineLeaving}
-              onClose={() => setTimelineOpen(false)}
-              object={
-                editingProp
-                  ? {
-                      prop: editingProp,
-                      cast: cast.map((m) => ({ id: m.id, name: displayName(m.file), bones: leadWith(m.bones, ATTACH_BONES) })),
-                      engineRef,
-                      setParentKeys: setPropParentKeys,
-                      setStart: setPropStart,
-                    }
-                  : null
-              }
-            />
-          )}
         </ClipEditor>
       )}
       {/* What the GPU refused, if anything — selectable and copyable, over the

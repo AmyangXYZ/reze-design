@@ -59,9 +59,20 @@ function installKey(sources: string[], texturesVersion: number): string | null {
 /**
  * Every applied effect's timing — and who it is on — onto its instance, through
  * the scene timeline's one push. See pushTimeline for why the index matters.
+ *
+ * Then each dial with no keys gets its plain value, AFTER the tracks: a keyed
+ * dial ignores plain writes, so one whose keys were just cleared takes its
+ * value back only once its track is gone.
  */
 function applySchedules(engine: Engine, list: AppliedEffect[], index: (number | null)[] | null): void {
   pushTimeline(engine, timelineOf({ effects: list }), index)
+  list.forEach((e, i) => {
+    const k = index ? index[i] : i
+    if (k == null) return
+    for (const [name, value] of Object.entries(effectParams(e.wgsl, e.params) ?? {})) {
+      if (!e.keys?.[name]?.length) engine.setEffectParam(k, name, value)
+    }
+  })
 }
 
 /**

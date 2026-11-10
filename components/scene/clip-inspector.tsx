@@ -28,7 +28,10 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { X } from "lucide-react"
-import type { AnimationClip, BoneInterpolation, BoneKeyframe, CameraKeyframe, Engine } from "reze-engine"
+import type { AnimationClip, BoneInterpolation, BoneKeyframe, CameraKeyframe, EffectParamDecl, EffectParamValue, Engine } from "reze-engine"
+import { defaultOf, EffectParams } from "@/components/scene/effect-params"
+import { dialAt, HOLDING_KINDS, type DialKey } from "@/lib/effects"
+import { canPasteKeys, copyKeys, pasteKeys, removeKeys, shownKeys, type KeyEdit } from "@/lib/dial-keys"
 import { CameraAnimation, Vec3 } from "reze-engine"
 import { Button } from "@/components/ui/button"
 import { Surface } from "@/components/editor/surface"
@@ -127,8 +130,8 @@ const CAMERA_AXIS_TAB: Record<string, string> = {
  */
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="px-4 pt-3">
-      <div className="pb-1.5 text-xs font-medium text-foreground">{title}</div>
+    <div className="px-3 pt-2.5">
+      <div className="pb-1 text-2xs font-medium text-foreground">{title}</div>
       {children}
     </div>
   )
@@ -412,7 +415,7 @@ function SubjectHeader({
   // properties these are — and what the panel is is already obvious from its
   // arriving with the timeline.
   return (
-    <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-4 py-2">
+    <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1.5">
       {/* select-all, not merely select-text. The name here is a rig string —
           左手首, 上半身2 — and what you want it for is pasting it into an
           effect's #anchor line or a search. Dragging over three CJK characters
@@ -421,7 +424,7 @@ function SubjectHeader({
           may not even be on screen to drag to. One click takes the whole name,
           hidden overflow included. `title` is the other half: the full string
           on hover, since this row is the one place it is stated. */}
-      <div className="min-w-0 flex-1 cursor-text truncate text-xs font-semibold text-foreground select-all">
+      <div className="min-w-0 flex-1 cursor-text truncate text-2xs font-semibold text-foreground select-all">
         {title}
       </div>
       <PlayheadFrameLabel frameCount={frameCount} />
@@ -454,7 +457,9 @@ function InterpolationPanel({
   p2,
   disabled,
   onChange,
+  after,
 }: {
+  /** The curves to pick between; none for a subject with only one. */
   tabs: readonly { key: string; label: string }[]
   activeTab: string
   onTabChange: (key: string) => void
@@ -462,11 +467,12 @@ function InterpolationPanel({
   p2: CurvePoint
   disabled: boolean
   onChange: (p1: CurvePoint, p2: CurvePoint) => void
+  after?: ReactNode
 }) {
   const t = useT()
   return (
     <Group title={t.lab.timeline.interpolation}>
-      <div className="mb-2 flex flex-wrap gap-1">
+      <div className={cn("mb-2 flex flex-wrap gap-1", tabs.length === 0 && "hidden")}>
         {tabs.map((t) => (
           <Button
             key={t.key}
@@ -482,11 +488,9 @@ function InterpolationPanel({
         ))}
       </div>
       {/* Presets beside the curve, as studio has them: the chart is a square
-          and the column next to it is otherwise dead space. `flex-1` on each
-          badge divides the chart's height between the eight of them, which is
-          where their padding comes from — at 9px type that leaves each one
-          comfortably taller than its own text. */}
-      <div className="flex items-stretch gap-1.5" style={{ height: 148 }}>
+          and the column next to it is otherwise dead space. The five badges
+          share the chart's height, which gives each room around its word. */}
+      <div className="flex items-stretch gap-1.5" style={{ height: 120 }}>
         <InterpolationCurveEditor p1={p1} p2={p2} disabled={disabled} onChange={onChange} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {PRESETS.map((pr) => {
@@ -507,6 +511,7 @@ function InterpolationPanel({
           })}
         </div>
       </div>
+      {after}
     </Group>
   )
 }
@@ -1067,7 +1072,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
   return (
     <>
       <SubjectHeader onClose={onClose} title={t.lab.timeline.camera} frameCount={null} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         {CAMERA_GROUPS.map((g) => {
           const rows = (
             <div>
@@ -1282,7 +1287,7 @@ function InspectorBody({ onClose, object }: { onClose: () => void; object: Objec
     return (
       <>
         <SubjectHeader onClose={onClose} title={selectedMorph} frameCount={clip?.frameCount ?? null} />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
           <Group title={t.lab.timeline.weight}>
             <LiveMorphSlider selectedMorph={selectedMorph} clip={clip} applyMorphWeight={applyMorphWeight} />
           </Group>
@@ -1315,7 +1320,7 @@ function InspectorBody({ onClose, object }: { onClose: () => void; object: Objec
             for one thing in a column this narrow, and the picker on the left
             already lists them the way the rig does. */}
         <SubjectHeader onClose={onClose} title={selectedBone} frameCount={clip?.frameCount ?? null} />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
           <LiveBoneSliders
             selectedBone={selectedBone}
             clip={clip}
@@ -1380,10 +1385,14 @@ function LiveMorphSlider({
 export function ClipInspector({
   onClose,
   object = null,
+  dial = null,
   leaving = false,
 }: {
   onClose: () => void
   object?: ObjectEditing | null
+  /** An effect dial's curve, open on the timeline: its keys, for the panel to
+   *  edit the picked one's time, value and interpolation. */
+  dial?: DialEditing | null
   /** Closed and fading out where it stands, with the timeline. */
   leaving?: boolean
 }) {
@@ -1399,17 +1408,44 @@ export function ClipInspector({
   // invisible panel at the top of the stack and let it swallow the key.
   const trackSubject = useClipSelector((s) => s.cameraSelected || s.selectedBone != null || s.selectedMorph != null)
   const parentSubject = useClipSelector((s) => s.parentSelected)
-  if (!trackSubject && !(parentSubject && object)) return null
-  return <ClipInspectorSurface onClose={onClose} object={object} leaving={leaving} />
+  if (!dial && !trackSubject && !(parentSubject && object)) return null
+  return <ClipInspectorSurface onClose={onClose} object={object} dial={dial} leaving={leaving} />
+}
+
+/**
+ * The same panel as the box's right column: the timeline's own, opening and
+ * closing with it, so nothing floats over the scene beside it. Always there
+ * while the timeline is open, empty until something is picked — a column that
+ * came and went with the selection would move the tracks under the pointer.
+ */
+export function ClipInspectorColumn({
+  onClose,
+  object = null,
+  dial = null,
+}: {
+  onClose: () => void
+  object?: ObjectEditing | null
+  dial?: DialEditing | null
+}) {
+  const trackSubject = useClipSelector((s) => s.cameraSelected || s.selectedBone != null || s.selectedMorph != null)
+  const parentSubject = useClipSelector((s) => s.parentSelected)
+  const subject = dial || trackSubject || (parentSubject && object)
+  return (
+    <div data-undo-scope={CLIP_UNDO_SCOPE} className="flex w-58 shrink-0 flex-col border-l border-line">
+      {subject && (dial ? <DialKeyBody dial={dial} onClose={onClose} /> : <InspectorBody onClose={onClose} object={object} />)}
+    </div>
+  )
 }
 
 function ClipInspectorSurface({
   onClose,
   object,
+  dial,
   leaving,
 }: {
   onClose: () => void
   object: ObjectEditing | null
+  dial: DialEditing | null
   leaving: boolean
 }) {
   const z = useZOrder(undefined, onClose)
@@ -1456,8 +1492,140 @@ function ClipInspectorSurface({
       onPointerDownCapture={z.onPointerDownCapture}
       onFocusCapture={z.onFocusCapture}
     >
-      <InspectorBody onClose={onClose} object={object} />
+      {dial ? <DialKeyBody dial={dial} onClose={onClose} /> : <InspectorBody onClose={onClose} object={object} />}
     </Surface>
+  )
+}
+
+/** An effect dial's curve as the panel edits it — see DialKeyBody. */
+export type DialEditing = {
+  /** Effect · dial, for the header. */
+  label: string
+  decl: EffectParamDecl
+  keys: DialKey[]
+  /** Its value when it has no keys. */
+  plain: EffectParamValue | undefined
+  /** The playhead, in frames. */
+  frameNow: () => number
+  /** The selected keys, by index. */
+  selected: number[]
+  onKeys: (keys: DialKey[] | undefined) => void
+  onSelect: (indices: number[]) => void
+}
+
+/** A straight bezier, in the curve editor's 0..127 units. */
+const LINEAR: [CurvePoint, CurvePoint] = [
+  { x: 20, y: 20 },
+  { x: 107, y: 107 },
+]
+
+/**
+ * A dial's keys, laid out as the camera's: the value at the playhead (drag and
+ * it keys there), the curve INTO the selected key — or the one under the
+ * playhead — with the presets, and Insert / Delete. A dial that holds (a
+ * switch, a list) has no curve to ease.
+ */
+function DialKeyBody({ dial, onClose }: { dial: DialEditing; onClose: () => void }) {
+  const t = useT()
+  const { decl, selected } = dial
+  const frame = Math.round(usePlayheadSelector((s) => s.currentFrame))
+  const holds = HOLDING_KINDS.has(decl.kind)
+  // As the curves show them: no keys stands as one at frame 0.
+  const keys = shownKeys(dial.keys, dial.plain ?? defaultOf(decl))
+  const atPlayhead = keys.findIndex((k) => k.frame === frame)
+  // What the panel acts on: the selection, or the key under the playhead.
+  const chosen = selected.filter((i) => i < keys.length)
+  const targets = chosen.length ? chosen : atPlayhead >= 0 ? [atPlayhead] : []
+  // The curve shown is the first target's that has a way in; an edit reaches
+  // every target that has one — the first key has nothing arriving at it.
+  const easing = holds ? [] : targets.filter((i) => i > 0)
+  const key = easing.length ? keys[easing[0]] : null
+  const shown = dialAt(keys, frame, holds) ?? dial.plain ?? defaultOf(decl)
+  const write = (patch: Partial<DialKey>) => {
+    if (!easing.length) return
+    dial.onKeys(keys.map((k, i) => (easing.includes(i) ? { ...k, ...patch } : k)))
+  }
+  const put = (edit: KeyEdit | null) => {
+    if (!edit) return
+    dial.onKeys(edit.keys.length ? edit.keys : undefined)
+    dial.onSelect(edit.selected)
+  }
+  const insert = () => {
+    const next = [...keys, { frame, value: shown }].sort((x, y) => x.frame - y.frame)
+    put({ keys: next, selected: [next.findIndex((k) => k.frame === frame)] })
+  }
+  const remove = () => put({ keys: removeKeys(keys, targets), selected: [] })
+  const curve: [CurvePoint, CurvePoint] = key?.curve
+    ? [
+        { x: key.curve[0], y: key.curve[1] },
+        { x: key.curve[2], y: key.curve[3] },
+      ]
+    : LINEAR
+  const easable = key !== null
+  const held = key?.ease === "hold"
+  return (
+    <>
+      <SubjectHeader title={dial.label} frameCount={null} onClose={onClose} />
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+        {/* The left dock's own dial, so the two read alike: moving it keys
+            the playhead, and it follows the playhead and a dragged key. */}
+        <Group title={t.lab.ctl.params}>
+          <EffectParams
+            decls={[decl]}
+            values={dial.plain === undefined ? undefined : { [decl.name]: dial.plain }}
+            keys={{ [decl.name]: keys }}
+            onKeys={(_, next) => dial.onKeys(next)}
+            onChange={(_, value) => {
+              if (value === undefined) return
+              dial.onKeys([{ frame: Math.round(dial.frameNow()), value }])
+              dial.onSelect([0])
+            }}
+            frameNow={dial.frameNow}
+          />
+        </Group>
+        {!holds && (
+          <InterpolationPanel
+            tabs={[]}
+            activeTab=""
+            onTabChange={() => {}}
+            p1={curve[0]}
+            p2={curve[1]}
+            disabled={!easable || held}
+            onChange={(p1, p2) => write({ ease: undefined, curve: [p1.x, p1.y, p2.x, p2.y] })}
+            after={
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={!easable}
+                onClick={() => write({ ease: held ? undefined : "hold" })}
+                className={cn(CHIP, "mt-1.5 w-full", held ? CHIP_ON : CHIP_OFF)}
+              >
+                {t.lab.timeline.hold}
+              </Button>
+            }
+          />
+        )}
+        <OperationsSection
+          onInsert={insert}
+          onDelete={remove}
+          onCopy={() => copyKeys(keys, targets)}
+          onCut={() => {
+            if (copyKeys(keys, targets)) remove()
+          }}
+          onPaste={() => put(pasteKeys(keys, frame, shown, Number.POSITIVE_INFINITY))}
+          onClear={() => put({ keys: [], selected: [] })}
+          canInsert={atPlayhead < 0}
+          canDelete={targets.length > 0}
+          canCopy={targets.length > 0}
+          canPaste={canPasteKeys(shown)}
+          // Simplify fits a curve through dense keys; a dial's few keys are
+          // the curve. Kept, inert, so the block is the bones' shape.
+          canSimplify={false}
+          canClear={dial.keys.length > 0}
+        />
+      </div>
+    </>
   )
 }
 
@@ -1480,7 +1648,7 @@ const NO_PARENT = "__none"
 const TO_POSITION = "__position"
 const THROW_ORDER: ThrowStyle[] = ["pass", "toss", "lob"]
 const ROW = "mt-2.5 flex items-center gap-2 first:mt-0"
-const ROW_LABEL = "w-16 shrink-0 truncate text-xs"
+const ROW_LABEL = "w-16 shrink-0 truncate text-2xs"
 const ROW_SELECT = "ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-5"
 const withAxis = (v: [number, number, number], axis: number, x: number): [number, number, number] =>
   [axis === 0 ? x : v[0], axis === 1 ? x : v[1], axis === 2 ? x : v[2]]
@@ -1578,7 +1746,7 @@ function ParentSection({ onClose, object }: { onClose: () => void; object: Objec
   return (
     <>
       <SubjectHeader onClose={onClose} title={prop.file} frameCount={clip?.frameCount ?? null} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         <Group title={t.lab.timeline.parent}>
           <div className={ROW}>
             <span className={ROW_LABEL}>{t.lab.ctl.attachTo}</span>

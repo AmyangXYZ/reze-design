@@ -45,9 +45,9 @@ eq(tl.parents.sword.map((k) => k.frame), [0, 60], "the start hold leads, and a s
 eq(tl.parents.sword[0], { frame: 0, model: "miku", bone: "右手首", position: [0, 1, 0], rotation: [0, 90, 0] },
    "the start hold is the row's attach and transform")
 eq(tl.effects, [
-  { influence: 1, window: null, models: null },
-  { influence: 0.5, window: [{ start: 30, end: 60 }], models: ["miku"] },
-], "effects default to fully on, throughout, on everyone")
+  { influence: 1, window: null, models: null, keys: null },
+  { influence: 0.5, window: [{ start: 30, end: 60 }], models: ["miku"], keys: null },
+], "effects default to fully on, throughout, on everyone, nothing keyed")
 eq(timelineOf({}), { visibility: {}, parts: {}, effects: [], parents: {} }, "an empty source is an empty timeline")
 
 // ── The declarative push ──────────────────────────────────────────────────
@@ -56,6 +56,9 @@ const engine = {
   setEffectInfluence: (k: number, v: number) => void writes.push(`influence ${k} ${v}`),
   setEffectSchedule: (k: number, w: unknown) => void writes.push(`schedule ${k} ${JSON.stringify(w)}`),
   setEffectSubjects: (k: number, m: unknown) => void writes.push(`subjects ${k} ${JSON.stringify(m)}`),
+  setEffectParamTrack: (k: number, n: string, keys: readonly { time: number; value: unknown; ease?: string }[] | null) => (
+    writes.push(`track ${k} ${n} ${keys ? JSON.stringify(keys.map((x) => [x.time, x.value, x.ease ?? null])) : "null"}`), true
+  ),
   setModelParentKeys: (id: string, keys: readonly { time: number; tween?: boolean }[] | null) => {
     writes.push(`parents ${id} ${JSON.stringify(keys?.map((k) => [k.time, k.tween ?? false]))}`)
     return true
@@ -71,7 +74,15 @@ eq(writes, [
 ], "strips land on the instance the entry became, frames cross as seconds")
 writes.length = 0
 pushTimeline(engine, timelineOf({ effects: [{}] }))
-eq(writes, ["influence 0 1", "schedule 0 null", "subjects 0 null"], "a partial timeline pushes only what it holds")
+eq(writes, ["influence 0 1", "schedule 0 [{\"start\":0}]", "subjects 0 null"], "a partial timeline pushes only what it holds; no clips plays from frame 0")
+
+// Keyed dials cross as seconds; a dial keyed last time and not now goes back.
+writes.length = 0
+pushTimeline(engine, timelineOf({ effects: [{ keys: { GLOW: [{ frame: 30, value: 1 }, { frame: 60, value: 3, ease: "hold" }] } }] }))
+eq(writes.filter((w) => w.startsWith("track")), ['track 0 GLOW [[1,1,null],[2,3,"hold"]]'], "keys cross as seconds, ease carried")
+writes.length = 0
+pushTimeline(engine, timelineOf({ effects: [{}] }))
+eq(writes.filter((w) => w.startsWith("track")), ["track 0 GLOW null"], "a dial no longer keyed is handed back")
 
 // ── The frame ─────────────────────────────────────────────────────────────
 type Fake = { visible: boolean; setVisible(on: boolean): void }

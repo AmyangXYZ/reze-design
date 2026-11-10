@@ -21,7 +21,9 @@ name over its picture and nothing else: the cover's (`SceneName display`), the
 gallery stage's and the scene viewer's. `text-billboard` (52px) is the same
 title on the gallery's spotlight, where the cover fills the top of the page, and
 heads its grid pages; the same face,
-upright at `text-masthead` (18px), sets the REZE DESIGN masthead. Never `text-[Npx]`.
+upright at `text-masthead` (18px), sets the REZE DESIGN masthead.
+`text-figure` (10px) is the timeline's key counts beside a track's name,
+and nothing else. Never `text-[Npx]`.
 Weights: `font-normal` and `font-medium`; `font-semibold` for page headings
 and tiny all-caps labels.
 

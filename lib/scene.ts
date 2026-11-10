@@ -2,7 +2,7 @@
 
 import type { EffectParamValue, ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
-import type { AppliedEffect } from "@/lib/effects"
+import type { AppliedEffect, DialKey } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
 import type { VisibilityWindow } from "@/lib/timeline"
 import {
@@ -240,6 +240,8 @@ export type SceneEffect = {
    *  keyed in. A LANE, so one effect can fire at several moments. Absent or
    *  empty = alive for the whole scene. */
   window?: EffectWindow[]
+  /** Its keyed dials — see AppliedEffect.keys. Absent = none keyed. */
+  keys?: Record<string, DialKey[]>
   /** Which models it is on, by `ModelRef.id` — the key `groups` and `hidden` use.
    *  Absent = all of them, which is what every scene written before an effect
    *  could be aimed says and what an unaimed one still writes. */
@@ -690,6 +692,7 @@ function appliedEffect(
     // the effect rather than the effect, which is the whole reason neither
     // lives on the source.
     ...(applied.params === undefined ? {} : { params: applied.params }),
+    ...(applied.keys === undefined ? {} : { keys: applied.keys }),
     // And so does WHO it is on: two scenes can pin one effect and aim it at
     // different dancers, which is the same argument as the dials.
     ...(applied.models === undefined ? {} : { models: applied.models }),
@@ -1450,11 +1453,15 @@ export function serializeSceneDoc(
         effects: live.backgroundEffects.map((e) => ({
           source: refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl },
           ...(e.influence === undefined || e.influence === 1 ? {} : { influence: e.influence }),
-          ...(e.window?.length ? { window: e.window } : {}),
+          // Empty is kept: a lane whose clips were all cut is a silent effect
+          // waiting for one, not one that plays throughout.
+          ...(e.window ? { window: e.window } : {}),
           // Sparse, and omitted when empty: a scene that moved no dials writes
           // exactly what it wrote before params existed, so nothing churns on
           // save and a retuned built-in still reaches it.
           ...(e.params && Object.keys(e.params).length ? { params: e.params } : {}),
+          // Keyed dials, the same way: absent when nothing is keyed.
+          ...(e.keys && Object.keys(e.keys).length ? { keys: e.keys } : {}),
           // Omitted when it is on everybody, so an effect nobody has aimed
           // writes exactly what it wrote before aiming existed.
           ...(e.models?.length ? { models: e.models } : {}),

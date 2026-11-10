@@ -81,8 +81,9 @@ export function ClipBridge({
   /** Whose clip to edit, or null to edit nothing. One at a time — see the
    *  `modelId` note on ClipDocState. */
   editingModelId,
-  /** Set while the edited model is a prop: the name its clip goes under. A prop
-   *  with no clip gets an empty one to key into. */
+  /** Set while the edited model has no motion of its own — a prop, or a
+   *  character not yet given one: the name its clip goes under. It gets an
+   *  empty one, as long as the scene, to key into. */
   propClipName = null,
   /** The scene's length in frames. A prop's clip is lengthened to it, so a key
    *  can land anywhere on the ruler. */
@@ -175,8 +176,9 @@ export function ClipBridge({
       if (stamp === loaded.current) return
       loaded.current = stamp
       if (!source || !active) {
-        // A prop starts with no clip of its own. The Objects tab keys into one,
-        // so it gets an empty clip, which the next check adopts.
+        // A prop — or a character with no motion yet — starts with no clip of
+        // its own, so it gets an empty one as long as the scene to key into,
+        // which the next check adopts.
         if (propClipName) {
           model.loadClip(propClipName, { boneTracks: new Map(), morphTracks: new Map(), frameCount: propFrames })
           model.play(propClipName)
@@ -307,6 +309,12 @@ export function ClipBridge({
     if (Math.abs(currentFrame - at) < 0.75) return
     scrubRef.current?.to(framesToSeconds(currentFrame))
     scrubRef.current?.end()
+    // The edited model's own clock as well: Scrub moves the transport's models,
+    // and one keying into a clip not yet saved — a prop, a character with no
+    // motion of her own — is not among them. Left behind, her clock stayed
+    // where it was and the transport drew the playhead back there each frame,
+    // while a key still landed where the ruler was pressed.
+    model.seek(framesToSeconds(currentFrame))
   }, [currentFrame, modelId, engineRef, scrubRef])
 
   // The handlers below are registered once and live for as long as editing
