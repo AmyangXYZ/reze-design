@@ -65,6 +65,12 @@ export type SceneTimeline = {
    * a scene that schedules nobody free of the whole feature.
    */
   visibility: Record<string, VisibilityWindow[]>
+  /**
+   * The parts of a model that come and go on their own — its materials' lanes,
+   * by model id: the stockings until the chorus, a jacket from the bridge. Only
+   * models with at least one such lane are here; the rest are worn throughout.
+   */
+  parts: Record<string, { materials: string[]; windows: VisibilityWindow[] }[]>
   /** Every applied effect's strip, influence and subjects, in list order. */
   effects: EffectTrack[]
   /** Every prop's parent track by id: its start hold at frame 0, then each
@@ -77,7 +83,12 @@ export type SceneTimeline = {
  *  prop — builds the timeline of that part through the same function, and a
  *  push of it touches nothing else. */
 export type TimelineSource = {
-  models?: readonly { id: string; visibility?: VisibilityWindow[] }[]
+  models?: readonly {
+    id: string
+    visibility?: VisibilityWindow[]
+    /** Its materials' own lanes, by material name. */
+    materialVisibility?: Readonly<Record<string, VisibilityWindow[]>>
+  }[]
   props?: readonly (PropTrackSource & { id: string })[]
   effects?: readonly { influence?: number; window?: EffectWindow[]; models?: string[] }[]
 }
@@ -86,10 +97,16 @@ export type TimelineSource = {
 export function timelineOf({ models = [], props = [], effects = [] }: TimelineSource): SceneTimeline {
   const visibility: Record<string, VisibilityWindow[]> = {}
   for (const m of models) if (m.visibility?.length) visibility[m.id] = m.visibility
+  const parts: SceneTimeline["parts"] = {}
+  for (const m of models) {
+    const laned = Object.entries(m.materialVisibility ?? {}).filter(([, w]) => w.length > 0)
+    if (laned.length) parts[m.id] = laned.map(([name, windows]) => ({ materials: [name], windows }))
+  }
   const parents: Record<string, SceneParentKey[]> = {}
   for (const p of props) parents[p.id] = parentTrackOf(p)
   return {
     visibility,
+    parts,
     effects: effects.map((e) => ({ influence: e.influence ?? 1, window: e.window ?? null, models: e.models ?? null })),
     parents,
   }
@@ -140,6 +157,7 @@ export function pushTimeline(
 type FrameEngine = {
   getModel(id: string): { visible: boolean; setVisible(on: boolean): void } | null | undefined
   setModelDissolve(id: string, value: number): boolean
+  setMaterialDissolve(id: string, values: Readonly<Record<string, number>> | null): boolean
 }
 
 /**
@@ -176,6 +194,38 @@ export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline,
     if (model.visible !== state.visible) model.setVisible(state.visible)
     engine.setModelDissolve(id, state.dissolve)
   }
+  // The parts: each laned material, as much of it as its lane says is there —
+  // off a stretch is gone, a ramp is the burn.
+  for (const id in timeline.parts) {
+    if (!engine.getModel(id)) continue
+    const values: Record<string, number> = {}
+    for (const part of timeline.parts[id]) {
+      const state = visibilityAt(part.windows, frame)
+      const v = state.visible ? state.dissolve : 0
+      for (const name of part.materials) values[name] = Math.min(values[name] ?? 1, v)
+    }
+    engine.setMaterialDissolve(id, values)
+  }
+}
+
+/**
+ * A model's material lanes at frame 0, before it is first shown — seedLane's
+ * reason: stockings that come ON at frame 0 must not show whole for the one
+ * frame before the first tick.
+ */
+export function seedMaterialLanes(
+  engine: Pick<FrameEngine, "setMaterialDissolve">,
+  id: string,
+  lanes: Readonly<Record<string, VisibilityWindow[]>> | undefined,
+): void {
+  if (!lanes) return
+  const values: Record<string, number> = {}
+  for (const [name, windows] of Object.entries(lanes)) {
+    if (!windows.length) continue
+    const state = visibilityAt(windows, 0)
+    values[name] = state.visible ? state.dissolve : 0
+  }
+  if (Object.keys(values).length) engine.setMaterialDissolve(id, values)
 }
 
 /** As much of the engine as a lane's own bookkeeping needs. */

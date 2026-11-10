@@ -132,6 +132,9 @@ export type SceneModel = {
   /** The stretches this model is on stage for. Absent means throughout, which
    *  is the answer every scene written before this gave. See lib/timeline/visibility. */
   visibility?: VisibilityWindow[]
+  /** Its materials' own stretches, by material name: the stockings until the
+   *  chorus, a jacket from the bridge. A material not listed is worn throughout. */
+  materialVisibility?: Record<string, VisibilityWindow[]>
   /** Left out of the sun's shadow. Absent = casts, as its PMX materials say. */
   castShadow?: false
   /** Left out of the cast fill (settings.fill). Absent = lit by it. */
@@ -489,6 +492,8 @@ export type SceneModelDoc = {
   morphs?: Record<string, number>
   /** The stretches this model is on stage for. Absent = on stage throughout. */
   visibility?: VisibilityWindow[]
+  /** Its materials' own stretches, by material name. Absent = all worn throughout. */
+  materialVisibility?: Record<string, VisibilityWindow[]>
   /** Left out of the sun's shadow. Absent = casts. */
   castShadow?: false
   /** Left out of the cast fill. Absent = lit by it. */
@@ -746,7 +751,7 @@ const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "fill" | "bloom" | "look" | "origin"
+    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "materialVisibility" | "castShadow" | "fill" | "bloom" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
@@ -765,6 +770,7 @@ function stageFieldsOf(
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),
     // An empty lane is the same as no lane: on stage throughout.
     ...visibilityFieldOf(m.visibility),
+    ...materialVisibilityFieldOf(m.materialVisibility),
     ...(m.castShadow === false ? { castShadow: false as const } : {}),
     ...(m.fill === false ? { fill: false as const } : {}),
     ...(m.bloom === false ? { bloom: false as const } : {}),
@@ -788,6 +794,19 @@ function stageFieldsOf(
 function visibilityFieldOf(windows: VisibilityWindow[] | undefined): { visibility?: VisibilityWindow[] } {
   const clean = (windows ?? []).filter((w) => w && Number.isFinite(w.start))
   return clean.length > 0 ? { visibility: clean } : {}
+}
+
+/** The materials' lanes, by the same rule: each cleaned, empty ones dropped,
+ *  and none at all written as nothing. */
+function materialVisibilityFieldOf(lanes: Record<string, VisibilityWindow[]> | undefined): {
+  materialVisibility?: Record<string, VisibilityWindow[]>
+} {
+  if (!lanes || typeof lanes !== "object") return {}
+  const kept = Object.entries(lanes).flatMap(([name, w]) => {
+    const clean = visibilityFieldOf(Array.isArray(w) ? w : undefined).visibility
+    return clean ? [[name, clean] as const] : []
+  })
+  return kept.length > 0 ? { materialVisibility: Object.fromEntries(kept) } : {}
 }
 
 export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {

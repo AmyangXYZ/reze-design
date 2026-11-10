@@ -13,6 +13,7 @@
 // width and one zoom floor whichever tab is showing.
 
 import { memo } from "react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BoneList } from "@/components/scene/bone-list"
@@ -38,6 +39,7 @@ export const TrackPicker = memo(function TrackPicker({
   models = null,
   selectedModel = null,
   onSelectModel,
+  onToggleModel,
 }: {
   kind: ClipEditKind
   /** The Visibility tab's rows: the cast, then the props, and which one is
@@ -45,6 +47,8 @@ export const TrackPicker = memo(function TrackPicker({
   models?: LaneRow[] | null
   selectedModel?: string | null
   onSelectModel?: (uid: string | null) => void
+  /** Open or close a model's materials under it. */
+  onToggleModel?: (uid: string) => void
   /** The Objects tab's subjects: every prop in the scene. */
   objects?: { id: string; label: string }[]
   objectId?: string | null
@@ -70,6 +74,7 @@ export const TrackPicker = memo(function TrackPicker({
         models={models}
         selected={selectedModel}
         onSelect={onSelectModel}
+        onToggle={onToggleModel}
         onLaneScroll={onLaneScroll}
       />
     )
@@ -203,11 +208,13 @@ function VisibilityTrackList({
   models,
   selected,
   onSelect,
+  onToggle,
   onLaneScroll,
 }: {
   models: LaneRow[] | null
   selected: string | null
   onSelect?: (uid: string | null) => void
+  onToggle?: (uid: string) => void
   onLaneScroll?: (top: number) => void
 }) {
   const t = useT()
@@ -222,14 +229,31 @@ function VisibilityTrackList({
           onScroll={(e) => onLaneScroll?.(e.currentTarget.scrollTop)}
         >
           {rows.map((m) => (
-            <TrackRow
-              key={m.uid ?? m.id}
-              label={m.name}
-              active={selected != null && selected === m.uid}
-              count={m.window?.length ?? 0}
-              onClick={() => onSelect?.(selected === m.uid ? null : (m.uid ?? null))}
-              className="h-6"
-            />
+            // A model's materials sit under it, as a rig's bones sit under
+            // their group: the model's row opens and shuts them, and each
+            // material is a lane of its own.
+            <div key={m.uid ?? m.id} className="flex h-6 items-center">
+              {m.toggle ? (
+                <Button
+                  type="button"
+                  variant="bare"
+                  aria-label={m.toggle === "open" ? t.lab.timeline.collapse : t.lab.timeline.expand}
+                  onClick={() => m.uid && onToggle?.(m.uid)}
+                  className="flex h-6 w-4 shrink-0 items-center justify-center pl-1 text-muted-foreground hover:text-foreground"
+                >
+                  {m.toggle === "open" ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                </Button>
+              ) : (
+                <span className={cn("shrink-0", m.depth ? "w-4" : "w-0")} />
+              )}
+              <TrackRow
+                label={m.name}
+                active={selected != null && selected === m.uid}
+                count={m.window?.length ?? 0}
+                onClick={() => onSelect?.(selected === m.uid ? null : (m.uid ?? null))}
+                className={cn("h-6 min-w-0 flex-1", m.toggle ? "pl-1" : m.depth ? "pl-1 text-muted-foreground" : "")}
+              />
+            </div>
           ))}
           <div style={{ height: TOOLBAR_H + RULER_H + DOPE_H + AUDIO_H + 1 }} />
         </div>

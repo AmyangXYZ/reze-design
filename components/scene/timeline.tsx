@@ -2455,6 +2455,9 @@ function TimelineCanvas({
       // copy/cut/paste and the keyframe-jump arrows — a canvas draws nothing
       // that is a native tab stop otherwise.
       tabIndex={0}
+      // A surface that takes keys, not a control: focus shows as nothing,
+      // where paper would otherwise wash the whole chart (globals.css).
+      data-focus-quiet=""
       style={{ width: "100%", height: "100%", display: "block", outline: "none" }}
       onMouseDown={(e) => {
         e.currentTarget.focus()
@@ -2758,6 +2761,18 @@ export function Timeline({
   // declared after them so it reflects what THIS render saw, not what just
   // changed — see the three effects for how that ordering is load-bearing.
   const trackWidthKnownRef = useRef(false)
+
+  // A pan the lanes ask for — a row picked in the list whose clips are all off
+  // screen. Its own state rather than the setter handed down: setScrollX is
+  // inside the memoised zoom, and a setter given to a child is one the
+  // compiler can no longer prove untouched.
+  const [revealX, setRevealX] = useState<number | null>(null)
+  useEffect(() => {
+    if (revealX === null) return
+    const maxScroll = Math.max(0, LABEL_W + fc * pxRef.current - trackWidth)
+    setScrollX(Math.min(maxScroll, Math.max(0, revealX)))
+    setRevealX(null)
+  }, [revealX, fc, trackWidth])
 
   // Clamp scroll when viewport or clip size changes (NOT on pxPerFrame — zoom handles its own scroll)
   useEffect(() => {
@@ -3496,6 +3511,7 @@ export function Timeline({
                 setPlaying(false)
                 setCurrentFrame(f)
               }}
+              onScrollX={setRevealX}
               top={RULER_H}
               bottom={DOPE_H + AUDIO_H + 1}
               labelWidth={LABEL_W}
@@ -3514,6 +3530,7 @@ export function Timeline({
                 setPlaying(false)
                 setCurrentFrame(f)
               }}
+              onScrollX={setRevealX}
               top={RULER_H}
               bottom={DOPE_H + AUDIO_H + 1}
               labelWidth={LABEL_W}

@@ -43,14 +43,18 @@ import { cn } from "@/lib/utils"
 
 /** One row, the Effects list's `h-6`, so the list and the lanes scroll as one. */
 export const LANE_H = 24
-/** How close to an end grabs the end rather than the block, in pixels. */
-const EDGE = 6
+/** How close to an end grabs the end rather than the block, in pixels. Wide
+ *  enough to land on without aiming, and above the ramp knobs: an end is the
+ *  commoner grab, so where the two meet the end wins. */
+const EDGE = 10
 /** A ramp knob's hit box, in pixels. */
 const KNOB = 10
 /** Snapping reach in pixels, so it pulls the same at every zoom. Generous
  *  enough that butting one clip against the next is the easy outcome rather
  *  than a thing you fight the pointer for. */
 const SNAP_PX = 10
+/** How far in from the left edge a revealed lane's first clip lands, in pixels. */
+const REVEAL_PAD = 40
 /** Travel before a press becomes a drag, so a click selects without an edit. */
 const DRAG_PX = 3
 const HISTORY_LIMIT = 64
@@ -70,7 +74,16 @@ const UNDO_SCOPE = "effect-lanes"
  *  string, so a row handed back still narrows to what the document holds. */
 export type LaneWindow = EffectWindow & { curve?: FadeCurve }
 
-export type LaneRow = { id: string; uid?: string; name: string; window?: LaneWindow[] }
+export type LaneRow = {
+  id: string
+  uid?: string
+  name: string
+  window?: LaneWindow[]
+  /** Nesting in the row list: 1 for a material under its model. */
+  depth?: number
+  /** A row with rows under it, and whether they are showing. */
+  toggle?: "open" | "closed"
+}
 
 /** What a lane-bearing tab hands the timeline. */
 export type EffectLanesData<T extends LaneRow = LaneRow> = {
@@ -78,6 +91,8 @@ export type EffectLanesData<T extends LaneRow = LaneRow> = {
   onEffects: (next: T[]) => void
   selectedEffect: string | null
   onSelectEffect: (uid: string | null) => void
+  /** Show or hide the rows under a row that has them. */
+  onToggle?: (uid: string) => void
   /** The row list's scroll, which the lanes follow. */
   scrollTop: number
 }
@@ -215,6 +230,7 @@ export function EffectLanes<T extends LaneRow>({
   frameCount,
   playhead,
   onSeek,
+  onScrollX,
   apiRef,
   top,
   bottom,
@@ -229,6 +245,8 @@ export function EffectLanes<T extends LaneRow>({
   playhead: number
   /** Put the playhead on a frame, as a click on a keyframe does. */
   onSeek: (frame: number) => void
+  /** Pan the timeline to a horizontal scroll, in pixels. */
+  onScrollX?: (x: number) => void
   /** Filled with what the right-click menu offers; see EffectLanesMenu. */
   apiRef?: RefObject<EffectLanesApi | null>
   /** The curve band this draws over, as insets from the canvas box. */
@@ -687,6 +705,30 @@ export function EffectLanes<T extends LaneRow>({
     }
   }, [visible])
 
+  // A row picked in the list is the lane to work on: keys go to the band, and
+  // when none of its clips is on screen the timeline pans to its first, a
+  // little in from the left edge. A pick made by pressing a clip changes
+  // nothing — that clip is already in view.
+  const lastPicked = useRef<string | null>(selectedEffect)
+  useEffect(() => {
+    if (!visible || selectedEffect === lastPicked.current) {
+      lastPicked.current = selectedEffect
+      return
+    }
+    lastPicked.current = selectedEffect
+    if (!selectedEffect) return
+    const row = effectsRef.current.find((r) => (r.uid ?? r.id) === selectedEffect)
+    const box = containerRef.current
+    if (!row || !box) return
+    box.focus({ preventScroll: true })
+    const spans = blocksOf(row).map((w) => spanOf(w, frameCount))
+    const from = scrollX / pxPerFrame
+    const to = (scrollX + box.clientWidth) / pxPerFrame
+    if (spans.some((sp) => sp.end > from && sp.start < to)) return
+    const first = Math.min(...spans.map((sp) => sp.start))
+    onScrollX?.(Math.max(0, first * pxPerFrame - REVEAL_PAD))
+  }, [selectedEffect, visible, frameCount, scrollX, pxPerFrame, onScrollX])
+
   if (!visible) return null
 
   const rows = [...effects].reverse()
@@ -697,6 +739,9 @@ export function EffectLanes<T extends LaneRow>({
     <div
       ref={containerRef}
       tabIndex={-1}
+      // Focused to take keys, never to look focused: on paper a focused
+      // element is washed in ink, and this one covers the whole band.
+      data-focus-quiet=""
       className="pointer-events-none absolute overflow-hidden outline-none"
       style={{ top, bottom, left: labelWidth, right: 0 }}
     >
@@ -706,7 +751,13 @@ export function EffectLanes<T extends LaneRow>({
           return (
             <div
               key={uid}
-              className={cn("relative border-b border-line", selectedEffect === effect.uid && "bg-blue-400/[0.04]")}
+              // The picked row as the accent's fill, edged above and below so
+              // it reads on light paper and dark alike: at a few percent it was
+              // the same colour as its neighbours.
+              className={cn(
+                "relative border-b border-line",
+                selectedEffect === effect.uid && "bg-blue-400/[0.12] shadow-[inset_0_1px_0_var(--color-blue-400),inset_0_-1px_0_var(--color-blue-400)]",
+              )}
               style={{ height: LANE_H }}
             >
               {blocksOf(effect).map((w, i) => {
@@ -760,21 +811,23 @@ export function EffectLanes<T extends LaneRow>({
                     </span>
                     <span
                       onPointerDown={down(uid, i, "in")}
-                      className="absolute inset-y-0 left-0 z-10 cursor-ew-resize"
+                      className="absolute inset-y-0 left-0 z-30 cursor-ew-resize"
                       style={{ width: EDGE }}
                     />
                     <span
                       onPointerDown={down(uid, i, "out")}
-                      className="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
+                      className="absolute inset-y-0 right-0 z-30 cursor-ew-resize"
                       style={{ width: EDGE }}
                     />
                     {/* The ramps' knobs, at the top corners: each drags its own
                         end's ramp in from the edge, and back to zero takes it off. */}
-                    {width >= KNOB * 3 &&
+                    {width >= 2 * (EDGE + KNOB) &&
                       (["fadeIn", "fadeOut"] as const).map((grab) => {
                         const frames = grab === "fadeIn" ? fade.in : fade.out
                         const px = frames * pxPerFrame
-                        const at = Math.max(0, Math.min(width - KNOB, px - KNOB / 2))
+                        // Never inside the end's own zone: a ramp of zero sits
+                        // just past it, so the end and the knob are two targets.
+                        const at = Math.max(EDGE, Math.min(width - KNOB - EDGE, px - KNOB / 2))
                         const side = grab === "fadeIn" ? "left" : "right"
                         // While it drags, its length reads out beside it in
                         // seconds and frames, inward of the knob.

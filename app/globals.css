@@ -830,7 +830,7 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   outline: none !important;
   box-shadow: none !important;
 }
-[data-paper] :focus-visible:not(input, textarea) {
+[data-paper] :focus-visible:not(input, textarea, [data-focus-quiet]) {
   background-color: oklch(from var(--foreground) l c h / 0.07);
 }
 /* A tag on paper is a patch of its ink, light on dark and dark on light. */

@@ -48,7 +48,7 @@ eq(tl.effects, [
   { influence: 1, window: null, models: null },
   { influence: 0.5, window: [{ start: 30, end: 60 }], models: ["miku"] },
 ], "effects default to fully on, throughout, on everyone")
-eq(timelineOf({}), { visibility: {}, effects: [], parents: {} }, "an empty source is an empty timeline")
+eq(timelineOf({}), { visibility: {}, parts: {}, effects: [], parents: {} }, "an empty source is an empty timeline")
 
 // ── The declarative push ──────────────────────────────────────────────────
 const writes: string[] = []
@@ -78,9 +78,11 @@ type Fake = { visible: boolean; setVisible(on: boolean): void }
 const fake = (visible = true): Fake => ({ visible, setVisible(on) { this.visible = on } })
 const models: Record<string, Fake> = { miku: fake(), "miku-costume": fake(), sword: fake() }
 const dissolve: Record<string, number> = {}
+const partDissolve: Record<string, Readonly<Record<string, number>> | null> = {}
 const frameEngine = {
   getModel: (id: string) => models[id],
   setModelDissolve: (id: string, v: number) => ((dissolve[id] = v), true),
+  setMaterialDissolve: (id: string, v: Readonly<Record<string, number>> | null) => ((partDissolve[id] = v), true),
   setModelPhysicsWhileHidden: () => true,
 }
 const at = (t: SceneTimeline, f: number) => {
@@ -96,6 +98,30 @@ eq("miku" in dissolve, false, "an unscheduled model is never touched")
 // it, so nothing else would.
 laneChanged(frameEngine, "miku-costume", [])
 eq([models["miku-costume"].visible, dissolve["miku-costume"]], [true, 1], "an emptied lane shows the model, whole")
+
+// ── Parts: a material's own lane ──────────────────────────────────────────
+// Stockings worn until frame 100, burning off over the last 10; the garter
+// until 50; the dress has no lane and is never named.
+const parted = timelineOf({
+  models: [
+    {
+      id: "miku",
+      materialVisibility: {
+        stockings: [{ start: 0, end: 100, blendOut: 10, curve: "linear" }],
+        garter: [{ start: 0, end: 50 }],
+        dress: [],
+      },
+    },
+  ],
+})
+eq(Object.keys(parted.parts), ["miku"], "only a model with a laned material has parts")
+applyTimelineFrame(frameEngine, parted, 40)
+eq(partDissolve.miku, { stockings: 1, garter: 1 }, "inside every stretch: whole")
+applyTimelineFrame(frameEngine, parted, 95)
+eq([partDissolve.miku?.stockings, partDissolve.miku?.garter], [0.5, 0], "mid-ramp the stockings are half there; the garter's lane has ended")
+applyTimelineFrame(frameEngine, parted, 120)
+eq(partDissolve.miku?.stockings, 0, "past the stretch: gone")
+eq("dress" in (partDissolve.miku ?? {}), false, "a material with an empty lane is never named")
 
 if (failures) {
   console.error(`${failures} failure(s)`)

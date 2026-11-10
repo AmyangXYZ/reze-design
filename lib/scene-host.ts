@@ -23,7 +23,7 @@ import { clearMaterialMaps, loadMaterialMaps, engineGroups } from "@/lib/materia
 import { loadParticleTextures } from "@/lib/effect-textures"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
-import { castRotationToEngine, pushTimeline, seedLane, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
+import { castRotationToEngine, pushTimeline, seedLane, seedMaterialLanes, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
 import { bundleReader, dress, loadNativeLook, loadNativeStage } from "@/lib/unity-native"
 import { bundleZip } from "@/lib/bundle-cipher"
 
@@ -141,12 +141,14 @@ export function infoFor(
   hidden?: string[],
   placement?: { at: [number, number, number]; scale?: number; rot?: [number, number, number]; guess?: boolean },
   visibility?: VisibilityWindow[],
+  materialVisibility?: Record<string, VisibilityWindow[]>,
 ): EngineModelInfo {
   return {
     id,
     instance: ++loadedInstances,
     file,
     ...(visibility?.length ? { visibility } : {}),
+    ...(materialVisibility && Object.keys(materialVisibility).length ? { materialVisibility } : {}),
     ...(placement
       ? {
           position: placement.at,
@@ -659,7 +661,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     }
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
+    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility, entry.materialVisibility)
     if (entry.castShadow === false) {
       engine.setModelCastShadow(entry.model.id, false)
       info.castShadow = false
@@ -687,6 +689,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // here because every reveal path — with a motion, without one, and the one
     // taken when a motion fails to load — comes through this block first.
     seedLane(engine, entry.model.id, entry.visibility)
+    seedMaterialLanes(engine, entry.model.id, entry.materialVisibility)
     // Reveal this one NOW. Models with an animation stay hidden a moment longer:
     // their clip loader reveals them after show(), so the first visible frame
     // wears the motion's first pose instead of flashing bind pose. (If the clip
@@ -955,6 +958,8 @@ export type EngineModelInfo = {
    * by the same id goes stale on a document swap.
    */
   visibility?: VisibilityWindow[]
+  /** Its materials' own lanes, by material name — see SceneModel. */
+  materialVisibility?: Record<string, VisibilityWindow[]>
 }
 
 /** A stage's placement — the document's own type, not a parallel one. The value

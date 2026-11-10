@@ -1053,6 +1053,31 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, visibility } : m)))
   }, [])
 
+  /**
+   * One material's lane: the stretches it is worn for. State only — the frame
+   * loop applies it through applyTimelineFrame. A model whose last material
+   * lane goes is whole again at once rather than on the next frame.
+   */
+  const setMaterialVisibility = useCallback((id: string, material: string, windows: VisibilityWindow[]) => {
+    const visibility = normalizeVisibility(windows)
+    setModels((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        const lanes = { ...m.materialVisibility }
+        if (visibility.length) lanes[material] = visibility
+        else delete lanes[material]
+        const next: EngineModelInfo = { ...m, materialVisibility: lanes }
+        if (!Object.keys(lanes).length) delete next.materialVisibility
+        return next
+      }),
+    )
+    if (!visibility.length) {
+      const m = modelsRef.current.find((x) => x.id === id)
+      const left = Object.keys(m?.materialVisibility ?? {}).filter((k) => k !== material)
+      if (left.length === 0) engineRef.current?.setMaterialDissolve(id, null)
+    }
+  }, [])
+
   /** Flip one of a stage's switches. */
   const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
     engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
@@ -1702,6 +1727,7 @@ export function useEngine(
     setCastFill,
     setCastBloom,
     setCastVisibility,
+    setMaterialVisibility,
     planes,
     addPlaneFromFile,
     tickPlanes,

@@ -419,6 +419,10 @@ const CHECKERBOARD: React.CSSProperties = {
 
 /** The flat backdrop takes stills and moving pictures; the 360 dome takes a
  *  still equirect, including Radiance. */
+/** A material's row id on the Visibility tab: model and material, which no
+ *  model id can collide with. */
+const partRowId = (modelId: string, material: string) => `${modelId}\u0000${material}`
+
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
 const DOME_ACCEPT = "image/*,.tga"
 /** Radiance only. An .hdr is a measurement of light, and the slot that takes it
@@ -2468,6 +2472,7 @@ function Lab() {
     setPropParentKeys,
     setPropStart,
     setCastVisibility,
+    setMaterialVisibility,
     setCastPosition,
     setCastRotation,
     setCastScale,
@@ -4449,34 +4454,66 @@ function Lab() {
   })
   /** Which model's lane is picked, for the row highlight. */
   const [selectedVisibility, setSelectedVisibility] = useState<string | null>(null)
+  /** The models whose materials are showing under them on the Visibility tab. */
+  const [openLanes, setOpenLanes] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleLane = (id: string) =>
+    setOpenLanes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   /** The cast as an effect can be aimed at it: the id the document stores and the
    *  name the panel shows. Memoised on the cast's contents rather than rebuilt per
    *  render — it is a prop on a popover that is open while someone reads it. */
   const castTargets = useMemo(() => cast.map((m) => ({ id: m.id, name: displayName(m.file) })), [cast])
   /**
-   * Who can be scheduled: the cast and the props — a prop on cue is most of
-   * what a ported game prop is. Stages are not listed; a set is the place the
-   * scene happens in, not something that enters it.
+   * Who can be scheduled: the cast, the props — a prop on cue is most of what a
+   * ported game prop is — and the stages and their parts, a GLB one included
+   * (it loads as the PMX it was converted to): a set can change between
+   * verses, and its own pieces (a backdrop, a lit sign, a floor) can come and
+   * go like her stockings.
    *
-   * The band draws the LAST row on top, as it does for effects, so the props go
-   * FIRST in the list: read from the top, the cast leads, in the order it
-   * always showed in, and the props follow beneath it.
+   * The band draws the LAST row on top, as it does for effects, so the list
+   * runs stages, props, cast: read from the top, the cast leads, in the order
+   * it always showed in, then the props, then the stages.
    */
   const laneModels = useMemo(() => {
     const propIds = new Set(props.map((p) => p.id))
-    return [...models.filter((m) => propIds.has(m.id)), ...cast]
-  }, [cast, models, props])
+    return [
+      ...models.filter((m) => stageIds.has(m.id) && !propIds.has(m.id)),
+      ...models.filter((m) => propIds.has(m.id)),
+      ...cast,
+    ]
+  }, [cast, models, props, stageIds])
   /** The lanes as rows. A model with no windows draws one clip spanning the
    *  scene, which is exactly what "on stage throughout" looks like. */
   const visibilityRows = useMemo(
     () =>
-      laneModels.map((m) => ({
-        id: m.id,
-        uid: m.id,
-        name: displayName(m.file),
-        ...(m.visibility?.length ? { window: m.visibility } : {}),
-      })),
-    [laneModels],
+      laneModels.flatMap((m) => {
+        const names = [...new Set(m.materials.map((x) => x.name))]
+        const open = openLanes.has(m.id)
+        const row = {
+          id: m.id,
+          uid: m.id,
+          name: displayName(m.file),
+          ...(m.visibility?.length ? { window: m.visibility } : {}),
+          ...(names.length ? { toggle: open ? ("open" as const) : ("closed" as const) } : {}),
+        }
+        if (!open) return [row]
+        // Every material, in the model's own order, under it — each a lane of
+        // its own: the stockings until the chorus, a jacket from the bridge.
+        // The band draws the LAST row on top, so they go before their model.
+        const parts = names.map((name) => ({
+          id: partRowId(m.id, name),
+          uid: partRowId(m.id, name),
+          name,
+          depth: 1,
+          ...(m.materialVisibility?.[name]?.length ? { window: m.materialVisibility[name] } : {}),
+        }))
+        return [...parts.reverse(), row]
+      }),
+    [laneModels, openLanes],
   )
   /**
    * The lanes, written back.
@@ -4493,6 +4530,13 @@ function Lab() {
       const want = byId.get(m.id) ?? []
       const have = m.visibility ?? []
       if (JSON.stringify(want) !== JSON.stringify(have)) setCastVisibility(m.id, want)
+      if (!openLanes.has(m.id)) continue
+      for (const x of m.materials) {
+        const row = partRowId(m.id, x.name)
+        if (!byId.has(row) && !(m.materialVisibility?.[x.name]?.length)) continue
+        const wantPart = byId.get(row) ?? []
+        if (JSON.stringify(wantPart) !== JSON.stringify(m.materialVisibility?.[x.name] ?? [])) setMaterialVisibility(m.id, x.name, wantPart)
+      }
     }
   }
   /** The Parent row's band: each hold, named by what the prop rides. */
@@ -11487,6 +11531,7 @@ function Lab() {
                               onEffects: onVisibilityRows,
                               selectedEffect: selectedVisibility,
                               onSelectEffect: setSelectedVisibility,
+                              onToggle: toggleLane,
                             }
                           : null
                       }

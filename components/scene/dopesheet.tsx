@@ -477,6 +477,7 @@ export function Dopesheet({
               models={visibilityLanes?.effects ?? null}
               selectedModel={visibilityLanes?.selectedEffect ?? null}
               onSelectModel={visibilityLanes?.onSelectEffect}
+              onToggleModel={visibilityLanes?.onToggle}
             />
             <div className="min-w-0 flex-1">
               <Timeline

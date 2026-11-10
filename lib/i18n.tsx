@@ -773,6 +773,8 @@ const en = {
      * called 位移X beside a curve labelled X is two names for one thing.
      */
     timeline: {
+      expand: "Show its materials",
+      collapse: "Hide its materials",
       rotation: "Rotation",
       translation: "Translation",
       target: "Target",
@@ -1914,6 +1916,8 @@ const zh: Dictionary = {
     attach: "添加…",
     gallery: "画廊",
     timeline: {
+      expand: "展开材质",
+      collapse: "收起材质",
       rotation: "旋转",
       translation: "位移",
       target: "目标点",
