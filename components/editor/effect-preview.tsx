@@ -774,6 +774,16 @@ function paramsBlock(wgsl: string): string {
       if (!Number.isFinite(v)) continue
       fields.push(`  ${name}: f32,`)
       values.push(v.toFixed(6))
+    } else if (kind === "bool") {
+      // One f32 like a slider: 1 on, 0 off.
+      const on = /^(true|1|on)$/i.test(args[0] ?? "")
+      fields.push(`  ${name}: f32,`)
+      values.push(on ? "1.0" : "0.0")
+    } else if (kind === "enum") {
+      // The starred choice's index, else the first's.
+      const star = args.findIndex((a) => a.startsWith("*"))
+      fields.push(`  ${name}: f32,`)
+      values.push(`${Math.max(0, star)}.0`)
     }
   }
   if (fields.length === 0) return ""

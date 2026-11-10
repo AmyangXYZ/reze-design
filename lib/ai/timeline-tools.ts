@@ -106,6 +106,15 @@ function paramsIn(wgsl: string, args: unknown): { params: Record<string, EffectP
       const v = num(value)
       if (v === undefined) errors.push(`${name} must be a number`)
       else params[name] = clamp(v, d.min ?? -Infinity, d.max ?? Infinity)
+    } else if (d.kind === "bool") {
+      if (typeof value === "boolean") params[name] = value ? 1 : 0
+      else if (value === 0 || value === 1) params[name] = value
+      else errors.push(`${name} must be true or false`)
+    } else if (d.kind === "enum") {
+      const ids = (d.options ?? []).map((o) => o.id)
+      const at = typeof value === "string" ? ids.indexOf(value) : typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ids.length ? value : -1
+      if (at < 0) errors.push(`${name} must be one of ${ids.join(", ")}`)
+      else params[name] = at
     } else if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
       const n = parseInt(value.slice(1), 16)
       params[name] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }
@@ -284,7 +293,14 @@ export const TIMELINE_TOOLS: SceneTool[] = [
             about: names ? e.description : firstLine(e.description),
             ...(d.duration > 0 ? { seconds: Math.round(d.duration * 100) / 100 } : {}),
             dials: names
-              ? d.params.map((p) => ({ name: p.name, kind: p.kind, default: p.value, ...(p.min !== undefined ? { min: p.min, max: p.max } : {}) }))
+              ? d.params.map((p) => ({
+                  name: p.name,
+                  kind: p.kind,
+                  default: p.kind === "enum" ? p.options?.[Number(p.value)]?.id : p.kind === "bool" ? p.value === 1 : p.value,
+                  ...(p.min !== undefined ? { min: p.min, max: p.max } : {}),
+                  ...(p.options ? { options: p.options.map((o) => o.id) } : {}),
+                  ...(p.label ? { label: p.label } : {}),
+                }))
               : d.params.map((p) => p.name),
           }
         }),

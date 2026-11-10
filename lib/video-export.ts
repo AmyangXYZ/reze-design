@@ -175,6 +175,23 @@ const yieldToUI = (): Promise<void> => {
   return s?.yield ? s.yield() : new Promise<void>((r) => setTimeout(r, 0))
 }
 
+/** Resumes after the page has painted: a frame, then a task past it. For a
+ *  step whose label has to reach the screen — yieldToUI resumes ahead of
+ *  React's render, so a new phase posted before it never shows. Capped at
+ *  50ms, because a tab in the background paints nothing and an export left
+ *  running there must not wait for it. */
+const afterPaint = (): Promise<void> =>
+  new Promise<void>((r) => {
+    let done = false
+    const go = () => {
+      if (done) return
+      done = true
+      setTimeout(r, 0)
+    }
+    requestAnimationFrame(go)
+    setTimeout(go, 50)
+  })
+
 /**
  * The encoder's target, in bits per second.
  *
@@ -1025,9 +1042,11 @@ export async function exportVideo(opts: {
     progress({ phase: "scene", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
     const gpuWait = makeGpuWait()
     for (let i = 0; i < WARMUP_FRAMES; i++) {
+      // A paint, not yieldToUI: the label above has to reach the screen, and
+      // thirty frames of a heavy look at 4K take long enough to be read.
+      if (i % YIELD_EVERY === 0) await afterPaint()
       engine.renderFrame(1 / fps)
       gpuWait(canvas)
-      if (i % YIELD_EVERY === 0) await yieldToUI()
     }
     for (const m of cast) m.play()
 

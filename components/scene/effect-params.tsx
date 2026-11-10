@@ -12,6 +12,13 @@
 //   #param float FALL 24 0 60
 //   #param color TINT #d0e6ff
 //   #param vec3 WIND 0.1 0 0.05
+//   #param bool RING true — angel ring | 天使环
+//   #param enum PATTERN rain|数字雨 dots|点阵 grid|网格
+//
+// A switch and a list are one number in the shader, like a slider; they get
+// their own control because a slider from 0 to 3 that means "rain, dots,
+// circuit, grid" is a dial nobody can read. A note written `English | 中文`
+// is the dial's label in each language; otherwise the label is its name.
 //
 // The engine reads those lines to build the uniform the shader samples, and
 // hands the declarations back from the install. This renders exactly what came
@@ -32,7 +39,9 @@ import { Check, RotateCcw } from "lucide-react"
 import type { EffectParamDecl, EffectParamValue } from "reze-engine"
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
 import { Button } from "@/components/ui/button"
-import { useT } from "@/lib/i18n"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 /** `#param color` writes `#rrggbb`; the engine wants the linear-ish 0..1 triple
@@ -82,7 +91,9 @@ export function EffectParams({
    *  gives back — an effect on nobody is a dark effect with no sign of why. */
   onModels?: (next: string[] | undefined) => void
 }) {
-  const t = useT()
+  const { t, locale } = useI18n()
+  const zh = locale === "zh"
+  const labelOf = (d: EffectParamDecl) => (zh ? (d.labelZh ?? d.label) : d.label) ?? d.name
   // Whether this scene has moved anything. Drives the button's disabled state,
   // which is also how the panel says "these are the author's numbers".
   const touched = values !== undefined && Object.keys(values).length > 0
@@ -168,12 +179,45 @@ export function EffectParams({
         </div>
       )}
       {rows.map(({ d, set }) => {
+        if (d.kind === "bool") {
+          const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
+          return (
+            <div key={d.name} className="mt-1.5 flex items-center gap-1.5 first:mt-0">
+              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+              <Switch size="sm" className="ml-auto" checked={value >= 0.5} onCheckedChange={(on) => onChange(d.name, on ? 1 : 0)} />
+            </div>
+          )
+        }
+
+        if (d.kind === "enum") {
+          const options = d.options ?? []
+          const value = typeof set === "number" ? set : typeof d.value === "number" ? d.value : 0
+          const at = Math.min(options.length - 1, Math.max(0, Math.round(value)))
+          return (
+            <div key={d.name} className="mt-1.5 flex items-center gap-1.5 first:mt-0">
+              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+              <Select value={String(at)} onValueChange={(v) => onChange(d.name, Number(v))}>
+                <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((o, i) => (
+                    <SelectItem key={o.id} value={String(i)}>
+                      {zh ? (o.labelZh ?? o.id) : o.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )
+        }
+
         if (d.kind === "color") {
           const fallback = typeof d.value === "string" ? d.value : "#ffffff"
           return (
             <ColorRow
               key={d.name}
-              label={d.name}
+              label={labelOf(d)}
               value={set === undefined ? fallback : vecToHex(set)}
               onChange={(hex) => onChange(d.name, hexToVec(hex))}
               dense
@@ -192,7 +236,7 @@ export function EffectParams({
           return (["x", "y", "z"] as const).map((axis, i) => (
             <SliderRow
               key={`${d.name}.${axis}`}
-              label={`${d.name}.${axis}`}
+              label={`${labelOf(d)}.${axis}`}
               value={v[axis]}
               min={-impliedMax(base[i])}
               max={impliedMax(base[i])}
@@ -211,7 +255,7 @@ export function EffectParams({
         return (
           <SliderRow
             key={d.name}
-            label={d.name}
+            label={labelOf(d)}
             value={typeof set === "number" ? set : base}
             min={min}
             max={max}
