@@ -359,7 +359,7 @@ export function EffectLanes<T extends LaneRow>({
     setSelected(new Set())
     apply(reapply(effectsRef.current, step.after, step.before))
   }, [apply])
-  useUndoScope(UNDO_SCOPE, { undo, redo }, { enabled: visible, claim: true })
+  const undoScope = useUndoScope(UNDO_SCOPE, { undo, redo }, { enabled: visible, claim: true })
 
   // ── Gestures ────────────────────────────────────────────────────────────
   const targetsExcept = (except: string): number[] => {
@@ -764,6 +764,9 @@ export function EffectLanes<T extends LaneRow>({
     // pressed.
     <div
       ref={containerRef}
+      // The lanes' own undo scope on the element that takes focus: ⌘Z goes to
+      // the focused scope first, and untagged this resolved to the clip's.
+      {...undoScope}
       tabIndex={-1}
       // Focused to take keys, never to look focused: on paper a focused
       // element is washed in ink, and this one covers the whole band.

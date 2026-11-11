@@ -242,6 +242,8 @@ export type SceneEffect = {
   window?: EffectWindow[]
   /** Its keyed dials — see AppliedEffect.keys. Absent = none keyed. */
   keys?: Record<string, DialKey[]>
+  /** The groups its see-through window cuts — see AppliedEffect.xrayCut. */
+  xrayCut?: string[]
   /** Which models it is on, by `ModelRef.id` — the key `groups` and `hidden` use.
    *  Absent = all of them, which is what every scene written before an effect
    *  could be aimed says and what an unaimed one still writes. */
@@ -693,6 +695,7 @@ function appliedEffect(
     // lives on the source.
     ...(applied.params === undefined ? {} : { params: applied.params }),
     ...(applied.keys === undefined ? {} : { keys: applied.keys }),
+    ...(Array.isArray(applied.xrayCut) ? { xrayCut: applied.xrayCut.filter((x): x is string => typeof x === "string") } : {}),
     // And so does WHO it is on: two scenes can pin one effect and aim it at
     // different dancers, which is the same argument as the dials.
     ...(applied.models === undefined ? {} : { models: applied.models }),
@@ -1462,6 +1465,7 @@ export function serializeSceneDoc(
           ...(e.params && Object.keys(e.params).length ? { params: e.params } : {}),
           // Keyed dials, the same way: absent when nothing is keyed.
           ...(e.keys && Object.keys(e.keys).length ? { keys: e.keys } : {}),
+          ...(e.xrayCut ? { xrayCut: e.xrayCut } : {}),
           // Omitted when it is on everybody, so an effect nobody has aimed
           // writes exactly what it wrote before aiming existed.
           ...(e.models?.length ? { models: e.models } : {}),

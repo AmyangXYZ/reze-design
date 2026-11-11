@@ -609,6 +609,8 @@ interface TimelineCanvasProps {
   onMarqueeSelect: (frames: number[], additive: boolean) => void
   /** Curve-area marquee result: the handles inside the box. */
   onMarqueeSelectCurve: (entries: SelectedKeyframe[], additive: boolean) => void
+  /** A curve selection set outright — select-all — leaving the playhead be. */
+  onSelectCurveKeys: (entries: SelectedKeyframe[]) => void
   /** Batch curve drag: every selected handle, moved by the same time and value
    *  deltas from its captured originals. */
   onMoveCurveSelection: (items: CurveDragItem[], df: number, dv: number, grabFrame: number) => void
@@ -654,6 +656,7 @@ function TimelineCanvas({
   onMoveDopeColumns,
   onMarqueeSelect,
   onMarqueeSelectCurve,
+  onSelectCurveKeys,
   onMoveCurveSelection,
   onMoveCurveKeyframe,
   onMoveMorphKeyframe,
@@ -1783,6 +1786,42 @@ function TimelineCanvas({
     [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, tab, getDopeFrames],
   )
 
+  // Same for a set of curve-handle selection entries: resolve each to its
+  // live keyframe and a get/set pair on its own channel.
+  const captureCurveItems = useCallback(
+    (selCurve: SelectedKeyframe[]): CurveDragItem[] => {
+        const items: CurveDragItem[] = []
+        for (const sEntry of selCurve) {
+          if (sEntry.camera && sEntry.channel) {
+            const ch = cameraChannelsForTab(tab).find((c) => c.key === sEntry.channel)
+            const kf = cameraTrack.find((k) => k.frame === sEntry.frame)
+            if (!ch || !kf) continue
+            items.push({
+              selEntry: sEntry, kind: "camera", origFrame: kf.frame, origValue: ch.get(kf),
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
+            })
+          } else if (sEntry.morph) {
+            const kf = clip.morphTracks.get(sEntry.morph)?.find((k) => k.frame === sEntry.frame)
+            if (!kf) continue
+            items.push({
+              selEntry: sEntry, kind: "morph", name: sEntry.morph, origFrame: kf.frame, origValue: kf.weight,
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => { kf.weight = Math.max(0, Math.min(1, v)) },
+            })
+          } else if (sEntry.bone && sEntry.channel) {
+            const ch = getChannelsForTab(tab).find((c) => c.key === sEntry.channel)
+            const kf = clip.boneTracks.get(sEntry.bone)?.find((k) => k.frame === sEntry.frame)
+            if (!ch || !kf) continue
+            items.push({
+              selEntry: sEntry, kind: "bone", name: sEntry.bone, origFrame: kf.frame, origValue: ch.get(kf),
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
+            })
+          }
+        }
+        return items
+    },
+    [clip, tab, cameraTrack],
+  )
+
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       // Left button only. Every gesture on this canvas — scrub, select, drag a
@@ -1821,38 +1860,6 @@ function TimelineCanvas({
         return { boneRefs, morphRefs, cameraRefs }
       }
 
-      // Same for a set of curve-handle selection entries: resolve each to its
-      // live keyframe and a get/set pair on its own channel.
-      const captureCurveItems = (selCurve: SelectedKeyframe[]): CurveDragItem[] => {
-        const items: CurveDragItem[] = []
-        for (const sEntry of selCurve) {
-          if (sEntry.camera && sEntry.channel) {
-            const ch = cameraChannelsForTab(tab).find((c) => c.key === sEntry.channel)
-            const kf = cameraTrack.find((k) => k.frame === sEntry.frame)
-            if (!ch || !kf) continue
-            items.push({
-              selEntry: sEntry, kind: "camera", origFrame: kf.frame, origValue: ch.get(kf),
-              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
-            })
-          } else if (sEntry.morph) {
-            const kf = clip.morphTracks.get(sEntry.morph)?.find((k) => k.frame === sEntry.frame)
-            if (!kf) continue
-            items.push({
-              selEntry: sEntry, kind: "morph", name: sEntry.morph, origFrame: kf.frame, origValue: kf.weight,
-              setFrame: (f) => { kf.frame = f }, setValue: (v) => { kf.weight = Math.max(0, Math.min(1, v)) },
-            })
-          } else if (sEntry.bone && sEntry.channel) {
-            const ch = getChannelsForTab(tab).find((c) => c.key === sEntry.channel)
-            const kf = clip.boneTracks.get(sEntry.bone)?.find((k) => k.frame === sEntry.frame)
-            if (!ch || !kf) continue
-            items.push({
-              selEntry: sEntry, kind: "bone", name: sEntry.bone, origFrame: kf.frame, origValue: ch.get(kf),
-              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
-            })
-          }
-        }
-        return items
-      }
 
       // A grab on a curve handle that is already part of a multi-handle
       // selection drags the whole selection — in time AND in value. The usual
@@ -2080,6 +2087,7 @@ function TimelineCanvas({
       pxPerFrame,
       scrollX,
       yZoom,
+      captureCurveItems,
     ],
   )
 
@@ -2421,6 +2429,22 @@ function TimelineCanvas({
     }
   }, [onEndKeyframeDrag, onSelectKeyframe, onClearSelection, onSetCurrentFrame, tab, getDopeFrames])
 
+  /** Every key on the curves showing: the picked bone's channels on this tab,
+   *  the picked morph, or the camera's channels on this tab. */
+  const allCurveEntries = useCallback((): SelectedKeyframe[] => {
+    if (isCameraTab(tab)) {
+      const chans = cameraChannelsForTab(tab)
+      return cameraTrack.flatMap((k) => chans.map((ch) => ({ frame: k.frame, channel: ch.key, camera: true as const, type: "curve" as const })))
+    }
+    if (tab === "morph") {
+      if (!selectedMorph) return []
+      return (clip.morphTracks.get(selectedMorph) ?? []).map((k) => ({ morph: selectedMorph, frame: k.frame, type: "curve" as const }))
+    }
+    if (!selectedBone) return []
+    const chans = getChannelsForTab(tab)
+    return (clip.boneTracks.get(selectedBone) ?? []).flatMap((k) => chans.map((ch) => ({ bone: selectedBone, frame: k.frame, channel: ch.key, type: "curve" as const })))
+  }, [tab, cameraTrack, clip, selectedMorph, selectedBone])
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       // On the Effects tab these keys belong to the lanes, which listen on the
@@ -2440,9 +2464,13 @@ function TimelineCanvas({
       } else if (mod && e.key.toLowerCase() === "x") {
         e.preventDefault()
         ops.cutSelectedKeyframes()
+      } else if (mod && e.key.toLowerCase() === "a") {
+        // The whole track: every key on the curves showing, to shift together.
+        e.preventDefault()
+        onSelectCurveKeys(allCurveEntries())
       }
     },
-    [ops, blank],
+    [ops, blank, onSelectCurveKeys, allCurveEntries],
   )
 
   // Keyframe-jump arrows: a WINDOW listener, not the canvas's own onKeyDown —
@@ -2456,18 +2484,42 @@ function TimelineCanvas({
   // by design; the slider is reached by Tab, an explicit enough gesture that
   // stepping frames there instead of jumping keys is exactly what it should do.
   const cameraSelected = useClipSelector((s) => s.cameraSelected)
+  // The selected curve keys, nudged by the arrows: read through refs so the
+  // window listener stays put while the selection and the clip change.
+  const nudgeRef = useRef({ selectedKeyframes, captureCurveItems, onMoveCurveSelection, onEndKeyframeDrag, tab })
+  useEffect(() => {
+    nudgeRef.current = { selectedKeyframes, captureCurveItems, onMoveCurveSelection, onEndKeyframeDrag, tab }
+  })
   useEffect(() => {
     if (!open) return
     if (!selectedBone && !selectedMorph && !cameraSelected) return
     const onGlobalKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "ArrowUp" && e.key !== "ArrowDown") return
       const t = e.target as HTMLElement | null
       if (t && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable)) return
       // The scrub slider (role="slider", its own tabIndex) owns the arrows
       // while it holds focus — reaching it by Tab is deliberate enough that
       // frame-nudge there should win over keyframe-jump.
       if (t?.getAttribute("role") === "slider") return
+      // Selected curve keys move by the arrows, steady where a hand is not:
+      // Left/Right a frame, Up/Down a step in the curve's own unit — a degree,
+      // a tenth of a unit, a hundredth of a weight — and Shift ten of either.
+      const n = nudgeRef.current
+      const selCurve = n.selectedKeyframes.filter((k) => k.type === "curve")
+      if (selCurve.length > 0) {
+        e.preventDefault()
+        const items = n.captureCurveItems(selCurve)
+        if (items.length === 0) return
+        const many = e.shiftKey ? 10 : 1
+        const unit = getAxisConfig(n.tab).unit === "\u00b0" ? 1 : n.tab === "morph" ? 0.01 : 0.1
+        const df = e.key === "ArrowLeft" ? -many : e.key === "ArrowRight" ? many : 0
+        const dv = e.key === "ArrowUp" ? unit * many : e.key === "ArrowDown" ? -unit * many : 0
+        n.onMoveCurveSelection(items, df, dv, items[0].origFrame)
+        n.onEndKeyframeDrag()
+        return
+      }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
       e.preventDefault()
       const frames = [...getDopeFrames().keys()].sort((a, b) => a - b)
       const cur = Math.round(frameRef.current)
@@ -3613,6 +3665,7 @@ export function Timeline({
             onMoveDopeColumns={onMoveDopeColumns}
             onMarqueeSelect={onMarqueeSelect}
             onMarqueeSelectCurve={onMarqueeSelectCurve}
+            onSelectCurveKeys={setSelectedKeyframes}
             onMoveCurveSelection={onMoveCurveSelection}
             onMoveCurveKeyframe={onMoveCurveKeyframe}
             onMoveMorphKeyframe={onMoveMorphKeyframe}

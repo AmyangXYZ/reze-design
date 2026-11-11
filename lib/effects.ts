@@ -47,6 +47,20 @@ export type DialKey = {
  * Read off the source, not the engine's broader `readsCast`, and so known the
  * moment an effect is applied rather than once it has compiled.
  */
+/** Whether an effect holds a see-through window (#xray). */
+export const readsXray = (wgsl: string): boolean => /^[ \t]*#xray\b/m.test(wgsl)
+
+/** The materials in no group, as one entry in a window's list. */
+export const XRAY_UNGROUPED = "__ungrouped"
+
+/** What a window cuts when nobody has said: every group but her skin, face,
+ *  hair and eyes, and whatever is in none. */
+export function xrayDefaultCut(groups: readonly { id: string; renderClass?: string }[]): string[] {
+  const keep = (g: { id: string; renderClass?: string }) =>
+    g.id === "body" || g.id === "face" || g.id === "hair" || g.id === "eye" || g.renderClass === "eye" || g.renderClass === "hair"
+  return [...groups.filter((g) => !keep(g)).map((g) => g.id), XRAY_UNGROUPED]
+}
+
 export function followsCharacter(wgsl: string): boolean {
   return /\brz(?:Subject|Anchor|Trail|TrailCount)\s*\(/.test(wgsl) || /^#anchor\b/m.test(wgsl) || /^#param\s+bone\b/m.test(wgsl)
 }
@@ -117,6 +131,13 @@ export type AppliedEffect = {
    * goes back to when the keys are cleared. Absent = no dial is keyed.
    */
   keys?: Record<string, DialKey[]>
+  /**
+   * For an effect holding a see-through window (#xray): the material groups it
+   * cuts on the characters it is aimed at, by group id — XRAY_UNGROUPED for
+   * the materials in no group. Absent = xrayDefaultCut: everything but her
+   * skin, face, hair and eyes.
+   */
+  xrayCut?: string[]
   /** The stage it came with, by model id — a stage's galaxy, its fog. Deleting
    *  that stage takes it along, and uploading a stage replaces every effect the
    *  last one brought. Absent on an effect added by hand. */

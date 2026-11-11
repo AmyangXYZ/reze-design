@@ -146,6 +146,7 @@ import { ConfirmDialog, confirmSnoozed } from "@/components/ui/confirm-dialog"
 import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspectorColumn, type DialEditing, type ObjectEditing } from "@/components/scene/clip-inspector"
+import { XrayGroups } from "@/components/scene/xray-groups"
 import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, propRow, SCENE_ROW, STAGE_ROW, toggleRow, type RowLabels, type RowSource, type TimelineRow } from "@/lib/timeline/rows"
 import { holdsOf } from "@/lib/prop-throw"
 import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
@@ -235,6 +236,9 @@ import {
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
   followsCharacter,
+  readsXray,
+  xrayDefaultCut,
+  XRAY_UNGROUPED,
   type DialKey,
   type EffectSurface,
 } from "@/lib/effects"
@@ -3550,7 +3554,7 @@ function Lab() {
   const [effectReveal, setEffectReveal] = useState<string | null>(null)
   /** Patch one applied effect's timing, dials or targets, by uid. */
   const patchEffect = useCallback(
-    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params" | "models">>) => {
+    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params" | "models" | "xrayCut">>) => {
       // Patches rows that already carry uids, so the raw setter: no stamping needed.
       setBgEffectsState((list) => list.map((e) => (e.uid === uid ? { ...e, ...patch } : e)))
     },
@@ -6136,6 +6140,31 @@ function Lab() {
   /** The key the curves have picked, for the Properties panel. */
   const curveKeys = curveEffect?.keys?.[curveTab] ?? []
   const curveDecl = curveDecls.find((d) => d.name === curveTab) ?? null
+
+  // The see-through windows (#xray): for each character, the materials any
+  // window aimed at her cuts — the groups it names, and her ungrouped ones when
+  // it names those — handed to the engine whenever the effects, her groups or
+  // the cast change. Nothing cut when no window is on her.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const m of cast) {
+      const windows = bgEffects.filter((e) => readsXray(e.wgsl) && (!e.models || e.models.includes(m.id)))
+      if (windows.length === 0) {
+        engine.setXrayMaterials(m.id, null)
+        continue
+      }
+      const groups = groupsByModel[m.id] ?? []
+      const grouped = new Set(groups.flatMap((g) => g.materials))
+      const cut = new Set<string>()
+      for (const e of windows) {
+        const ids = e.xrayCut ?? xrayDefaultCut(groups)
+        for (const g of groups) if (ids.includes(g.id)) for (const n of g.materials) cut.add(n)
+        if (ids.includes(XRAY_UNGROUPED)) for (const x of m.materials) if (!grouped.has(x.name)) cut.add(x.name)
+      }
+      engine.setXrayMaterials(m.id, [...cut])
+    }
+  }, [bgEffects, groupsByModel, cast, ready, engineRef])
 
   /** The Effects tab's rows: each effect, by its strips. */
   const effectRows = useMemo(
@@ -9873,6 +9902,25 @@ function Lab() {
                                   models.find((m) => m.id === (id ?? effectFx.models?.[0] ?? cast[0]?.id))?.bones ?? []
                                 }
                               />
+                              {readsXray(effectFx.wgsl) && (() => {
+                                // Every group the characters it is aimed at have,
+                                // once a group id, in their order.
+                                const aimed = cast.filter((m) => !effectFx.models || effectFx.models.includes(m.id))
+                                const seen = new Map<string, { id: string; label: string; renderClass?: string }>()
+                                for (const m of aimed)
+                                  for (const g of groupsByModel[m.id] ?? [])
+                                    if (!seen.has(g.id)) seen.set(g.id, { id: g.id, label: g.label ?? g.id, renderClass: g.renderClass })
+                                const groups = [...seen.values()]
+                                return (
+                                  <div className="mt-2 border-t border-line pt-2">
+                                    <XrayGroups
+                                      groups={groups}
+                                      cut={effectFx.xrayCut ?? xrayDefaultCut(groups)}
+                                      onCut={(xrayCut) => patchEffect(effectFxUid, { xrayCut })}
+                                    />
+                                  </div>
+                                )
+                              })()}
                             </div>
                           )}
                           {/* The pane's actions span its row, first word to

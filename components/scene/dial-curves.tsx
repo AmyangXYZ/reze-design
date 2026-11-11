@@ -250,6 +250,27 @@ export function DialCurves({
           edit(decl.name, left.length ? left : undefined)
           data.onSelect([])
         }
+      } else if (mod && k === "a") {
+        // The whole track: every key of this dial, to shift together.
+        e.preventDefault()
+        data.onSelect(keys.map((_, i) => i))
+      } else if (selected.length && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        // Steady where a hand is not: a frame left or right, a step up or
+        // down — a hundredth of the dial's range, or one for a count, a switch
+        // or a list — and Shift ten of either. A colour or a vector has no
+        // single value to step, so it only moves in time.
+        e.preventDefault()
+        const many = e.shiftKey ? 10 : 1
+        const df = e.key === "ArrowLeft" ? -many : e.key === "ArrowRight" ? many : 0
+        const scalar = channels.length === 1 && decl.kind !== "color"
+        const whole = decl.kind === "int" || decl.kind === "enum" || decl.kind === "bool"
+        const step = (whole ? 1 : (range.hi - range.lo) / 100) * many
+        const dv = !scalar ? 0 : e.key === "ArrowUp" ? step : e.key === "ArrowDown" ? -step : 0
+        if (df === 0 && dv === 0) return
+        const ch = channels[0]
+        const next = moveKeys(keys, selected, df, (v) => (dv === 0 ? v : ch.set(v, tidy(ch.get(v) + dv))), frameCount)
+        edit(decl.name, next.keys)
+        data.onSelect(next.selected)
       } else if (mod && k === "v") {
         const pasted = pasteKeys(keys, Math.round(playhead), keys[0]?.value ?? defaultOf(decl), frameCount)
         if (!pasted) return
@@ -260,6 +281,8 @@ export function DialCurves({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
+    // channels, range and tidy follow decl and the keys, which are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decl, keys, selected, data, playhead, frameCount, edit])
 
   if (!decl) return null
@@ -279,6 +302,7 @@ export function DialCurves({
     if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
+    boxRef.current?.focus({ preventScroll: true })
     if (e.shiftKey) {
       data.onSelect(selected.includes(i) ? selected.filter((x) => x !== i) : [...selected, i].sort((a, b) => a - b))
       return
@@ -314,6 +338,7 @@ export function DialCurves({
     if (e.button !== 0) return
     // Taken here, so the canvas below does not scrub under a box.
     e.preventDefault()
+    e.currentTarget.focus({ preventScroll: true })
     e.currentTarget.setPointerCapture(e.pointerId)
     const p = local(e)
     setBox({ x0: p.x, y0: p.y, x: p.x, y: p.y, additive: e.shiftKey, moved: false })
@@ -424,7 +449,12 @@ export function DialCurves({
       // Empty space's crosshair, as on the bone curves: a press moves the
       // playhead there, a drag boxes keys.
       {...undoScope}
-      className="absolute cursor-crosshair touch-none select-none text-foreground"
+      // Focused on a press, so ⌘Z reaches this editor's own history: undo goes
+      // to the scope holding focus first, and left on the timeline's canvas it
+      // went to the clip's. Focused to take keys, never to look focused.
+      tabIndex={-1}
+      data-focus-quiet=""
+      className="absolute cursor-crosshair touch-none select-none text-foreground outline-none"
       style={{ top, bottom, left: labelWidth, right: 0 }}
       onPointerDown={emptyDown}
       onPointerMove={emptyMove}

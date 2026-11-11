@@ -926,6 +926,8 @@ const en = {
     ctl: {
       /** A bone dial's character, when it names none. */
       firstCharacter: "Its first character",
+      xrayCut: "Cut through",
+      xrayUngrouped: "Ungrouped",
       /** Puts an effect's dials back to what its shader declared. Disabled when
        *  none has been moved, so the button also says whether this scene has
        *  retuned the effect at all. */
@@ -2062,6 +2064,8 @@ const zh: Dictionary = {
     },
     ctl: {
       firstCharacter: "第一个角色",
+      xrayCut: "穿透的材质组",
+      xrayUngrouped: "未分组",
       resetParams: "重置",
       params: "参数",
       outline: "描边",
