@@ -3649,7 +3649,6 @@ export function Timeline({
               {...effectLanes}
               scrollTop={laneTop}
               keepEmpty
-              ramps={false}
               visible={blank}
               apiRef={fxApi}
               pxPerFrame={pxPerFrame}
