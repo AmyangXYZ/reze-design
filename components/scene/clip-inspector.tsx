@@ -27,7 +27,6 @@
 //      quietly easing the earlier one.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
-import { X } from "lucide-react"
 import type { AnimationClip, BoneInterpolation, BoneKeyframe, CameraKeyframe, EffectParamDecl, EffectParamValue, Engine } from "reze-engine"
 import { defaultOf, EffectParams } from "@/components/scene/effect-params"
 import { dialAt, HOLDING_KINDS, type DialKey } from "@/lib/effects"
@@ -400,16 +399,7 @@ function PlayheadFrameLabel({ frameCount }: { frameCount: number | null }) {
 }
 
 /** The subject line: what these values belong to, and where in it you are. */
-function SubjectHeader({
-  title,
-  frameCount,
-  onClose,
-}: {
-  title: string
-  frameCount: number | null
-  onClose: () => void
-}) {
-  const t = useT()
+function SubjectHeader({ title, frameCount }: { title: string; frameCount: number | null }) {
   // ONE header row, not two. A panel title above a subject line spent two rows
   // of a short dock saying "Properties" over the name of the thing whose
   // properties these are — and what the panel is is already obvious from its
@@ -427,16 +417,9 @@ function SubjectHeader({
       <div className="min-w-0 flex-1 cursor-text truncate text-2xs font-semibold text-foreground select-all">
         {title}
       </div>
+      {/* No close here: this column is the timeline's, and the timeline folds
+          from its own chevron in the header above. */}
       <PlayheadFrameLabel frameCount={frameCount} />
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={t.lab.timeline.close}
-        onClick={onClose}
-        className="-mr-1 shrink-0 text-muted-foreground hover:text-foreground"
-      >
-        <X />
-      </Button>
     </div>
   )
 }
@@ -951,7 +934,7 @@ function cameraAxisLabel(label: string, strip: boolean, labels: Record<string, s
   return labels[bare] ?? bare
 }
 
-const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => void }) {
+const CameraSection = memo(function CameraSection() {
   const t = useT()
   const cameraTrack = useClipSelector((s) => s.cameraTrack)
   const tab = useClipSelector((s) => s.tab)
@@ -1071,7 +1054,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
 
   return (
     <>
-      <SubjectHeader onClose={onClose} title={t.lab.timeline.camera} frameCount={null} />
+      <SubjectHeader title={t.lab.timeline.camera} frameCount={null} />
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         {CAMERA_GROUPS.map((g) => {
           const rows = (
@@ -1157,7 +1140,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
 
 // ─── The dock ─────────────────────────────────────────────────────────────
 
-function InspectorBody({ onClose, object }: { onClose: () => void; object: ObjectEditing | null }) {
+function InspectorBody({ object }: { object: ObjectEditing | null }) {
   const clip = useClipSelector((s) => s.clip)
   const selectedBone = useClipSelector((s) => s.selectedBone)
   const selectedMorph = useClipSelector((s) => s.selectedMorph)
@@ -1280,13 +1263,13 @@ function InspectorBody({ onClose, object }: { onClose: () => void; object: Objec
     [selectedMorph, clip, commit, engine, frameRef, setTab],
   )
 
-  if (parentSelected && object) return <ParentSection onClose={onClose} object={object} />
-  if (cameraSelected) return <CameraSection onClose={onClose} />
+  if (parentSelected && object) return <ParentSection object={object} />
+  if (cameraSelected) return <CameraSection />
 
   if (selectedMorph) {
     return (
       <>
-        <SubjectHeader onClose={onClose} title={selectedMorph} frameCount={clip?.frameCount ?? null} />
+        <SubjectHeader title={selectedMorph} frameCount={clip?.frameCount ?? null} />
         <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
           <Group title={t.lab.timeline.weight}>
             <LiveMorphSlider selectedMorph={selectedMorph} clip={clip} applyMorphWeight={applyMorphWeight} />
@@ -1319,7 +1302,7 @@ function InspectorBody({ onClose, object }: { onClose: () => void; object: Objec
         {/* The bone's own name. An English gloss beside it was a second name
             for one thing in a column this narrow, and the picker on the left
             already lists them the way the rig does. */}
-        <SubjectHeader onClose={onClose} title={selectedBone} frameCount={clip?.frameCount ?? null} />
+        <SubjectHeader title={selectedBone} frameCount={clip?.frameCount ?? null} />
         <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
           <LiveBoneSliders
             selectedBone={selectedBone}
@@ -1419,11 +1402,9 @@ export function ClipInspector({
  * came and went with the selection would move the tracks under the pointer.
  */
 export function ClipInspectorColumn({
-  onClose,
   object = null,
   dial = null,
 }: {
-  onClose: () => void
   object?: ObjectEditing | null
   dial?: DialEditing | null
 }) {
@@ -1432,7 +1413,7 @@ export function ClipInspectorColumn({
   const subject = dial || trackSubject || (parentSubject && object)
   return (
     <div data-undo-scope={CLIP_UNDO_SCOPE} className="flex w-58 shrink-0 flex-col border-l border-line">
-      {subject && (dial ? <DialKeyBody dial={dial} onClose={onClose} /> : <InspectorBody onClose={onClose} object={object} />)}
+      {subject && (dial ? <DialKeyBody dial={dial} /> : <InspectorBody object={object} />)}
     </div>
   )
 }
@@ -1492,7 +1473,7 @@ function ClipInspectorSurface({
       onPointerDownCapture={z.onPointerDownCapture}
       onFocusCapture={z.onFocusCapture}
     >
-      {dial ? <DialKeyBody dial={dial} onClose={onClose} /> : <InspectorBody onClose={onClose} object={object} />}
+      {dial ? <DialKeyBody dial={dial} /> : <InspectorBody object={object} />}
     </Surface>
   )
 }
@@ -1525,7 +1506,7 @@ const LINEAR: [CurvePoint, CurvePoint] = [
  * playhead — with the presets, and Insert / Delete. A dial that holds (a
  * switch, a list) has no curve to ease.
  */
-function DialKeyBody({ dial, onClose }: { dial: DialEditing; onClose: () => void }) {
+function DialKeyBody({ dial }: { dial: DialEditing }) {
   const t = useT()
   const { decl, selected } = dial
   const frame = Math.round(usePlayheadSelector((s) => s.currentFrame))
@@ -1565,7 +1546,7 @@ function DialKeyBody({ dial, onClose }: { dial: DialEditing; onClose: () => void
   const held = key?.ease === "hold"
   return (
     <>
-      <SubjectHeader title={dial.label} frameCount={null} onClose={onClose} />
+      <SubjectHeader title={dial.label} frameCount={null} />
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         {/* The left dock's own dial, so the two read alike: moving it keys
             the playhead, and it follows the playhead and a dragged key. */}
@@ -1664,7 +1645,7 @@ const withAxis = (v: [number, number, number], axis: number, x: number): [number
  * A throw starts at the playhead: find the frame the prop leaves the hand, pick
  * where it goes — a bone on a cast member, or a point — and a curve.
  */
-function ParentSection({ onClose, object }: { onClose: () => void; object: ObjectEditing }) {
+function ParentSection({ object }: { object: ObjectEditing }) {
   const t = useT()
   const { prop, cast, engineRef, setParentKeys, setStart } = object
   const frame = usePlayheadSelector((s) => Math.max(0, Math.round(s.currentFrame)))
@@ -1745,7 +1726,7 @@ function ParentSection({ onClose, object }: { onClose: () => void; object: Objec
 
   return (
     <>
-      <SubjectHeader onClose={onClose} title={prop.file} frameCount={clip?.frameCount ?? null} />
+      <SubjectHeader title={prop.file} frameCount={clip?.frameCount ?? null} />
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         <Group title={t.lab.timeline.parent}>
           <div className={ROW}>

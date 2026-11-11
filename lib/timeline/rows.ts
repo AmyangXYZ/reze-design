@@ -29,6 +29,8 @@ export type RowKind =
   | "effect"
   | "prop"
   | "parent"
+  | "overlays"
+  | "overlay"
 
 export type TimelineRow = {
   id: string
@@ -64,6 +66,8 @@ export type RowSource = {
    *  does not (rain, fog, the lens) is the scene's. */
   effects: { uid: string; name: string; models?: readonly string[]; cast: boolean; keyCount?: number }[]
   camera: boolean
+  /** The pictures over the frame, lowest first. */
+  overlays?: { id: string; name: string; keyCount?: number }[]
 }
 
 /** Whether an effect is on a character: it reads the cast and is aimed at
@@ -91,6 +95,7 @@ export const SCENE_ROW = "scene"
 export const STAGE_ROW = "stage"
 export const charRow = (id: string) => `char/${id}`
 export const propRow = (id: string) => `prop/${id}`
+export const OVERLAYS_ROW = "overlays"
 
 /**
  * The rows on screen, in order.
@@ -172,6 +177,15 @@ export function buildRows(src: RowSource, section: string | null, open: Readonly
       }
   }
 
+  // The overlays: one section, a row each, top of the stack first.
+  if (src.overlays?.length) {
+    const oOpen = section === OVERLAYS_ROW
+    rows.push({ id: OVERLAYS_ROW, kind: "overlays", depth: 0, label: labels.overlays, owner: null, open: oOpen })
+    if (oOpen)
+      for (const o of [...src.overlays].reverse())
+        rows.push({ id: `${OVERLAYS_ROW}/${o.id}`, kind: "overlay", depth: 1, label: o.name, owner: null, ref: o.id, ...(o.keyCount ? { count: o.keyCount } : {}) })
+  }
+
   for (const p of src.props) {
     const id = propRow(p.id)
     const pOpen = section === id
@@ -209,6 +223,7 @@ export type RowLabels = {
   parent: string
   effects: string
   materials: string
+  overlays: string
   group: (name: string) => string
 }
 

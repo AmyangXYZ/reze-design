@@ -16,7 +16,6 @@
 // One collapse toggle instead — collapsed IS the view state, so "what a share
 // link renders" stops being a mode anybody has to maintain.
 
-import { Input } from "@/components/ui/input"
 import { LIGHT_COOKIES, type LightCookie } from "@/lib/light-cookies"
 import {
   startTransition,
@@ -108,7 +107,7 @@ import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
 import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
-import { RenderPanel } from "@/components/editor/render-panel"
+import { exportDims, RenderPanel } from "@/components/editor/render-panel"
 import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
 import { SceneFileMenu } from "@/components/editor/scene-file-menu"
@@ -122,6 +121,8 @@ import {
 import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
 import { RangeRow, VALUE_BOX } from "@/components/scene/scene-sidebar"
+import { SizeRow } from "@/components/scene/size-row"
+import { OverlayDials } from "@/components/scene/overlay-dials"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -149,7 +150,7 @@ import { ClipInspectorColumn, type DialEditing, type ObjectEditing } from "@/com
 import { XrayGroups } from "@/components/scene/xray-groups"
 import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, propRow, SCENE_ROW, STAGE_ROW, toggleRow, type RowLabels, type RowSource, type TimelineRow } from "@/lib/timeline/rows"
 import { holdsOf } from "@/lib/prop-throw"
-import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
+import { normalizeVisibility, timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import Link from "next/link"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
@@ -158,9 +159,12 @@ import { useEngine } from "@/hooks/use-engine"
 import { usePhone } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
+import { useOverlays } from "@/hooks/use-overlays"
 import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { FALLBACK_CLIP, useFallbackClock } from "@/hooks/use-fallback-clock"
+import { SceneOverlays } from "@/components/scene/scene-overlays"
+import { OVERLAY_ACCEPT, OVERLAY_FIELDS, OVERLAY_FILE, overlayDecls, overlayFieldsAt, withFieldKeys, type LiveOverlay, type OverlayField } from "@/lib/overlays"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
@@ -497,61 +501,16 @@ function stampEffectUids(list: AppliedEffect[]): AppliedEffect[] {
   })
 }
 
-/**
- * Two linked number boxes on one row — a size, in world units.
- *
- * Committed on blur and on Enter rather than per keystroke: "2" on the way to
- * "20" is a card that jumps to a twentieth of its size and back while you type.
- * Escape abandons the edit, which is what every other typed field here does.
- */
-function SizeRow({
-  label,
-  width,
-  height,
-  onWidth,
-  onHeight,
-}: {
-  label: string
-  width: number
-  height: number
-  onWidth: (v: number) => void
-  onHeight: (v: number) => void
-}) {
-  const box = (value: number, commit: (v: number) => void, key: string) => (
-    <Input variant="bare"
-      key={key}
-      // The live value while not editing; a draft is local to the input, so
-      // there is nothing to reconcile when the other box moves this one.
-      defaultValue={value.toFixed(1)}
-      // Re-keyed on the value it shows, so the OTHER box's edit refreshes this
-      // one — an uncontrolled input keeps its own text otherwise, and the pair
-      // would silently disagree about the size of the same card.
-      onBlur={(e) => {
-        const v = Number(e.currentTarget.value)
-        if (Number.isFinite(v) && v > 0) commit(v)
-        else e.currentTarget.value = value.toFixed(1)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur()
-        if (e.key === "Escape") {
-          e.currentTarget.value = value.toFixed(1)
-          e.currentTarget.blur()
-        }
-      }}
-      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-foreground focus:text-foreground")}
-    />
-  )
-  // Right-aligned like every other value in this dock: the labels run down the
-  // left and the numbers line up down the right.
+/** A list's last line, as the cast's "Add model" is: what adds to it, and
+ *  where files dropped on the tab land. */
+function AddLine({ label, onPick, onFiles }: { label: string; onPick: () => void; onFiles: (files: File[]) => void }) {
   return (
-    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        {box(width, onWidth, `w${width.toFixed(1)}`)}
-        <span className="text-2xs text-muted-foreground">×</span>
-        {box(height, onHeight, `h${height.toFixed(1)}`)}
-      </div>
-    </div>
+    <FileDropArea onFiles={onFiles} className="-mx-4 flex px-4">
+      <Button variant="bare" onClick={onPick} className={LINE_ACTION}>
+        <Plus className="size-3.5" />
+        {label}
+      </Button>
+    </FileDropArea>
   )
 }
 
@@ -702,6 +661,7 @@ type PaletteValues = {
   effect: string | null
   /** What the Planes row wears: the one card's name, or how many. */
   planes: string | null
+  overlays: string | null
   /** What the Props tab wears: the one prop's name, or how many. */
   props: string | null
   gradeName: string
@@ -756,7 +716,7 @@ const DOCK_CONTROLS: {
   stageTab?: "stage" | "ground"
   lightTab?: "world" | "sun"
   postTab?: "grade" | "tone" | "bloom" | "outline"
-  objectTab?: "plane" | "prop"
+  objectTab?: "plane" | "prop" | "overlay"
   keywords?: string[]
   /** What this control is set to, for the right end of its palette row. Omitted
    *  where there is nothing honest to print — the export panel owns its own
@@ -794,6 +754,7 @@ const DOCK_CONTROLS: {
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "influence", "opacity", "blend", "fade", "背景特效", "影响", "过渡"], value: (v) => v.effect ?? v.t.lab.ctl.none },
   { id: "plane", en: "Planes", zh: "平面", row: "object", objectTab: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
   { id: "prop", en: "Props", zh: "道具", row: "object", objectTab: "prop", keywords: ["prop", "accessory", "hold", "hand", "attach", "bind", "bone", "道具", "アクセサリ", "外部親", "手持", "绑定"], value: (v) => v.props ?? v.t.lab.ctl.none },
+  { id: "overlay", en: "Overlays", zh: "叠加", row: "object", objectTab: "overlay", keywords: ["overlay", "sticker", "logo", "watermark", "png", "gif", "svg", "贴图", "水印", "叠加"], value: (v) => v.overlays ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
   { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "soft", "neutral", "aces", "none", "filmic", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
@@ -2792,6 +2753,8 @@ function Lab() {
       audio: (file) => setMusicFile(file),
     },
   })
+  // Pictures over the frame — restored with the scene, packed with its bundle.
+  const { overlays, addOverlay, updateOverlay, removeOverlay } = useOverlays({ scene, bundleReady, bundleFile })
   // The scene document's cameraAnimation slot. Seeded from the document like the
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
@@ -3093,6 +3056,24 @@ function Lab() {
   // Music follows the model clock — the exact mirror main uses, shared. Silent
   // while an export runs; the export mixes its own audio.
   const planeInput = useRef<HTMLInputElement | null>(null)
+  const overlayInput = useRef<HTMLInputElement | null>(null)
+  const [selectedOverlay, setSelectedOverlay] = useState<string | null>(null)
+  /** A dial drag on an overlay, shown by the layer before the document has it. */
+  const overlayPreview = useRef<((id: string, patch: Partial<Pick<LiveOverlay, OverlayField>>) => void) | null>(null)
+  const overlayLabels: Record<OverlayField, string> = {
+    size: t.lab.ctl.size,
+    x: t.lab.ctl.pos("X"),
+    y: t.lab.ctl.pos("Y"),
+    rotation: t.lab.ctl.angle,
+    opacity: t.lab.ctl.opacity,
+  }
+  /** Pictures dropped on the Overlays tab, each added on top in order. */
+  const dropOverlays = (files: File[]) => {
+    for (const file of files.filter((f) => OVERLAY_FILE.test(f.name)))
+      void addOverlay(file, frameW > 0 && frameH > 0 ? frameW / frameH : window.innerWidth / Math.max(1, window.innerHeight))
+        .then((id) => setSelectedOverlay(id))
+        .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
+  }
   /** Images and videos dropped on the media line: a card each, the last one
    *  selected, as a pick selects the card it made. */
   const dropPlanes = (files: File[]) => {
@@ -3437,7 +3418,7 @@ function Lab() {
   const [stageTab, setStageTab] = useState<"stage" | "ground">("ground")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
-  const [objectTab, setObjectTab] = useState<"plane" | "prop">("plane")
+  const [objectTab, setObjectTab] = useState<"plane" | "prop" | "overlay">("overlay")
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
   // Engine constructor was handed, so the sliders open already agreeing with
@@ -3969,7 +3950,7 @@ function Lab() {
 
   // installEffects is how the shader editor and the AI put a list on the
   // canvas: the sync pass's own install, so nothing it carries is left out.
-  const { installEffects } = useSceneSync({
+  const { installEffects, previewEffectDial } = useSceneSync({
     engineRef,
     // ON `stageReady`, THE MOMENT THE GROUND IS UP — not on `ready`, which is
     // the whole scene loaded. The render loop starts at `onStage`, so anything
@@ -6141,6 +6122,47 @@ function Lab() {
   const curveKeys = curveEffect?.keys?.[curveTab] ?? []
   const curveDecl = curveDecls.find((d) => d.name === curveTab) ?? null
 
+  // ── Overlays on the timeline ──
+  // A lane each for when it is up, and its placement keyed on the effect
+  // dials' curves: the same band, the same editor, its fields as the dials.
+  const [curveOverlay, setCurveOverlay] = useState<{ id: string; tab: string; keys: number[] } | null>(null)
+  const curveOverlayItem = curveOverlay ? (overlays.find((o) => o.id === curveOverlay.id) ?? null) : null
+  const overlayCurveDecls = curveOverlayItem ? overlayDecls(curveOverlayItem, overlayLabels) : []
+  const overlayCurveTab = curveOverlay && OVERLAY_FIELDS.some((f) => f === curveOverlay.tab) ? curveOverlay.tab : "size"
+  const overlayCurves: DialCurvesData | null =
+    curveOverlay && curveOverlayItem && editingKind === "layer"
+      ? {
+          name: curveOverlayItem.name,
+          decls: overlayCurveDecls,
+          tab: overlayCurveTab,
+          onTab: (tab) => setCurveOverlay((c) => (c ? { ...c, tab, keys: [] } : c)),
+          keys: curveOverlayItem.keys ?? {},
+          plain: Object.fromEntries(OVERLAY_FIELDS.map((f) => [f, curveOverlayItem[f]])),
+          onKeys: (name, ks) => updateOverlay(curveOverlayItem.id, { keys: withFieldKeys(curveOverlayItem.keys, name, ks) }),
+          selected: curveOverlay.keys,
+          onSelect: (keys) => setCurveOverlay((c) => (c ? { ...c, keys } : c)),
+          onClose: () => setCurveOverlay(null),
+          zh: locale === "zh",
+        }
+      : null
+  /** Top of the stack first, as the outliner lists them; the band draws its
+   *  last row on top, so the list goes in as it is stacked. */
+  const overlayLaneRows: LaneRow[] = overlays.map((o) => ({
+    id: o.id,
+    uid: o.id,
+    name: o.name,
+    ...(o.visibility?.length ? { window: o.visibility } : {}),
+  }))
+  /** The lanes, written back: a row the band dropped is an overlay whose last
+   *  clip went, which is up throughout. Only the ones that moved are touched. */
+  const onOverlayRows = (next: LaneRow[]) => {
+    const byId = new Map(next.map((r) => [r.uid ?? r.id, r.window ?? []]))
+    for (const o of overlays) {
+      const want = normalizeVisibility(byId.get(o.id) ?? [])
+      if (JSON.stringify(want) !== JSON.stringify(o.visibility ?? [])) updateOverlay(o.id, { visibility: want.length ? want : undefined })
+    }
+  }
+
   // The see-through windows (#xray): for each character, the materials any
   // window aimed at her cuts — the groups it names, and her ungrouped ones when
   // it names those — handed to the engine whenever the effects, her groups or
@@ -6192,6 +6214,7 @@ function Lab() {
       effects: bgEffects.map((e) => ({ uid: e.uid ?? e.id, name: e.name, models: e.models, cast: followsCharacter(e.wgsl), keyCount: Object.values(e.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
       // Always: a camera with no clip yet is still one you can key.
       camera: true,
+      overlays: overlays.map((o) => ({ id: o.id, name: o.name, keyCount: Object.values(o.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
   }
   const outlineLabels: RowLabels = {
       scene: t.lab.timeline.outline.scene,
@@ -6203,6 +6226,7 @@ function Lab() {
       parent: t.lab.timeline.outline.holds,
       effects: t.lab.timeline.outline.effects,
       materials: t.lab.timeline.outline.materials,
+      overlays: t.lab.timeline.outline.overlays,
       group: (n) => (n === "Other" ? t.lab.timeline.outline.other : (t.lab.timeline.boneGroups[n] ?? n)),
   }
   /** A bone picked elsewhere (the viewport, the curves): her section, her
@@ -6233,6 +6257,7 @@ function Lab() {
       const kind: ClipEditKind = editingKind === "object" || editingKind === "camera" ? "motion" : editingKind
       startTransition(() => setEditTarget({ modelId: owner, kind }))
     } else if (row.kind === "prop" && owner) startTransition(() => setEditTarget({ modelId: owner, kind: "object" }))
+    else if (row.kind === "overlays") startTransition(() => setEditTarget({ modelId: editingModelId ?? cast[0]?.id ?? "", kind: "layer" }))
   }
   /** A row inside the open section: the editor turns to it. */
   const onOutlinePick = (row: TimelineRow) => {
@@ -6240,6 +6265,7 @@ function Lab() {
     const go = (target: { modelId: string; kind: ClipEditKind }) => startTransition(() => setEditTarget(target))
     // An effect's curves belong to that effect: anything else picked closes them.
     if (row.kind !== "effect" && row.kind !== "effects") setCurveFx(null)
+    if (row.kind !== "overlay") setCurveOverlay(null)
     const owner = row.owner ?? editingModelId ?? cast[0]?.id ?? ""
     switch (row.kind) {
       case "camera":
@@ -6276,10 +6302,31 @@ function Lab() {
       case "parent":
         go({ modelId: owner, kind: "object" })
         break
+      case "overlay":
+        go({ modelId: editingModelId ?? cast[0]?.id ?? "", kind: "layer" })
+        if (row.ref) {
+          setSelectedOverlay(row.ref)
+          // Curves open stay open, on the overlay just picked.
+          const id = row.ref
+          setCurveOverlay((c) => (c ? { id, tab: c.tab, keys: [] } : c))
+        }
+        break
     }
   }
   /** The Properties column's subjects: an effect dial's curve, or a prop. */
-  const inspectorDial: DialEditing | null = dialCurves && curveDecl
+  const overlayCurveDecl = overlayCurveDecls.find((d) => d.name === overlayCurveTab) ?? null
+  const inspectorDial: DialEditing | null = overlayCurves && overlayCurveDecl && curveOverlayItem
+    ? {
+        label: `${overlayCurves.name} · ${overlayCurveDecl.label ?? overlayCurveDecl.name}`,
+        decl: overlayCurveDecl,
+        keys: curveOverlayItem.keys?.[overlayCurveTab] ?? [],
+        plain: curveOverlayItem[overlayCurveTab as OverlayField],
+        frameNow: playheadFrame,
+        selected: curveOverlay?.keys ?? [],
+        onKeys: (ks) => updateOverlay(curveOverlayItem.id, { keys: withFieldKeys(curveOverlayItem.keys, overlayCurveTab, ks) }),
+        onSelect: (keys) => setCurveOverlay((c) => (c ? { ...c, keys } : c)),
+      }
+    : dialCurves && curveDecl
                   ? {
                       label: `${dialCurves.name} · ${curveDecl.label ?? curveDecl.name}`,
                       decl: curveDecl,
@@ -6362,6 +6409,7 @@ function Lab() {
     stage: stage ? { scale: stage.transform.scale, position: stage.transform.position, rotation: stage.transform.rotation } : null,
     effect: effectSummary,
     planes: planeSummary,
+    overlays: overlays.length === 0 ? null : overlays.length === 1 ? overlays[0].name : String(overlays.length),
     props: propSummary,
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage?.slot === "flat" ? bgImage.name : null,
@@ -6480,7 +6528,7 @@ function Lab() {
         stage?: "stage" | "ground"
         light?: "world" | "sun"
         post?: "grade" | "tone" | "bloom" | "outline"
-        object?: "plane" | "prop"
+        object?: "plane" | "prop" | "overlay"
       },
     ) => {
       // A Scene row opens; a group anchor ("group-cast") selects its pane.
@@ -6938,6 +6986,8 @@ function Lab() {
     // removing one has to move this or the bundle keeps the file it no longer
     // wears. Ids are minted per upload, so the pair is unique per card.
     planes.map((p) => `${p.id}:${p.file}`).join("|"),
+    // Overlays by id and file: placement is the doc's, the picture the bundle's.
+    overlays.map((o) => `${o.id}:${o.name}:${o.file.size}`).join("|"),
     cameraClip ?? "",
     // The game stage, by its folder: removing it has to repack, or the bundle
     // goes on carrying a stage the scene no longer draws.
@@ -7025,6 +7075,7 @@ function Lab() {
               ]
             : []
         }),
+        overlays,
         // ONE image slot here against main's two: which row it was uploaded from
         // is what makes it a dome.
         background: bgImage
@@ -7057,6 +7108,7 @@ function Lab() {
       // with, so the bundle and the record both said a scene with cards had
       // none. The same hazard the fingerprint below carries, one layer up.
       planes,
+      overlays,
     ],
   )
 
@@ -7102,6 +7154,7 @@ function Lab() {
             // then left out of the record naming them, so the bytes were there
             // and nothing knew to look.
             planes: slots.planes,
+            overlays: slots.overlays,
             nativeStage: slots.nativeStage,
             bundle: bundleUrl,
           }),
@@ -7393,6 +7446,7 @@ function Lab() {
         groups: groupsByModel,
         hidden: slots.hidden,
         planes: slots.planes,
+        overlays: slots.overlays,
         nativeStage: slots.nativeStage,
       },
       { graph: graphRef, effect: effectRef },
@@ -7437,6 +7491,7 @@ function Lab() {
         backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
         backgroundColor: settings.background.color,
         atTime: engine.getModel(masterId ?? primaryId ?? "")?.getAnimationProgress().current ?? 0,
+        overlays,
       })
     } finally {
       await rasterLyricsAt(canvas.height)
@@ -7832,6 +7887,7 @@ function Lab() {
   // The render panel's body, set as a column of type on the cover.
   const exportBody = (
     <RenderPanel
+      overlays={overlays}
       active={exportOpen}
       engineRef={engineRef}
       canvasRef={canvasRef}
@@ -7985,6 +8041,8 @@ function Lab() {
       ready,
       sceneGround,
       bgImage ? `${bgImage.slot}:${bgImage.url}` : "",
+      // Overlays stand behind the type too: one arriving or leaving reads again.
+      overlays.map((o) => `${o.id}:${o.url}`).join(","),
       hdri?.name ?? "",
       bgEffects.map((e) => `${e.uid}:${e.influence ?? 1}:${JSON.stringify(e.params ?? {})}`).join(","),
       JSON.stringify(settings.grade),
@@ -8055,6 +8113,23 @@ function Lab() {
         data-keep
         ref={canvasRef}
         className={cn("frame-layer absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
+        style={frameStyle}
+      />
+      {/* Pictures over the frame, in its rect, as the export draws them. */}
+      <SceneOverlays
+        overlays={overlays}
+        frameNow={playheadFrame}
+        previewRef={overlayPreview}
+        // Grabbable while their tab is open; click-through otherwise, so the
+        // camera keeps the frame.
+        editable={openRow === "object" && objectTab === "overlay" && !uiHidden}
+        selected={overlays.some((o) => o.id === selectedOverlay) ? selectedOverlay : (overlays[0]?.id ?? null)}
+        onPick={setSelectedOverlay}
+        onChange={(id, patch) => {
+          const o = overlays.find((x) => x.id === id)
+          if (o) updateOverlay(id, overlayFieldsAt(o, patch, Math.round(playheadFrame())))
+        }}
+        className={cn("frame-layer absolute", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
       />
 
@@ -8448,6 +8523,20 @@ function Lab() {
         className="hidden"
       />
 
+      <input
+        ref={overlayInput}
+        type="file"
+        accept={OVERLAY_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (file)
+            void addOverlay(file, frameW > 0 && frameH > 0 ? frameW / frameH : window.innerWidth / Math.max(1, window.innerHeight))
+              .then((id) => setSelectedOverlay(id))
+              .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
+        }}
+      />
       <input
         ref={planeInput}
         type="file"
@@ -9897,6 +9986,7 @@ function Lab() {
                                 onModels={effectFxAimable ? (models) => patchEffect(effectFxUid, { models }) : undefined}
                                 keys={effectFx.keys}
                                 onKeys={(name, keys) => setEffectKeys(effectFxUid, name, keys)}
+                                onPreview={(name, value, keys) => previewEffectDial(effectFxUid, name, value, keys)}
                                 frameNow={playheadFrame}
                                 boneNames={(id) =>
                                   models.find((m) => m.id === (id ?? effectFx.models?.[0] ?? cast[0]?.id))?.bones ?? []
@@ -9955,10 +10045,14 @@ function Lab() {
                     ) : (
                       <p className="text-muted-foreground">{t.lab.ctl.none}</p>
                     )
+
                   ) : l.id === "object" ? (
                     <>
                       <Tabs value={objectTab} onValueChange={(v) => setObjectTab(v as typeof objectTab)}>
                         <TabsList className="-mt-1 mb-2 w-full">
+                          <TabsTrigger value="overlay" className="flex-1">
+                            {t.lab.tabs.overlay}
+                          </TabsTrigger>
                           <TabsTrigger value="plane" className="flex-1">
                             {t.lab.tabs.plane}
                           </TabsTrigger>
@@ -9967,6 +10061,73 @@ function Lab() {
                           </TabsTrigger>
                         </TabsList>
                       </Tabs>
+                      {objectTab === "overlay" && (
+                        <>
+                          {/* The cards' shape: an invitation while empty, then
+                              a chip per overlay with the + at the end, and the
+                              picked one's dials under them. */}
+                          {overlays.length > 0 && (
+                            <>
+                              <FileDropArea onFiles={dropOverlays} className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4">
+                                {overlays.map((o) => {
+                                  const shown = overlays.some((x) => x.id === selectedOverlay) ? selectedOverlay : overlays[0]?.id
+                                  const on = o.id === shown
+                                  return (
+                                    <span
+                                      key={o.id}
+                                      className={cn(
+                                        "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                        on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                                      )}
+                                    >
+                                      {/* The underline on the words themselves: a span's
+                                          does not reach into the button's own box. */}
+                                      <Button variant="bare"
+                                        onClick={() => setSelectedOverlay(o.id)}
+                                        className={cn(
+                                          // The chip's own type, not a button's; the picked one's rule drawn
+                                          // under the box, where truncating the words cannot clip it.
+                                          "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                          on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                        )}
+                                      >
+                                        <span className="block min-w-0 truncate">
+                                          {o.name}
+                                        </span>
+                                      </Button>
+                                      <CastAction
+                                        icon={X}
+                                        danger
+                                        compact
+                                        label={t.lab.aria.remove(t.lab.kinds.overlay)}
+                                        onClick={() => removeOverlay(o.id)}
+                                      />
+                                    </span>
+                                  )
+                                })}
+                              </FileDropArea>
+                              {(() => {
+                                const o = overlays.find((x) => x.id === selectedOverlay) ?? overlays[0]
+                                return (
+                                  <OverlayDials
+                                    overlay={o}
+                                    labels={overlayLabels}
+                                    sizeLabel={t.lab.ctl.size}
+                                    outHeight={exportDims()[1]}
+                                    frameNow={playheadFrame}
+                                    onUpdate={(patch) => updateOverlay(o.id, patch)}
+                                    onPreview={(patch) => overlayPreview.current?.(o.id, patch)}
+                                  />
+                                )
+                              })()}
+                            </>
+                          )}
+                          {/* The list's last line, under its dials, as the cast's is. */}
+                          <div className={overlays.length ? "mt-2.5" : ""}>
+                            <AddLine label={t.lab.uploadOverlay} onPick={() => overlayInput.current?.click()} onFiles={dropOverlays} />
+                          </div>
+                        </>
+                      )}
                       {objectTab === "plane" && (
                         <>
                       {/* Make it work first: one upload, one card, sliders for
@@ -9980,18 +10141,6 @@ function Lab() {
                           action, so adding becomes a chip at the end of the row
                           — beside the collection it adds to, and carried along
                           by the same wrap when the row runs to two. */}
-                      {planes.length === 0 && (
-                        <FileDropArea onFiles={dropPlanes} className="-mx-4 flex px-4">
-                          <Button
-                            variant="bare"
-                            onClick={() => planeInput.current?.click()}
-                            className={LINE_ACTION}
-                          >
-                            <Plus className="size-3.5" />
-                            {t.lab.uploadPlane}
-                          </Button>
-                        </FileDropArea>
-                      )}
                       {planes.length > 0 && (
                         <>
                           {/* One chip per card, because a scene holds several
@@ -9999,7 +10148,7 @@ function Lab() {
                               scroll. The chip is the file it was made from,
                               truncated — a name is what tells two cards apart,
                               and the full one is in the title. */}
-                          <FileDropArea onFiles={dropPlanes} className="-mx-4 flex flex-wrap items-center gap-1.5 px-4">
+                          <FileDropArea onFiles={dropPlanes} className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4">
                             {planes.map((plane) => {
                               // `?? planes[0]` decides which card the controls
                               // below show, so the chip has to agree: an
@@ -10011,18 +10160,22 @@ function Lab() {
                                 <span
                                   key={plane.id}
                                   className={cn(
-                                    "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
-                                    on
-                                      ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
-                                      : "text-muted-foreground hover:text-foreground",
-                                    "pr-1",
+                                    "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                    on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                                   )}
                                 >
                                   <Button variant="bare"
                                     onClick={() => setSelectedPlane(plane.id)}
-                                    className="min-w-0 flex-1 cursor-pointer truncate text-left"
+                                    className={cn(
+                                      // The chip's own type, not a button's; the picked one's rule drawn
+                                      // under the box, where truncating the words cannot clip it.
+                                      "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                      on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                    )}
                                   >
-                                    {plane.file}
+                                    <span className="block min-w-0 truncate">
+                                      {plane.file}
+                                    </span>
                                   </Button>
                                   {/* On every chip, not only the selected one:
                                       removing a card you are not editing should
@@ -10041,13 +10194,6 @@ function Lab() {
                                 of the cards, and sitting at the same distance
                                 as they sit from each other read as one. Dashed
                                 like the empty-state invite it replaces. */}
-                            <Button variant="bare"
-                              onClick={() => planeInput.current?.click()}
-                              aria-label={t.lab.uploadPlane}
-                              className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                            >
-                              <Plus className="size-3.5" />
-                            </Button>
                           </FileDropArea>
                           {/* The selected card's own controls. `?? planes[0]`
                               so the section is never a row of chips with
@@ -10138,6 +10284,9 @@ function Lab() {
                           })()}
                         </>
                       )}
+                      <div className={planes.length ? "mt-2.5" : ""}>
+                        <AddLine label={t.lab.uploadPlane} onPick={() => planeInput.current?.click()} onFiles={dropPlanes} />
+                      </div>
                         </>
                       )}
                       {objectTab === "prop" && (
@@ -10147,26 +10296,11 @@ function Lab() {
                               controls under them — because adding a prop and
                               adding a card are the same act on a different
                               kind of thing. */}
-                          {props.length === 0 && (
-                            <FileDropArea onFiles={(files) => dropModel({ mode: "prop" }, files)} className="-mx-4 flex px-4">
-                              <Button
-                                variant="bare"
-                                onClick={() => {
-                                  modelTarget.current = { mode: "prop" }
-                                  folderInput.current?.click()
-                                }}
-                                className={LINE_ACTION}
-                              >
-                                <Plus className="size-3.5" />
-                                {t.lab.uploadProp}
-                              </Button>
-                            </FileDropArea>
-                          )}
                           {shownProp && (
                             <>
                               <FileDropArea
                                 onFiles={(files) => dropModel({ mode: "prop" }, files)}
-                                className="-mx-4 flex flex-wrap items-center gap-1.5 px-4"
+                                className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4"
                               >
                                 {props.map((prop) => {
                                   const on = prop.id === shownProp.id
@@ -10174,18 +10308,22 @@ function Lab() {
                                     <span
                                       key={prop.id}
                                       className={cn(
-                                        "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
-                                        on
-                                          ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
-                                          : "text-muted-foreground hover:text-foreground",
-                                        "pr-1",
+                                        "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                        on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                                       )}
                                     >
                                       <Button variant="bare"
                                         onClick={() => setSelectedProp(prop.id)}
-                                        className="min-w-0 flex-1 cursor-pointer truncate text-left"
+                                        className={cn(
+                                          // The chip's own type, not a button's; the picked one's rule drawn
+                                          // under the box, where truncating the words cannot clip it.
+                                          "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                          on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                        )}
                                       >
-                                        {displayName(prop.file)}
+                                        <span className="block min-w-0 truncate">
+                                          {displayName(prop.file)}
+                                        </span>
                                       </Button>
                                       <CastAction
                                         icon={X}
@@ -10197,16 +10335,6 @@ function Lab() {
                                     </span>
                                   )
                                 })}
-                                <Button variant="bare"
-                                  onClick={() => {
-                                    modelTarget.current = { mode: "prop" }
-                                    folderInput.current?.click()
-                                  }}
-                                  aria-label={t.lab.uploadProp}
-                                  className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                                >
-                                  <Plus className="size-3.5" />
-                                </Button>
                               </FileDropArea>
                               {(() => {
                                 const prop = shownProp
@@ -10314,6 +10442,16 @@ function Lab() {
                               })()}
                             </>
                           )}
+                          <div className={props.length ? "mt-2.5" : ""}>
+                            <AddLine
+                              label={t.lab.uploadProp}
+                              onPick={() => {
+                                modelTarget.current = { mode: "prop" }
+                                folderInput.current?.click()
+                              }}
+                              onFiles={(files) => dropModel({ mode: "prop" }, files)}
+                            />
+                          </div>
                         </>
                       )}
                     </>
@@ -11805,7 +11943,7 @@ function Lab() {
                   // clip out of the engine at all — see editingModelId.
                   ({ chrome, playing, togglePlay }) => (
                     <Dopesheet
-                      dialCurves={dialCurves}
+                      dialCurves={editingKind === "layer" ? overlayCurves : dialCurves}
                       playheadDrawRef={dopePlayheadRef}
                       audioPeaks={musicPeaks}
                       audioDuration={animDuration}
@@ -11813,7 +11951,18 @@ function Lab() {
                       kind={editingKind}
                       parentHolds={parentHolds}
                       visibilityLanes={
-                        {
+                        editingKind === "layer"
+                          ? {
+                              effects: overlayLaneRows,
+                              onEffects: onOverlayRows,
+                              selectedEffect: selectedOverlay,
+                              onSelectEffect: (id: string | null) => id && setSelectedOverlay(id),
+                              onEditCurves: (id: string) => {
+                                setSelectedOverlay(id)
+                                setCurveOverlay({ id, tab: "size", keys: [] })
+                              },
+                            }
+                          : {
                               effects: shownVisibilityRows,
                               onEffects: onVisibilityRows,
                               selectedEffect: selectedVisibility,
@@ -11840,7 +11989,6 @@ function Lab() {
                       inspector={
                         <ClipInspectorColumn
                           dial={inspectorDial}
-                          onClose={() => setTimelineOpen(false)}
                           object={inspectorObject}
                         />
                       }

@@ -15,7 +15,7 @@ function eq<T>(got: T, want: T, name: string) {
 
 const labels: RowLabels = {
   scene: "Scene", stage: "Stage", camera: "Camera", motion: "Motion", morphs: "Morphs",
-  visibility: "Visibility", parent: "Holds", effects: "Effects", materials: "Materials", group: (n) => n,
+  visibility: "Visibility", parent: "Holds", effects: "Effects", materials: "Materials", overlays: "Overlays", group: (n) => n,
 }
 const src: RowSource = {
   cast: [

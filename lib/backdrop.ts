@@ -101,7 +101,7 @@ export async function probeBackdrop(file: File): Promise<BackdropMedia> {
  * here to be told. A <video> would report metadata for files the export cannot
  * then decode frame-exactly, and the failure would surface at render time.
  */
-async function probeVideoBackdrop(file: File): Promise<BackdropMedia> {
+export async function probeVideoBackdrop(file: File): Promise<BackdropMedia> {
   const { Input, BlobSource, ALL_FORMATS } = await import("mediabunny")
   const url = URL.createObjectURL(file)
   try {

@@ -2596,6 +2596,8 @@ interface TimelineProps {
    *  they ride the toolbar that is already there rather than keeping a row of
    *  their own alive above it just to hold three buttons. */
   trailing?: ReactNode
+  /** A column at the right of the tracks, under the header. */
+  inspector?: ReactNode
   /** The Effects tab's rows and how to change them, drawn over the curve band
    *  on this component's own axis while the tab shows. */
   effectLanes?: EffectLanesData<LaneRow> | null
@@ -2625,6 +2627,7 @@ export function Timeline({
   initialView,
   onViewChange,
   trailing,
+  inspector = null,
   effectLanes = null,
   visibilityLanes = null,
   dialCurves = null,
@@ -3622,7 +3625,16 @@ export function Timeline({
         <ZoomRuler min={minPxPerFrame} max={MAX_PX} value={pxPerFrame} onChange={zoomTo} />
         <AxisGlyph icon={MoveVertical} label={dict.lab.timeline.axisValue} className="pl-2 pr-2" />
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
-        {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
+        {/* Over the properties column, its own width: the zoom stays at the
+            curves' right edge, and the transport's end of the header — the
+            time and the fold — sits over the column it shares the width of. */}
+        {inspector ? (
+          <div className="-mr-1.5 ml-1.5 flex w-58 shrink-0 items-center justify-end gap-0.5 self-stretch px-1.5">
+            {trailing}
+          </div>
+        ) : (
+          trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>
+        )}
       </div>
       {/* Canvas, with the outliner beside it */}
       <div className="flex min-h-0 flex-1">
@@ -3766,6 +3778,9 @@ export function Timeline({
       </div>
       </EffectLanesMenu>
       </div>
+      {/* The properties column, under the header like the tracks: the header
+          runs the full width, its zoom and fold at the right edge over this. */}
+      {inspector}
       </div>
     </div>
   )

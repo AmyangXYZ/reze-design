@@ -49,7 +49,8 @@ export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
 /** Which track the editor is pointed at. Motion, morphs and visibility belong to
  *  the character; the camera belongs to the scene but is edited on the same
  *  clock, so it rides the same target. */
-export type ClipEditKind = "motion" | "morph" | "visibility" | "camera" | "effect" | "object"
+/** `layer`: the overlays over the frame — their windows and keyed placement. */
+export type ClipEditKind = "motion" | "morph" | "visibility" | "camera" | "effect" | "object" | "layer"
 
 /**
  * The engine, as much of it as an editor surface is allowed to touch.

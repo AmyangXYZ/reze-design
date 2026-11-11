@@ -154,6 +154,9 @@ export type SceneAssets = {
    *  written before them has none, and absent must mean none rather than a
    *  load failure. */
   planes?: ScenePlane[]
+  /** Pictures laid flat over the finished frame, first added lowest. Absent
+   *  means none. See SceneOverlay. */
+  overlays?: SceneOverlay[]
   /** [0] is the PRIMARY model. May be empty: a build that does not opt into the
    *  demo scene (NEXT_PUBLIC_USE_DEFAULT_SCENE) starts with no cast, and the last
    *  model can be removed. */
@@ -409,6 +412,35 @@ export type ScenePlane = {
   transform: SceneStageTransform
 }
 
+/**
+ * A picture over the frame: a still or an animated gif/webp/apng with its
+ * transparency, laid over the render, its effects included, and under the
+ * watermark. Placed in the FRAME's terms, so a 4K export puts it where the
+ * preview did.
+ */
+export type SceneOverlay = {
+  /** Minted once; what its timeline lane and its file are kept under. */
+  id: string
+  asset: AssetRef
+  /** Its centre, as a share of the frame: x from the left, y from the top. */
+  x: number
+  y: number
+  /** Its height, as a share of the frame's height. */
+  size: number
+  /** The picture's width over its height, stored like a plane's size: read at
+   *  upload, so a replaced file does not restretch a placed overlay. */
+  aspect: number
+  /** Degrees, clockwise. */
+  rotation: number
+  opacity: number
+  /** The stretches it is up for. Absent means throughout. */
+  visibility?: VisibilityWindow[]
+  /** Keyed placement, by field (x, y, size, rotation, opacity), as an
+   *  effect's dials are keyed. A keyed field follows its keys; the plain value
+   *  above is what it shows with none. */
+  keys?: Record<string, DialKey[]>
+}
+
 export type Scene = {
   version: number
   assets: SceneAssets
@@ -525,6 +557,13 @@ export type ScenePlaneDoc = {
   transform: SceneStageTransform
 }
 
+/** An overlay in the document: its picture's path and where it sits. */
+export type SceneOverlayDoc = Omit<SceneOverlay, "asset"> & {
+  /** Bundle-relative path, or a URL. */
+  media: string
+  name?: string
+}
+
 export type SceneAssetsDoc = {
   /** [0] is the primary model; may be empty. */
   models: SceneModelDoc[]
@@ -532,6 +571,8 @@ export type SceneAssetsDoc = {
   cameraAnimation?: string | null
   /** Media planes, in the order they were added. Absent means none. */
   planes?: ScenePlaneDoc[]
+  /** Overlays, lowest first. Absent means none. */
+  overlays?: SceneOverlayDoc[]
   audio?: string | null
   /**
    * The track's companions, NAMED rather than inferred.
@@ -867,10 +908,48 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
           })),
         }
       : {}),
+    ...(Array.isArray(a.overlays) && a.overlays.length ? { overlays: a.overlays.flatMap(overlayOf) } : {}),
     ...(typeof a.nativeStage === "string" && a.nativeStage ? { nativeStage: a.nativeStage } : {}),
     bundle: a.bundle ?? null,
   }
 }
+
+/** A finite number, or the fallback: a document is a file on someone else's
+ *  disk, and NaN slips every comparison that would have clamped it. */
+const finite = (v: unknown, or: number) => (typeof v === "number" && Number.isFinite(v) ? v : or)
+
+function overlayOf(o: SceneOverlayDoc): SceneOverlay[] {
+  if (!o || typeof o.media !== "string" || !o.media) return []
+  return [
+    {
+      id: typeof o.id === "string" && o.id ? o.id : o.media,
+      asset: o.name ? { name: o.name, url: o.media } : assetFromPath(o.media),
+      x: finite(o.x, 0.5),
+      y: finite(o.y, 0.5),
+      size: Math.max(0.001, finite(o.size, 0.25)),
+      aspect: Math.max(0.001, finite(o.aspect, 1)),
+      rotation: finite(o.rotation, 0),
+      opacity: Math.min(1, Math.max(0, finite(o.opacity, 1))),
+      ...visibilityFieldOf(o.visibility),
+      ...(o.keys && typeof o.keys === "object" && Object.keys(o.keys).length ? { keys: o.keys } : {}),
+    },
+  ]
+}
+
+/** An overlay as the document stores it. */
+export const overlayDocOf = (o: SceneOverlay): SceneOverlayDoc => ({
+  id: o.id,
+  media: o.asset.url,
+  name: o.asset.name,
+  x: o.x,
+  y: o.y,
+  size: o.size,
+  aspect: o.aspect,
+  rotation: o.rotation,
+  opacity: o.opacity,
+  ...visibilityFieldOf(o.visibility),
+  ...(o.keys && Object.keys(o.keys).length ? { keys: o.keys } : {}),
+})
 
 /** The inverse: live assets back to their authored form, each model under the
  *  id the editor knows it by. */
@@ -895,6 +974,7 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     // Written only when there are any: a scene with no cards should read the
     // same as every scene written before they existed.
     ...(a.planes?.length ? { planes: a.planes.map(planeDocOf) } : {}),
+    ...(a.overlays?.length ? { overlays: a.overlays.map(overlayDocOf) } : {}),
     // Likewise: a scene without a game stage reads as every scene before them.
     ...(a.nativeStage ? { nativeStage: a.nativeStage } : {}),
     bundle: a.bundle,
@@ -1373,6 +1453,7 @@ export function serializeSceneDoc(
     background: SceneBackground
     hdri: AssetRef | null
     planes: ScenePlane[]
+    overlays?: SceneOverlay[]
     nativeStage?: string | null
     /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
     bundle: string | null
@@ -1421,6 +1502,7 @@ export function serializeSceneDoc(
         background: live.background,
         hdri: live.hdri,
         planes: live.planes,
+        overlays: live.overlays,
         nativeStage: live.nativeStage,
         bundle: live.bundle,
       }),

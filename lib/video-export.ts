@@ -16,6 +16,7 @@ import {
 } from "mediabunny"
 import { Vec3, type Engine, type SceneAovs } from "reze-engine"
 import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
+import { openOverlayFrames, type LiveOverlay } from "./overlays"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
 import { mixFootsteps, footstepsNow, type Footstep, type FootstepSource } from "./footsteps"
@@ -319,7 +320,7 @@ type BackdropFrames = {
  * re-decode from the previous keyframe. One iterator per pass keeps every
  * sequence it sees ascending, so the fast path holds all the way through.
  */
-async function openVideoBackdrop(
+export async function openVideoBackdrop(
   media: BackdropMedia,
   o: { width: number; height: number; startTime: number; fps: number; total: number; loop: boolean },
 ): Promise<BackdropFrames> {
@@ -549,6 +550,8 @@ export async function captureStill(opts: {
   /** Scene time of the pose being captured — which backdrop frame a moving
    *  backdrop is showing. Ignored for a still backdrop. */
   atTime?: number
+  /** Pictures over the frame, under the watermark. */
+  overlays?: readonly LiveOverlay[]
 }): Promise<Blob> {
   const { engine, canvas, settings, backdrop, backgroundColor } = opts
   const { width, height, background } = settings
@@ -568,6 +571,9 @@ export async function captureStill(opts: {
     : null
   const bgFrame = bgFrames ? await bgFrames.next() : null
   bgFrames?.close()
+  const stillAt = Math.max(0, opts.atTime ?? 0)
+  const overlayFrames = opts.overlays?.length ? await openOverlayFrames(opts.overlays, { startTime: stillAt, fps: 1, total: 1 }) : null
+  await overlayFrames?.prepare(stillAt)
 
   // Before the engine is stopped, like the backdrop: the face may still be loading.
   const stillFont = markFont()
@@ -596,8 +602,10 @@ export async function captureStill(opts: {
     paintBase(ctx, background, backgroundColor, width, height)
     if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
     ctx.drawImage(canvas, 0, 0, width, height)
+    overlayFrames?.draw(ctx, width, height, stillAt)
     if (settings.watermark) drawMark(ctx, width, height, stillFont, settings.watermark, opts.atTime ?? 0)
   } finally {
+    overlayFrames?.close()
     engine.setRenderSize(prevW, prevH)
     engine.renderFrame(0)
     engine.runRenderLoop()
@@ -911,6 +919,8 @@ export async function exportVideo(opts: {
   directory?: FileSystemDirectoryHandle
   /** Moving cards in the scene, advanced by this loop rather than by the clock. */
   planes?: ExportPlane[]
+  /** Pictures over the frame, under the watermark. */
+  overlays?: readonly LiveOverlay[]
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
 }): Promise<ExportResult> {
@@ -954,7 +964,8 @@ export async function exportVideo(opts: {
    * modes that need the speed — green screen and transparent both arrive here
    * with no backdrop, and both force the watermark off.
    */
-  const needsComposite = backdropFrames !== null || settings.watermark !== null
+  const overlayFrames = opts.overlays?.length ? await openOverlayFrames(opts.overlays, { startTime, fps, total }) : null
+  const needsComposite = backdropFrames !== null || settings.watermark !== null || overlayFrames !== null
   const watermarkFont = needsComposite ? markFont() : ""
   if (settings.watermark) await loadMarkFont(watermarkFont, settings.watermark)
 
@@ -1071,6 +1082,8 @@ export async function exportVideo(opts: {
       // and the canvas survives, which is exactly what makes the bug look
       // intermittent rather than structural.
       const bgFrame = backdropFrames ? await backdropFrames.next() : null
+      // Overlays' animated frames, decoded before the render for the same reason.
+      await overlayFrames?.prepare(startTime + t)
       // Cards, before the render for the same reason: the texture a card samples
       // has to hold this frame's picture by the time the frame is drawn.
       for (const s of planeSources) {
@@ -1105,6 +1118,7 @@ export async function exportVideo(opts: {
         // Already cover-fitted to the output — see BackdropFrames.
         if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
         ctx.drawImage(canvas, 0, 0, width, height)
+        overlayFrames?.draw(ctx, width, height, startTime + t)
         if (settings.watermark) drawMark(ctx, width, height, watermarkFont, settings.watermark, startTime + t)
       }
 
@@ -1123,6 +1137,7 @@ export async function exportVideo(opts: {
     throw e
   } finally {
     backdropFrames?.close()
+    overlayFrames?.close()
     for (const s of planeSources) s.frames.close()
     // Restore the live session at the exact prior size (the host re-asserts
     // pin-or-tracking afterwards), background/skybox (compositing mode

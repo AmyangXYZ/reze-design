@@ -77,6 +77,7 @@ export function EffectParams({
   onKeys,
   frameNow,
   boneNames,
+  onPreview,
 }: {
   decls: EffectParamDecl[]
   /** Only what this scene moved. Anything absent shows the shader's own default,
@@ -105,6 +106,10 @@ export function EffectParams({
   frameNow?: () => number
   /** A character's bone names, for a bone dial — null asks for the first. */
   boneNames?: (modelId: string | null) => string[]
+  /** A slider's drag, shown on the effect and nowhere else: the value, and the
+   *  dial's keys with that value keyed at the playhead when the dial is keyed.
+   *  Given, a drag commits through onChange or onKeys once, where it ends. */
+  onPreview?: (name: string, value: EffectParamValue, keys: DialKey[] | null) => void
 }) {
   const { t, locale } = useI18n()
   const zh = locale === "zh"
@@ -134,6 +139,16 @@ export function EffectParams({
     const kept = old.find((k) => k.frame === at)
     onKeys?.(d.name, [...rest, { ...(kept ?? {}), frame: at, value }].sort((a, b) => a.frame - b.frame))
   }
+  /** A drag's step, shown without being written down. */
+  const preview = onPreview
+    ? (d: EffectParamDecl, value: EffectParamValue) => {
+        const old = keysOf(d.name)
+        if (!old) return onPreview(d.name, value, null)
+        const at = Math.round(frameNow?.() ?? frame)
+        const kept = old.find((k) => k.frame === at)
+        onPreview(d.name, value, [...old.filter((k) => k.frame !== at), { ...(kept ?? {}), frame: at, value }].sort((a, b) => a.frame - b.frame))
+      }
+    : undefined
   /** A dial changed: a key at the playhead when it is keyed, its value when not. */
   const change = (d: EffectParamDecl, value: EffectParamValue) => (keysOf(d.name) ? putKey(d, value) : onChange(d.name, value))
   // Whether this scene has moved anything. Drives the button's disabled state,
@@ -280,6 +295,7 @@ export function EffectParams({
               max={reach(i)}
               step={reach(i) / 100}
               onChange={(n) => change(d, { ...v, [axis]: n })}
+              onPreview={preview && ((n) => preview(d, { ...v, [axis]: n }))}
               fmt={(n) => n.toFixed(2)}
               dense
               labelClass="w-[4.75rem]"
@@ -324,6 +340,7 @@ export function EffectParams({
         // a whole number steps by one.
         step={whole ? 1 : (max - min) / 100 || 0.01}
         onChange={(n) => change(d, whole ? Math.round(n) : n)}
+        onPreview={preview && ((n) => preview(d, whole ? Math.round(n) : n))}
         fmt={(n) => (whole ? String(Math.round(n)) : Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2))}
         dense
         labelClass="w-[4.75rem]"

@@ -18,6 +18,7 @@ import {
   RENDERING_LAYER_DEFAULT,
   type Engine,
   type HdrImage,
+  type EffectParamValue,
 } from "reze-engine"
 
 /** Every rendering layer — the sun's reach while no stage brings a sun of its own. */
@@ -25,12 +26,12 @@ const ALL_LAYERS = 0xffffffff
 
 /** One lamp as setLights takes it, with its bulb (`near`, record word 14). */
 type EngineLamp = NonNullable<Parameters<Engine["setLights"]>[0]>[number] & { near?: number }
-import { effectParams, type AppliedEffect, type EffectSurface } from "@/lib/effects"
+import { effectParams, type AppliedEffect, type DialKey, type EffectSurface } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera, type SceneLight } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
-import { pushTimeline, setLampRig, timelineOf } from "@/lib/timeline"
+import { keyToEngine, pushTimeline, setLampRig, timelineOf } from "@/lib/timeline"
 import { lightCookieImage, type LightCookie } from "@/lib/light-cookies"
 
 /**
@@ -41,6 +42,8 @@ import { lightCookieImage, type LightCookie } from "@/lib/light-cookies"
  * as entry i put one effect's strips — and its dials — onto its neighbour, for
  * as long as the broken one stayed in the scene.
  */
+const uidsOf = (list: AppliedEffect[]) => list.map((e) => e.uid ?? "").join("\0")
+
 function installedIndex(results: { ok: boolean }[]): (number | null)[] {
   let k = 0
   return results.map((r) => (r.ok ? k++ : null))
@@ -396,6 +399,25 @@ export function useSceneSync({
    *  has no effects installed, and a key left over from the previous one made
    *  the install skip itself. */
   const lastWgslEngine = useRef<Engine | null>(null)
+  /** What the last install reported, by position, and the uids it was filed
+   *  under. The same shaders can come back as different rows — an effect
+   *  saved and applied anew is a new uid over code just installed — and the
+   *  dock finds its dials by uid, so they are filed again without a compile. */
+  const lastSurface = useRef<{ rs: { params: EffectSurface["params"]; readsCast: EffectSurface["readsCast"] }[]; uids: string } | null>(null)
+  /** WHAT EACH EFFECT EXPOSES, read off the install rather than re-parsed:
+   *  the engine already read the directives to build the uniform, and a second
+   *  parse here would be an answer free to disagree with the running shader. */
+  const fileSurface = useCallback(
+    (rs: { params: EffectSurface["params"]; readsCast: EffectSurface["readsCast"] }[], list: AppliedEffect[]) => {
+      lastSurface.current = { rs, uids: uidsOf(list) }
+      onEffectSurface?.(
+        Object.fromEntries(
+          rs.map((r, i) => [list[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const),
+        ) as Record<string, EffectSurface>,
+      )
+    },
+    [onEffectSurface],
+  )
   /** What the last install made of the list — see installedIndex. Null is
    *  one instance per entry, in order, which is every install that compiled. */
   const engineIndex = useRef<(number | null)[] | null>(null)
@@ -479,7 +501,12 @@ export function useSceneSync({
       lastWgsl.current = null
       lastWgslEngine.current = engine
     }
-    if (wgsl === lastWgsl.current) return
+    if (wgsl === lastWgsl.current) {
+      const last = lastSurface.current
+      const applied = exportBackground === "green" ? [] : backgroundEffects
+      if (last && last.uids !== uidsOf(applied)) fileSurface(last.rs, applied)
+      return
+    }
     lastWgsl.current = wgsl
     // Params ride the install so an effect's first frame is already at the
     // scene's settings — seeding after the fact would show the author's default
@@ -523,13 +550,7 @@ export function useSceneSync({
         // The engine already read the directives to build the uniform, so parsing
         // the same lines again here would be a second answer free to disagree with
         // the one the shader is actually running.
-        onEffectSurface?.(
-          Object.fromEntries(
-            rs
-              .map((r, i) => [applied[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const)
-              .filter(([uid]) => uid !== undefined),
-          ) as Record<string, EffectSurface>,
-        )
+        fileSurface(rs, applied)
         rs.forEach((r, i) => {
           // Named, not numbered: every entry is one the scene asked for now, and
           // a name is what the person reading the console can go and look at.
@@ -551,7 +572,7 @@ export function useSceneSync({
         if (current()) lastWgsl.current = null
         console.error("[effect] install failed:", err)
       })
-  }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface, texturesVersion])
+  }, [backgroundEffects, exportBackground, ready, engineRef, fileSurface, texturesVersion])
 
   // ── Who is the first character ──
   //
@@ -900,16 +921,32 @@ export function useSceneSync({
       lastWgslEngine.current = engine
       engineIndex.current = installedIndex(rs)
       applySchedules(engine, list, engineIndex.current)
-      onEffectSurface?.(
-        Object.fromEntries(
-          rs.map((r, i) => [list[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const),
-        ) as Record<string, EffectSurface>,
-      )
+      fileSurface(rs, list)
       return rs
     },
-    [engineRef, texturesVersion, onEffectSurface],
+    [engineRef, texturesVersion, fileSurface],
   )
-  return { installEffects }
+
+  /**
+   * A dial being dragged, straight onto its instance: the value, or the dial's
+   * keys with the dragged one in them. The document hears only where the drag
+   * ends; each step on the way would rebuild the editor and push every
+   * effect's timeline, which is what made a slider judder.
+   */
+  const previewEffectDial = useCallback(
+    (uid: string, name: string, value: EffectParamValue, keys: DialKey[] | null) => {
+      const engine = engineRef.current
+      if (!engine) return
+      const applied = exportBackground === "green" ? [] : backgroundEffects
+      const i = applied.findIndex((e) => e.uid === uid)
+      const k = i < 0 ? null : engineIndex.current ? engineIndex.current[i] : i
+      if (k == null) return
+      if (keys) engine.setEffectParamTrack(k, name, keys.map(keyToEngine))
+      else engine.setEffectParam(k, name, value)
+    },
+    [engineRef, backgroundEffects, exportBackground],
+  )
+  return { installEffects, previewEffectDial }
 }
 
 /**

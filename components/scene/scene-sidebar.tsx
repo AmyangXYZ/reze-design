@@ -29,6 +29,7 @@ export function SliderRow({
   inputMin = -Infinity,
   inputMax = Infinity,
   onChange,
+  onPreview,
   fmt,
   disabled,
   dense,
@@ -46,6 +47,10 @@ export function SliderRow({
   inputMin?: number
   inputMax?: number
   onChange: (v: number) => void
+  /** Given, a drag shows each step through this and hands onChange only the
+   *  value it was let go at — for a control whose every write is costly
+   *  (an effect dial: the whole document, its undo and the timeline push). */
+  onPreview?: (v: number) => void
   fmt?: (v: number) => string
   disabled?: boolean
   /** Tighter row spacing, for a popover rather than the dock's own column: a
@@ -62,6 +67,9 @@ export function SliderRow({
   // style group, so it needs no affordance of its own.
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
+  // The value under the thumb while a previewed drag is on.
+  const [dragged, setDragged] = useState<number | null>(null)
+  const shown = dragged ?? value
   const commit = (raw: string) => {
     setEditing(false)
     const parsed = Number(raw)
@@ -94,12 +102,21 @@ export function SliderRow({
         // Parked at the end of the track while the value is past it. Radix
         // clamps an out-of-range value anyway; doing it here keeps the thumb
         // from reporting the clamp back as an edit.
-        value={[Math.min(max, Math.max(min, value))]}
+        value={[Math.min(max, Math.max(min, shown))]}
         min={min}
         max={max}
         step={step}
         disabled={disabled}
-        onValueChange={([v]) => onChange(v)}
+        onValueChange={([v]) => {
+          if (!onPreview) return onChange(v)
+          setDragged(v)
+          onPreview(v)
+        }}
+        onValueCommit={([v]) => {
+          if (!onPreview) return
+          setDragged(null)
+          onChange(v)
+        }}
       />
       {/* ONE element for both states. A span that becomes an input can never be
           pixel-identical — the input reserves caret space and centres its text
@@ -109,7 +126,7 @@ export function SliderRow({
           colour and readOnly change. */}
       <Input variant="bare"
         readOnly={!editing}
-        value={editing ? draft : String(fmt ? fmt(value) : value)}
+        value={editing ? draft : String(fmt ? fmt(shown) : shown)}
         // The second press of a double-click, before the browser selects the
         // word in the read-only field on its own: the edit begins, and the
         // underline and the selection arrive in the same frame.

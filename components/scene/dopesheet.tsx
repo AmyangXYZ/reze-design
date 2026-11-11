@@ -168,7 +168,7 @@ export function Dopesheet({
   // visibility rows come built that way (model, then its materials in the
   // model's own order), the effects in list order, so those are reversed.
   // Bones, morphs and the camera are keys, on the curve editor.
-  const clipKind = kind === "effect" || kind === "visibility";
+  const clipKind = kind === "effect" || kind === "visibility" || kind === "layer";
 
   // ─── Transport, both directions ─────────────────────────────────────────
   //
@@ -199,7 +199,7 @@ export function Dopesheet({
     // and the Visibility tab on its own band, which is the same kind of track:
     // a state that holds until the next switch rather than a curve.
     setParentSelected(kind === "object");
-    if (kind === "camera" || kind === "effect" || kind === "object" || kind === "visibility") {
+    if (kind === "camera" || kind === "effect" || kind === "object" || kind === "visibility" || kind === "layer") {
       setSelectedBone(null);
       setSelectedMorph(null);
     } else if (kind === "morph") {
@@ -469,7 +469,7 @@ export function Dopesheet({
                 // after its own motion has finished, exactly as a prop can be
                 // thrown after its own ends, and an unscheduled effect plays
                 // to the end of the scene.
-                spanFrames={kind === "object" || kind === "visibility" || kind === "effect" ? spanFrames : 0}
+                spanFrames={kind === "object" || kind === "visibility" || kind === "effect" || kind === "layer" ? spanFrames : 0}
                 // Baselined, so the FIRST clip to arrive does not count as a
                 // swap. The timeline resets its zoom and scroll whenever this
                 // changes, and the first change is the clip loading into an
@@ -483,6 +483,7 @@ export function Dopesheet({
                 audioPeaks={audioPeaks}
                 audioDuration={audioDuration}
                 trailing={trailing}
+                inspector={inspector}
                 initialView={
                   restored
                     ? {
@@ -494,12 +495,11 @@ export function Dopesheet({
                 }
                 onViewChange={onViewChange}
                 effectLanes={effectLanes && kind === "effect" ? { ...effectLanes, effects: [...effectLanes.effects].reverse(), scrollTop: 0 } : null}
-                visibilityLanes={visibilityLanes && kind === "visibility" ? { ...visibilityLanes, scrollTop: 0 } : null}
-                dialCurves={kind === "effect" ? dialCurves : null}
+                visibilityLanes={visibilityLanes && (kind === "visibility" || kind === "layer") ? { ...visibilityLanes, scrollTop: 0 } : null}
+                dialCurves={kind === "effect" || kind === "layer" ? dialCurves : null}
                 aside={outline ? <TimelineOutliner outline={outline} rows={rows} firstH={RULER_H} /> : null}
               />
             </div>
-            {inspector}
           </div>
         </div>
       </div>

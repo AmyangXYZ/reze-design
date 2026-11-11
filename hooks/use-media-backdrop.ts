@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import { openAnimatedImage, type BackdropMedia } from "@/lib/backdrop"
 
-type Source = {
+export type Source = {
   /**
    * Paint the frame for a time inside the media, if it is not already up.
    *
@@ -58,7 +58,7 @@ function fit(canvas: HTMLCanvasElement, w: number, h: number) {
  * the index changes. At a gif's ~10 fps against a 60 Hz tick, five ticks in six
  * ask for the frame already on screen and do nothing.
  */
-async function imageSource(file: File): Promise<Source | null> {
+export async function imageSource(file: File): Promise<Source | null> {
   const opened = await openAnimatedImage(file)
   if (!opened) return null
   const { dec, frames } = opened

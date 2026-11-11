@@ -73,6 +73,24 @@ export function useCoverInk(
         }
       }
       ctx.drawImage(frame, 0, 0)
+      // The overlays, over the frame where they stand and as faint as they
+      // are: a picture laid on the shot is behind the type as much as the
+      // scene is. Unrotated — a reading of brightness needs no more.
+      if (media) {
+        const box = canvas.getBoundingClientRect()
+        if (box.width > 0 && box.height > 0)
+          for (const el of main.querySelectorAll<HTMLElement>("[data-overlay]")) {
+            const a = Number(el.style.opacity || "1")
+            if (!(a > 0)) continue
+            if (!(el instanceof HTMLImageElement || el instanceof HTMLVideoElement || el instanceof HTMLCanvasElement)) continue
+            const r = el.getBoundingClientRect()
+            try {
+              ctx.globalAlpha = Math.min(1, a)
+              ctx.drawImage(el, ((r.left - box.left) / box.width) * W, ((r.top - box.top) / box.height) * H, (r.width / box.width) * W, (r.height / box.height) * H)
+            } catch {}
+            ctx.globalAlpha = 1
+          }
+      }
     }
     const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
     // Where the canvas IS laid out, without the transform that eases it there.

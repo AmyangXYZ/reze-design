@@ -149,7 +149,7 @@ type TimelineEngine = {
  * the transform's, and stays with whoever places it.
  */
 /** A dial key as the engine reads it: seconds, and the curve in 0..1. */
-const keyToEngine = (key: DialKey): EffectParamKey => ({
+export const keyToEngine = (key: DialKey): EffectParamKey => ({
   time: key.frame / FPS,
   value: key.value,
   ...(key.ease ? { ease: key.ease } : {}),

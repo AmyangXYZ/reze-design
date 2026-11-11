@@ -34,6 +34,7 @@ import {
   type ExportProgress,
   type ExportTarget,
 } from "@/lib/video-export"
+import type { LiveOverlay } from "@/lib/overlays"
 import type { FootstepSource } from "@/lib/footsteps"
 import { isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import type { SceneTimeline } from "@/lib/timeline"
@@ -188,6 +189,13 @@ const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
   // 3:4 limit, so one file fits both uncropped.
   "4:5": { "1080p": [1080, 1350], "1440p": [1440, 1800], "4k": [2160, 2700] },
   "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+}
+
+/** The export's frame in pixels, as last chosen: what an overlay's exact size
+ *  is measured against. */
+export function exportDims(): [number, number] {
+  const p = readExportPrefs()
+  return DIMS[p.aspect][p.quality]
 }
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control
@@ -398,6 +406,7 @@ export const RenderPanel = memo(function RenderPanel({
   onProgressChange,
   rasterLyricsAt,
   planes,
+  overlays,
 }: {
   /** This tab is the visible one. */
   active: boolean
@@ -446,6 +455,8 @@ export const RenderPanel = memo(function RenderPanel({
   /** Moving cards, which the export advances itself — the live clock steps them
    *  by seeking, which is far too slow offline. */
   planes?: ExportPlane[]
+  /** Pictures over the frame, drawn into every exported frame. */
+  overlays?: readonly LiveOverlay[]
 }) {
   const t = useT()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
@@ -630,6 +641,7 @@ export const RenderPanel = memo(function RenderPanel({
         // The still is the pose on screen, so a moving backdrop has to be the
         // frame under that pose rather than the one it opens on.
         atTime: engine.getModel(modelName)?.getAnimationProgress().current ?? 0,
+        overlays,
       })
       const filename = filenameFor("png", false)
       download(blob, filename)
@@ -811,6 +823,7 @@ export const RenderPanel = memo(function RenderPanel({
         fileStream,
         directory,
         planes,
+        overlays,
         onProgress: setProgress,
         signal: ac.signal,
       })

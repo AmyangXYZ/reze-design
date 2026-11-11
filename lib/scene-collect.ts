@@ -10,7 +10,8 @@
 
 import type { BundleEntry } from "@/lib/bundle"
 import type { EngineModelInfo, PropInfo, StageInfo } from "@/hooks/use-engine"
-import type { AssetRef, ModelSource, SceneBackground, SceneModel, ScenePlane, SceneStageTransform } from "@/lib/scene"
+import type { AssetRef, ModelSource, SceneBackground, SceneModel, SceneOverlay, ScenePlane, SceneStageTransform } from "@/lib/scene"
+import { sceneOverlayOf, type LiveOverlay } from "@/lib/overlays"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import { dirOf, stageFolder } from "@/lib/unity-native"
 import type { BundleFile } from "@/lib/uploads"
@@ -62,6 +63,9 @@ export type SceneSlotsInput = {
   hdri: { name: string; file: File } | null
   /** Media planes, each with the file it is made from. */
   planes: { name: string; file: File; width: number; height: number; transform: SceneStageTransform }[]
+  /** Overlays, lowest first, each with its picture. Optional: a caller with no
+   *  such slot collects a scene without any. */
+  overlays?: LiveOverlay[]
   /** The game stage package's bundle folder, while the scene still draws it. */
   nativeStage?: string | null
 }
@@ -77,6 +81,7 @@ export type SceneSlots = {
   background: SceneBackground
   hdri: AssetRef | null
   planes: ScenePlane[]
+  overlays: SceneOverlay[]
   nativeStage: string | null
   hidden: Record<string, string[]>
 }
@@ -319,6 +324,13 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     return { asset: { name: p.name, url: path }, width: p.width, height: p.height, transform: p.transform }
   })
 
+  // Overlays, packed like the cards and indexed for the same reason.
+  const overlays: SceneOverlay[] = (input.overlays ?? []).map((o, i) => {
+    const path = `overlays/${i}-${o.name}`
+    entries.push({ path, file: o.file })
+    return sceneOverlayOf(o, { name: o.name, url: path })
+  })
+
   // The game stage: never uploaded here, only ever arrived in a bundle, so it
   // is carried forward from there like any other bundle file the document
   // still names. Removed, it is not named, and the next repack leaves it out.
@@ -346,5 +358,5 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     )
   }
 
-  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, footstep, background, hdri, planes, nativeStage, hidden }
+  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, footstep, background, hdri, planes, overlays, nativeStage, hidden }
 }
