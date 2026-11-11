@@ -66,7 +66,7 @@ export function followsCharacter(wgsl: string): boolean {
 }
 
 /** Kinds whose keys hold rather than travel: a switch, a list, a bone. */
-export const HOLDING_KINDS = new Set(["bool", "enum", "bone"])
+export const HOLDING_KINDS = new Set(["bool", "enum", "bone", "text"])
 
 /** A dial's value at a frame, read from its keys as the engine reads them —
  *  for the panel to show what the playhead is on. Holds outside the keys. */
@@ -210,6 +210,10 @@ export function effectParams(
     }
     if (d.kind === "bone" && typeof d.value === "string") {
       out[d.name] = { bone: d.value, model: null }
+    } else if (d.kind === "text" && typeof d.value === "string") {
+      out[d.name] = d.value
+    } else if (d.kind === "lag") {
+      continue
     } else if (d.kind === "color" && typeof d.value === "string") {
       const n = parseInt(d.value.slice(1), 16)
       out[d.name] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }

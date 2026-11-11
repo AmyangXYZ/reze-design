@@ -115,6 +115,11 @@ function paramsIn(wgsl: string, args: unknown): { params: Record<string, EffectP
       const at = typeof value === "string" ? ids.indexOf(value) : typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ids.length ? value : -1
       if (at < 0) errors.push(`${name} must be one of ${ids.join(", ")}`)
       else params[name] = at
+    } else if (d.kind === "text") {
+      if (typeof value === "string") params[name] = value
+      else errors.push(`${name} must be words, a string`)
+    } else if (d.kind === "lag") {
+      errors.push(`${name} trails ${d.source} by itself — set ${d.source} instead`)
     } else if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
       const n = parseInt(value.slice(1), 16)
       params[name] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }

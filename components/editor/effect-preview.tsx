@@ -753,6 +753,9 @@ function paramsBlock(wgsl: string): string {
   const fields: string[] = []
   const values: string[] = []
   const bones: string[] = []
+  const texts: string[] = []
+  // A lag reads its source's default: a card has no keys to trail.
+  const floats = new Map<string, string>()
   for (const line of wgsl.split("\n")) {
     const m = /^[ \t]*#param[ \t]+(\w+)[ \t]+(\w+)[ \t]+(.*)$/.exec(line)
     if (!m) continue
@@ -775,6 +778,15 @@ function paramsBlock(wgsl: string): string {
       if (!Number.isFinite(v)) continue
       fields.push(`  ${name}: f32,`)
       values.push(v.toFixed(6))
+      floats.set(name, v.toFixed(6))
+    } else if (kind === "lag") {
+      fields.push(`  ${name}: f32,`)
+      values.push(floats.get(args[0] ?? "") ?? "0.0")
+    } else if (kind === "text") {
+      // A card sets no words: an empty rect, which the accessors read as none.
+      fields.push(`  ${name}: vec4f,`)
+      values.push("vec4f(0.0)")
+      texts.push(name)
     } else if (kind === "int") {
       const v = Number(args[0])
       if (!Number.isFinite(v)) continue
@@ -809,7 +821,8 @@ function paramsBlock(wgsl: string): string {
     ? "struct RzBoneParam { pos: vec3f, fwd: vec3f, valid: bool, }\n" +
       bones.map((n) => `fn rzBone_${n}() -> RzBoneParam { return RzBoneParam(params.${n}, params.${n}__fwd, params.${n}__ok > 0.5); }\n`).join("")
     : ""
-  return `struct EffectParams {\n${fields.join("\n")}\n}\nvar<private> params: EffectParams = EffectParams(${values.join(", ")});\n${boneFns}`
+  const textFns = texts.map((n) => `fn rzText_${n}(uv: vec2f) -> f32 { return 0.0; }\nfn rzTextAspect_${n}() -> f32 { return 1.0; }\n`).join("")
+  return `struct EffectParams {\n${fields.join("\n")}\n}\nvar<private> params: EffectParams = EffectParams(${values.join(", ")});\n${boneFns}${textFns}`
 }
 
 /** The author's source as a card compiles it: dials declared, directives gone. */

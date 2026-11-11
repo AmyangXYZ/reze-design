@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { useUndoScope } from "@/hooks/use-undo-scope"
+import { useI18n } from "@/lib/i18n"
 import type { EffectParamDecl, EffectParamValue } from "reze-engine"
 import { defaultOf } from "@/components/scene/effect-params"
 import { AXIS } from "@/lib/animation"
@@ -70,6 +71,9 @@ const flat: Channel = {
   get: () => 0.5,
   set: (v) => v,
 }
+/** A word key's words. */
+const textOf = (v: EffectParamValue): string => (typeof v === "string" ? v : "")
+
 /** A colour value as CSS, for painting the line and the keys in it. */
 export function cssOf(v: EffectParamValue): string {
   if (!(typeof v === "object" && "x" in v)) return "currentColor"
@@ -80,12 +84,17 @@ export function cssOf(v: EffectParamValue): string {
 /** The lines a dial draws: three for a vector's axes; one for a colour, its
  *  brightness, drawn in the colour itself; one for anything else. */
 export function channelsOf(d: EffectParamDecl): Channel[] {
-  if (d.kind === "color") return [flat]
+  if (flatKind(d)) return [flat]
   return d.kind === "vec3" || d.kind === "point" ? [component("x"), component("y"), component("z")] : [scalar]
 }
 
-/** A dial that can be shown as a value over time — every kind but a bone. */
-export const curveable = (d: EffectParamDecl) => d.kind !== "bone"
+/** A colour and words have no height: keys on one flat line, moved in time,
+ *  their values picked or typed in Properties. */
+const flatKind = (d: EffectParamDecl) => d.kind === "color" || d.kind === "text"
+
+/** A dial that can be shown as a value over time — every kind but a bone, and
+ *  a lag, which the engine derives from the dial it trails. */
+export const curveable = (d: EffectParamDecl) => d.kind !== "bone" && d.kind !== "lag"
 
 /** A round step for about `count` ticks across `span`: 1, 2 or 5 a power of ten. */
 function niceStep(span: number, count: number): number {
@@ -122,6 +131,7 @@ export function DialCurves({
   labelWidth: number
   onSeek: (frame: number) => void
 }) {
+  const { t } = useI18n()
   const decl = data.decls.find((d) => d.name === data.tab) ?? data.decls[0]
   const plainValue = decl ? (data.plain?.[decl.name] ?? defaultOf(decl)) : 0
   const keys = useMemo(() => (decl ? shownKeys(data.keys[decl.name], plainValue) : []), [data.keys, decl, plainValue])
@@ -198,7 +208,7 @@ export function DialCurves({
     if (!decl) return { lo: 0, hi: 1 }
     if (decl.kind === "bool") return { lo: 0, hi: 1 }
     if (decl.kind === "enum") return { lo: 0, hi: Math.max(1, (decl.options?.length ?? 2) - 1) }
-    if (decl.kind === "color") return { lo: 0, hi: 1 }
+    if (flatKind(decl)) return { lo: 0, hi: 1 }
     if ((decl.kind === "float" || decl.kind === "int") && decl.min !== undefined && decl.max !== undefined) return { lo: decl.min, hi: decl.max }
     const vals = [...keys.map((k) => k.value), fallback].flatMap((v) => channels.map((c) => c.get(v)))
     let lo = Math.min(...vals)
@@ -262,7 +272,7 @@ export function DialCurves({
         e.preventDefault()
         const many = e.shiftKey ? 10 : 1
         const df = e.key === "ArrowLeft" ? -many : e.key === "ArrowRight" ? many : 0
-        const scalar = channels.length === 1 && decl.kind !== "color"
+        const scalar = channels.length === 1 && !flatKind(decl)
         const whole = decl.kind === "int" || decl.kind === "enum" || decl.kind === "bool"
         const step = (whole ? 1 : (range.hi - range.lo) / 100) * many
         const dv = !scalar ? 0 : e.key === "ArrowUp" ? step : e.key === "ArrowDown" ? -step : 0
@@ -417,11 +427,19 @@ export function DialCurves({
           return d
         })
       : []
+  // A count eases between its keys as any dial does, and the effect reads it
+  // rounded: the line is drawn as the steps the effect sees.
+  const counts = decl.kind === "int"
   const paths = channels.map((c) => {
     let p = ""
+    let last: number | null = null
     for (let f = f0; f <= f1 + step; f += step) {
       const v = dialAt(keys, Math.min(f, f1), holds) ?? fallback
-      p += `${p ? "L" : "M"}${toX(Math.min(f, f1)).toFixed(1)} ${toY(c.get(v)).toFixed(1)}`
+      const n = counts ? Math.round(c.get(v)) : c.get(v)
+      const x = toX(Math.min(f, f1)).toFixed(1)
+      if (counts && last !== null && n !== last) p += `L${x} ${toY(last).toFixed(1)}`
+      p += `${p ? "L" : "M"}${x} ${toY(n).toFixed(1)}`
+      last = n
     }
     return p
   })
@@ -432,9 +450,10 @@ export function DialCurves({
   const tick = whole ? Math.max(1, Math.round(niceStep(range.hi - range.lo, 4))) : niceStep(range.hi - range.lo, 4)
   const ticks: number[] = []
   // A colour's line is flat: no value axis to read.
-  if (decl.kind !== "color")
+  if (!flatKind(decl))
     for (let v = Math.ceil(range.lo / tick) * tick; v <= range.hi + tick * 1e-6; v += tick) ticks.push(Math.abs(v) < tick * 1e-6 ? 0 : v)
   const tickLabel = (v: number) => {
+    if (decl.kind === "bool") return v >= 0.5 ? t.lab.on : t.lab.off
     if (decl.kind === "enum") {
       const o = decl.options?.[Math.round(v)]
       return o ? (o.labelZh && data.zh ? o.labelZh : o.id) : String(v)
@@ -502,7 +521,39 @@ export function DialCurves({
           channels.map((c, ch) => {
             const picked = selected.includes(i)
             return (
-              decl.kind === "color" ? (
+              decl.kind === "text" ? (
+                // A word key is the colour's box, holding its words.
+                <g
+                  key={`${i}:${ch}`}
+                  className={drag ? "cursor-grabbing" : "cursor-grab"}
+                  onPointerDown={dotDown(i, ch)}
+                  onPointerMove={dotMove}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                >
+                  <rect
+                    x={toX(k.frame) - 6}
+                    y={toY(0.5) - 8}
+                    width={Math.max(12, Math.min(16, textOf(k.value).length) * 6 + 10)}
+                    height={16}
+                    rx={3}
+                    className="fill-background"
+                    stroke={picked ? "var(--color-blue-400)" : "currentColor"}
+                    strokeWidth={picked ? 2 : 1}
+                  />
+                  <text
+                    x={toX(k.frame) - 1}
+                    y={toY(0.5)}
+                    dominantBaseline="middle"
+                    fill="currentColor"
+                    className="pointer-events-none"
+                    style={{ fontSize: 10 }}
+                  >
+                    {textOf(k.value).length > 16 ? `${textOf(k.value).slice(0, 15)}…` : textOf(k.value)}
+                  </text>
+                </g>
+              ) : decl.kind === "color" ? (
                 // A colour key is a swatch of its colour, edged in the ink so
                 // a dark one holds on the sheet, in the accent when picked.
                 <rect

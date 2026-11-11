@@ -40,6 +40,7 @@ import type { EffectBoneValue, EffectParamDecl, EffectParamValue, EffectPointVal
 import { dialAt, HOLDING_KINDS, type DialKey } from "@/lib/effects"
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useI18n } from "@/lib/i18n"
@@ -54,7 +55,7 @@ const hexToVec = (hex: string): EffectParamValue => {
 }
 
 const vecToHex = (v: EffectParamValue): string => {
-  if (typeof v === "number" || !("x" in v)) return "#000000"
+  if (typeof v === "number" || typeof v === "string" || !("x" in v)) return "#000000"
   const b = (c: number) => Math.round(Math.min(1, Math.max(0, c)) * 255)
   return `#${((b(v.x) << 16) | (b(v.y) << 8) | b(v.z)).toString(16).padStart(6, "0")}`
 }
@@ -140,7 +141,8 @@ export function EffectParams({
   const touched = values !== undefined && Object.keys(values).length > 0
   const rows = useMemo(
     () =>
-      decls.map((d) => {
+      // A lag is the engine's, trailing another dial: nothing to set.
+      decls.filter((d) => d.kind !== "lag").map((d) => {
         const set = values?.[d.name]
         return { d, set }
       }),
@@ -188,6 +190,20 @@ export function EffectParams({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )
+    }
+    if (d.kind === "text") {
+      const value = typeof set === "string" ? set : typeof d.value === "string" ? d.value : ""
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
+          <Input
+            variant="bare"
+            value={value}
+            onChange={(e) => change(d, e.target.value)}
+            className="ml-auto block h-4 min-w-0 flex-1 rounded-none border-0 border-b border-line bg-transparent p-0 text-right text-2xs leading-4 outline-none focus:border-foreground"
+          />
         </div>
       )
     }
@@ -392,6 +408,7 @@ export function EffectParams({
 
 /** A dial's value when it has never been set: the author's default. */
 export function defaultOf(d: EffectParamDecl): EffectParamValue {
+  if (d.kind === "text") return typeof d.value === "string" ? d.value : ""
   if (d.kind === "color" && typeof d.value === "string") return hexToVec(d.value)
   if (d.kind === "bone") return { bone: typeof d.value === "string" ? d.value : "", model: null }
   if (Array.isArray(d.value)) return { x: d.value[0], y: d.value[1], z: d.value[2] }
