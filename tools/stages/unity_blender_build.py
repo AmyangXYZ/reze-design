@@ -136,7 +136,19 @@ def make_material(spec):
 
     if spec["emissive"]:
         eimg = image_node(spec["emissive"]["image"], "sRGB", -600, 600)
-        nt.links.new(eimg.outputs["Color"], bsdf.inputs["Emission Color"])
+        ef = spec["emissive"].get("factor")
+        if ef and any(abs(c - 1.0) > 1e-3 for c in ef[:3]):
+            # a colour on the glow (the game's scene tint): glTF's emissiveFactor
+            emix = nt.nodes.new("ShaderNodeMix")
+            emix.data_type = "RGBA"
+            emix.blend_type = "MULTIPLY"
+            emix.inputs["Factor"].default_value = 1.0
+            emix.location = (-200, 600)
+            nt.links.new(eimg.outputs["Color"], emix.inputs[6])
+            emix.inputs[7].default_value = (ef[0], ef[1], ef[2], 1.0)
+            nt.links.new(emix.outputs[2], bsdf.inputs["Emission Color"])
+        else:
+            nt.links.new(eimg.outputs["Color"], bsdf.inputs["Emission Color"])
         bsdf.inputs["Emission Strength"].default_value = spec["emissive"]["strength"]
     elif spec["unlit"] and spec["baseColor"]["image"]:
         # A painted sheet: its picture is what it gives off, and it takes no
@@ -148,10 +160,13 @@ def make_material(spec):
                 src = n
                 break
         if src:
+            # its colour with it (the game's scene tint on a sky): the multiply
+            # that fed the base colour feeds the glow instead
+            fed = [l.from_socket for l in bsdf.inputs["Base Color"].links if l.from_node.type == "MIX"]
             for l in list(bsdf.inputs["Base Color"].links):
                 nt.links.remove(l)
             bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
-            nt.links.new(src.outputs["Color"], bsdf.inputs["Emission Color"])
+            nt.links.new(fed[0] if fed else src.outputs["Color"], bsdf.inputs["Emission Color"])
             bsdf.inputs["Emission Strength"].default_value = 1.0
 
     if spec["alphaMode"] == "BLEND":

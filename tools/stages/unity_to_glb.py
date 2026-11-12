@@ -209,6 +209,48 @@ def game_globals(project_root, scene_path):
     return (scene or {}).get("shaderGlobals", {})
 
 
+# The game shaders that end on SimSceneTint: the lit colour, lamps included, times
+# the scene tint before the fog (SimPipeline/PBR/Standard.shader, decompiled:
+# `tmp2.xyz = tmp0.xyz * SimSceneTint` ahead of the fog block; the others alike).
+# The effect shaders (ZTong/*, Effect_Common) never read it.
+SCENE_TINTED = {
+    "SimPipeline/PBR/Standard", "SimPipeline/PBR/Standard_PBR_2", "SimPipeline/PBR/Detailed",
+    "SimPipeline/PBR/Glass", "SimPipeline/PBR/SnowField", "SimPipeline/Scene/Plant",
+    "SimPipeline/Scene/SceneBillboard", "SimPipeline/Scene/Transparent", "SimPipeline/Scene/Ripplet",
+    "SimPipeline/UnlitColor", "XingFei/Skybox/Skybox_BaseAndCloud",
+}
+
+
+def game_show(project_root, scene_path, notes):
+    """The stage's own show as the Unity project sampled it (agtools/unity/AGStageShow.cs:
+    its looping director stepped over one loop at 30 fps), or None for a stage without one."""
+    path = os.path.join(project_root, "ag_stage_show.json")
+    if not os.path.isfile(path):
+        return None
+    want = scene_path.replace("\\", "/")
+    show = next((x for x in json.load(open(path, encoding="utf-8-sig")).get("scenes", [])
+                 if x.get("scene", "").replace("\\", "/").endswith(want)), None)
+    if show:
+        notes.extend(show.get("notes", []))
+    return show
+
+
+def scene_tint_of(globals_, show, notes):
+    """SimSceneTint as one colour. A stage whose show moves it (X206_band: five volumes
+    the director fades in and out with the music) is drawn at its mean over the loop —
+    the light the room averages; the app has no keyed material value to play it with."""
+    if show and show.get("SimSceneTint"):
+        keys = show["SimSceneTint"]
+        mean = [sum(k[i] for k in keys) / len(keys) for i in range(3)]
+        lo = [min(k[i] for k in keys) for i in range(3)]
+        hi = [max(k[i] for k in keys) for i in range(3)]
+        if max(h - l for h, l in zip(hi, lo)) > 1e-3:
+            notes.append(f"scene tint: its show moves it from {max(lo):.3f} to {max(hi):.3f} over {show['loop']:.1f} s; "
+                         f"drawn at its mean ({', '.join(f'{c:.3f}' for c in mean)}), still")
+        return mean
+    return [float(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
+
+
 def ripple_spec(mat, proj=None, tint=(1.0, 1.0, 1.0), env_scale=1.0):
     """The game's Ripplet water, as the app's rippletGraph draws it.
 
@@ -741,7 +783,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     # -> linear on upload): the shader reads the number as set, as the manifest
     # records it — sim_FogColor beside it is the scene file's value to the digit.
     globals_ = game_globals(project_root, scene_path)
-    scene_tint = [float(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
+    show_notes = []
+    scene_tint = scene_tint_of(globals_, game_show(project_root, scene_path, show_notes), show_notes)
     # sim_EnvCubeScale: the scene's bake-reflection scale (ForwardFeature.SetupCubeReflection),
     # on every cube the water reflects; 2 on X333
     env_scale = float(globals_.get("sim_EnvCubeScale", 1.0))
@@ -812,7 +855,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
             if mat and is_effect_decal(shader_of(mat)):
                 BACKDROP_EFFECTS.add(mat["name"])
 
-    notes = []
+    notes = list(show_notes)
     if origin_at:
         notes.append(f"stood at the origin: {origin} was at {tuple(round(v, 3) for v in origin_at)} in the game")
     fallbacks = scene.lod_fallback_renderers()
@@ -1171,6 +1214,14 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 notes.append(f"{key}: the sea's shallows from a depth map of the beds under it, {sea['depth']['size'][0]:.0f} x {sea['depth']['size'][1]:.0f} m")
         if alpha_mode == "OPAQUE" and base:
             base = opaque_texture(base, out_tex)
+        # THE SCENE TINT, the game's last multiply on these shaders: its lit colour
+        # and its glow alike, before the fog. Carried on what the material draws with
+        # — the albedo every light reaches it through, and its glow — and on the
+        # water's own spec (ripple_spec). Not on its highlights: glTF has no factor
+        # for them.
+        st = scene_tint if mat and shader in SCENE_TINTED and not shader.endswith("/Ripplet") else None
+        if st:
+            tint = tuple(t * c for t, c in zip(tint, st))
         materials.append(
             {
                 "name": key,
@@ -1179,7 +1230,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 "baseColor": {"image": f"tex/{base}" if base else None, "factor": [min(1.0, tint[0]), min(1.0, tint[1]), min(1.0, tint[2]), alpha if alpha_mode != "OPAQUE" else 1.0]},
                 "orm": f"tex/{orm}" if orm else None,
                 "normal": {"image": f"tex/{normal}", "scale": normal_scale} if normal else None,
-                "emissive": {"image": f"tex/{emissive[0]}", "strength": emissive[1]} if emissive else None,
+                "emissive": {"image": f"tex/{emissive[0]}", "strength": emissive[1], **({"factor": list(st)} if st else {})} if emissive else None,
                 "alphaMode": alpha_mode,
                 "alphaCutoff": float(mat["floats"].get("_Cutoff", 0.5)) if cutoff else None,
                 # Standard says _Cull, the effect and water shaders _CullMode (Cull
