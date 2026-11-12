@@ -768,6 +768,9 @@ def build_dir_for(out_glb, name):
     return os.path.join(os.path.dirname(os.path.abspath(out_glb)), "build", name.lower())
 
 
+# the game's music spectrum wall shader (agtools/scene_rhythm.py in ag-rip draws it)
+RHYTHM_SHADER = "SimPipeline/Scene/SceneRhythm"
+
 # --include-off: what the scene file switches off is kept anyway
 INCLUDE_OFF = False
 
@@ -784,7 +787,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     # records it — sim_FogColor beside it is the scene file's value to the digit.
     globals_ = game_globals(project_root, scene_path)
     show_notes = []
-    scene_tint = scene_tint_of(globals_, game_show(project_root, scene_path, show_notes), show_notes)
+    show = game_show(project_root, scene_path, show_notes)
+    scene_tint = scene_tint_of(globals_, show, show_notes)
+    # what the stage's looping show switches and moves is the show's (ag-rip's scene
+    # patch for it), not the still stage's
+    if show:
+        scene.leave_to_show(show.get("switched", []) + show.get("moved", []))
     # sim_EnvCubeScale: the scene's bake-reflection scale (ForwardFeature.SetupCubeReflection),
     # on every cube the water reflects; 2 on X333
     env_scale = float(globals_.get("sim_EnvCubeScale", 1.0))
@@ -867,8 +875,20 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     mesh_card = flat_mesh_cards(proj)
     live_particles = drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card)
     particle_meshes = [p for p in scene.mesh_particles() if p["object"] not in live_particles]
+    to_show, rhythm_walls = [], []
     for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
+            continue
+        if scene.driven_by_show(r["object"]):
+            to_show.append(r["name"])
+            continue
+        # A MUSIC WALL (SimPipeline/Scene/SceneRhythm: X206_band's spectrum bars) draws
+        # nothing but the bars the game's music raises, over the wall behind it - a
+        # still surface of it is a white sheet hiding that wall. Left out; ag-rip's
+        # scene patch for the stage plays it as an effect on the scene's music
+        # (agtools/scene_rhythm.py).
+        if r["materials"] and all(shader_of(materials_by_guid[g]) == RHYTHM_SHADER for g in r["materials"] if g in materials_by_guid):
+            rhythm_walls.append(r["name"])
             continue
         # A SKY THE GAME SWITCHES OFF is off too: X338's moon disc (Common_sky_moon)
         # is off, and its moon is the billboard particle at the same spot, the
@@ -1103,9 +1123,13 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         # AND WHEN IT MOVES, the layers themselves ride along (unity_effect_bake,
         # live_effect): the baked picture stays as the frame any other viewer shows.
         effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or "")) if baked and not sky_material else None
-        tint = per_material[key].get("tint", (1.0, 1.0, 1.0, 1.0))
-        if effect and tint != (1.0, 1.0, 1.0, 1.0):
-            effect["color"] = [c * gamma_to_linear(t) for c, t in zip(effect["color"][:3], tint[:3])] + [effect["color"][3] * tint[3]]
+        # the renderers' own tint (a property block's colour) - its own name: it is
+        # not the material's tint above, which the albedo factor below still needs
+        # (named `tint` too, it replaced that with white on every material: X206_band's
+        # navy back walls, _AlbedoColor with no texture, came out white)
+        r_tint = per_material[key].get("tint", (1.0, 1.0, 1.0, 1.0))
+        if effect and r_tint != (1.0, 1.0, 1.0, 1.0):
+            effect["color"] = [c * gamma_to_linear(t) for c, t in zip(effect["color"][:3], r_tint[:3])] + [effect["color"][3] * r_tint[3]]
         if effect:
             live_effects.append(key)
         # A plain effect sheet — a shadow projection, a candle's glow — is its
@@ -1219,6 +1243,16 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         # — the albedo every light reaches it through, and its glow — and on the
         # water's own spec (ripple_spec). Not on its highlights: glTF has no factor
         # for them.
+        # A MATERIAL'S COLOUR IS GAMMA IN THE FILE AND LINEAR TO THE SHADER: Unity
+        # converts material colours on upload in a linear project (global colours, the
+        # scene tint, it does not), and the factor below is linear, as glTF's is.
+        # X206_band's back walls, _AlbedoColor (0.19, 0.25, 0.31), are (0.03, 0.05,
+        # 0.08) to the game: night navy, not slate.
+        if mat and shader == "SimPipeline/Scene/Plant" and "_TopColor" in mat["colors"] and "_BottomColor" in mat["colors"]:
+            # the plant's two colours, each made linear, then summed (material_tint)
+            tint = tuple(gamma_to_linear(a) + gamma_to_linear(b) for a, b in zip(mat["colors"]["_TopColor"], mat["colors"]["_BottomColor"]))
+        else:
+            tint = tuple(gamma_to_linear(t) for t in tint)
         st = scene_tint if mat and shader in SCENE_TINTED and not shader.endswith("/Ripplet") else None
         if st:
             tint = tuple(t * c for t, c in zip(tint, st))
@@ -1362,6 +1396,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
 
     grade = stage_grading(scene, proj, look, notes)
 
+    if rhythm_walls:
+        notes.append(f"{len(rhythm_walls)} music walls (SceneRhythm: spectrum bars on the game's music) left to the stage's scene patch: "
+                     f"{', '.join(sorted(set(rhythm_walls)))}")
+    if to_show:
+        notes.append(f"{len(to_show)} renderers the stage's looping show switches or moves, left to the show's scene patch: "
+                     f"{', '.join(sorted(set(to_show)))}")
     if switched_off:
         notes.append(f"{len(switched_off)} renderers the game switches off, {'kept anyway (--include-off)' if INCLUDE_OFF else 'left out'}: {', '.join(sorted(set(switched_off)))}")
     if dropped_lods:

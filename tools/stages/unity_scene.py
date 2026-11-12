@@ -104,6 +104,49 @@ class Scene:
         # character page, stands at x = 500 — and a stage is read with its
         # cast's spot at the origin.
         self.origin = (0.0, 0.0, 0.0)
+        # What the stage's looping show drives (leave_to_show): drawn by the show's
+        # own scene patch, so the still stage leaves it out.
+        self._show = ()
+        self._paths = {}
+        self._tf_of = None
+
+    def leave_to_show(self, paths):
+        """The objects the stage's own looping show switches and moves - by
+        hierarchy path, as ag-rip's AGStageShow names them (ag_stage_show.json
+        "switched" / "moved": X206_band's lasers, beams, floor lines, moving heads).
+        They and everything under them count as switched off here: the still stage
+        cannot play a show, and ag-rip's scene patch for the show carries them as
+        props and effects keyed to it."""
+        self._show = tuple(paths)
+
+    def path_of(self, game_object_id):
+        """A GameObject's hierarchy path, 'Root/Child/Name'."""
+        if game_object_id in self._paths:
+            return self._paths[game_object_id]
+        if self._tf_of is None:
+            self._tf_of = {}
+            for fid, (cls, body) in self.docs.items():
+                if cls in (4, 224):
+                    m = re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body)
+                    if m:
+                        self._tf_of[int(m.group(1))] = fid
+        names, go, seen = [], game_object_id, set()
+        while go and go not in seen:
+            seen.add(go)
+            names.append(self.name_of(go))
+            tf = self._tf_of.get(go)
+            parent = self._transform(tf)["parent"] if tf else 0
+            go = self._transform(parent)["object"] if parent and parent in self.docs else 0
+        path = "/".join(reversed(names))
+        self._paths[game_object_id] = path
+        return path
+
+    def driven_by_show(self, game_object_id):
+        """Whether the stage's looping show drives this object (leave_to_show)."""
+        if not self._show:
+            return False
+        path = self.path_of(game_object_id)
+        return any(path == p or path.startswith(p + "/") for p in self._show)
 
     def set_origin(self, name):
         """Put the GameObject called `name` at the origin. Returns its old world position."""
@@ -206,6 +249,8 @@ class Scene:
         parks a lamp by switching off it or the fixture it hangs under, and the
         lamp's own flag still reads 1 in the second case.
         """
+        if self.driven_by_show(game_object_id):
+            return False
         seen = set()
         go = game_object_id
         while go and go not in seen:
