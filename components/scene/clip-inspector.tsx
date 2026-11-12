@@ -1492,6 +1492,9 @@ export type DialEditing = {
   selected: number[]
   onKeys: (keys: DialKey[] | undefined) => void
   onSelect: (indices: number[]) => void
+  /** An object's Insert: every one of its fields keyed at the playhead, as
+   *  it stands, rather than this dial alone. */
+  onInsertAll?: () => void
 }
 
 /** A straight bezier, in the curve editor's 0..127 units. */
@@ -1532,6 +1535,11 @@ function DialKeyBody({ dial }: { dial: DialEditing }) {
     dial.onSelect(edit.selected)
   }
   const insert = () => {
+    if (dial.onInsertAll) {
+      dial.onInsertAll()
+      dial.onSelect([])
+      return
+    }
     const next = [...keys, { frame, value: shown }].sort((x, y) => x.frame - y.frame)
     put({ keys: next, selected: [next.findIndex((k) => k.frame === frame)] })
   }
@@ -1543,7 +1551,6 @@ function DialKeyBody({ dial }: { dial: DialEditing }) {
       ]
     : LINEAR
   const easable = key !== null
-  const held = key?.ease === "hold"
   return (
     <>
       <SubjectHeader title={dial.label} frameCount={null} />
@@ -1571,20 +1578,8 @@ function DialKeyBody({ dial }: { dial: DialEditing }) {
             onTabChange={() => {}}
             p1={curve[0]}
             p2={curve[1]}
-            disabled={!easable || held}
+            disabled={!easable}
             onChange={(p1, p2) => write({ ease: undefined, curve: [p1.x, p1.y, p2.x, p2.y] })}
-            after={
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={!easable}
-                onClick={() => write({ ease: held ? undefined : "hold" })}
-                className={cn(CHIP, "mt-1.5 w-full", held ? CHIP_ON : CHIP_OFF)}
-              >
-                {t.lab.timeline.hold}
-              </Button>
-            }
           />
         )}
         <OperationsSection
@@ -1596,7 +1591,7 @@ function DialKeyBody({ dial }: { dial: DialEditing }) {
           }}
           onPaste={() => put(pasteKeys(keys, frame, shown, Number.POSITIVE_INFINITY))}
           onClear={() => put({ keys: [], selected: [] })}
-          canInsert={atPlayhead < 0}
+          canInsert={dial.onInsertAll !== undefined || atPlayhead < 0}
           canDelete={targets.length > 0}
           canCopy={targets.length > 0}
           canPaste={canPasteKeys(shown)}

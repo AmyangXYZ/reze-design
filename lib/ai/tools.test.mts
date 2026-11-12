@@ -57,6 +57,13 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     lamps: [] as SceneLight[],
     effects: [] as AppliedEffect[],
     visibility: {} as Record<string, VisibilityWindow[]>,
+    overlays: [
+      { id: "o1", name: "logo.png", kind: "image", aspect: 2, x: 0.5, y: 0.5, size: 0.25, rotation: 0, opacity: 1 },
+      { id: "o2", name: "sticker.gif", kind: "animated", aspect: 1, x: 0.2, y: 0.2, size: 0.1, rotation: 0, opacity: 1 },
+    ] as SceneToolHandles["overlays"],
+    planes: [
+      { id: "card.png", name: "card.png", width: 4, height: 3, transform: { position: [0, 1.5, 0], rotation: [0, 0, 0], scale: 1 } },
+    ] as SceneToolHandles["planes"],
   }
   const rec = (fn: string) => (...args: unknown[]) => void calls.push({ fn, args })
   const h: SceneToolHandles = {
@@ -111,6 +118,26 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     },
     setVisibility: (id, w) => {
       state.visibility[id] = w
+    },
+    get overlays() {
+      return state.overlays
+    },
+    updateOverlay: (id, patch) => {
+      state.overlays = state.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o))
+      calls.push({ fn: "updateOverlay", args: [id, patch] })
+    },
+    reorderOverlay: (id, index) => {
+      const list = state.overlays.filter((o) => o.id !== id)
+      const o = state.overlays.find((x) => x.id === id)
+      if (o) list.splice(index, 0, o)
+      state.overlays = list
+    },
+    get planes() {
+      return state.planes
+    },
+    updatePlane: (id, patch) => {
+      state.planes = state.planes.map((p) => (p.id === id ? { ...p, ...patch } : p))
+      calls.push({ fn: "updatePlane", args: [id, patch] })
     },
     shaderLibrary: [{ name: "AG Hair", about: "" }, { name: "WuWa Hair", about: "" }],
     assignShader: (m, g, s) => (calls.push({ fn: "assignShader", args: [m, g, s] }), s === "Nope" ? "no shader" : null),
@@ -677,6 +704,28 @@ await test("the guides are the manual's own sections", async () => {
   const gr = (await runSceneTool("read_authoring_guide", { topic: "graphs" }, h)).data as { guide: string }
   assert.match(fx.guide, /#param/)
   assert.match(gr.guide, /Appendix D/)
+})
+
+await test("objects: set, keys in seconds, clips and layer", async () => {
+  const { h } = fake()
+  const list = (await runSceneTool("get_objects", {}, h)).data as { overlays: { layer: number }[]; planes: { py: number }[] }
+  assert.equal(list.overlays[1].layer, 2)
+  assert.equal(list.planes[0].py, 1.5)
+  await runSceneTool("update_object", { object: "logo.png", set: { x: 0.1 }, keys: { size: [[0, 0.2], [2, 0.5]] }, clips: [{ start: 1, end: 3 }], layer: 2 }, h)
+  const logo = h.overlays.find((o) => o.id === "o1")!
+  assert.equal(logo.x, 0.1)
+  assert.deepEqual(logo.keys?.size, [{ frame: 0, value: 0.2 }, { frame: 60, value: 0.5 }])
+  assert.deepEqual(logo.visibility, [{ start: 30, end: 90 }])
+  assert.equal(h.overlays[1].id, "o1")
+  // A keyed field set: a key at the current time, the plain value left alone.
+  await runSceneTool("update_object", { object: "o1", set: { size: 0.4 } }, h)
+  assert.equal(h.overlays.find((o) => o.id === "o1")!.size, 0.25)
+  await runSceneTool("update_object", { object: "card.png", set: { py: 3 }, keys: { rz: [[0, 0], [1, 90]] } }, h)
+  const card = h.planes[0]
+  assert.equal(card.transform.position[1], 3)
+  assert.equal(card.keys?.rz?.[1].frame, 30)
+  const bad = (await runSceneTool("update_object", { object: "card.png", set: { size: 2 } }, h)).data as { errors: string[] }
+  assert.match(bad.errors[0], /no plane field/)
 })
 
 await test("an unknown tool and a throwing tool both come back as errors", async () => {

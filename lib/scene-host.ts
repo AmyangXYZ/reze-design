@@ -24,6 +24,7 @@ import { loadParticleTextures } from "@/lib/effect-textures"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { castRotationToEngine, pushTimeline, seedLane, seedMaterialLanes, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
+import type { DialKey } from "@/lib/effects"
 import { bundleReader, dress, loadNativeLook, loadNativeStage } from "@/lib/unity-native"
 import { bundleZip } from "@/lib/bundle-cipher"
 
@@ -768,6 +769,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         width: p.width,
         height: p.height,
         transform: p.transform,
+        ...(p.visibility?.length ? { visibility: p.visibility } : {}),
+        ...(p.keys ? { keys: p.keys } : {}),
         video: media.video,
         animated: media.animation !== null,
         frameWidth: media.frameWidth,
@@ -976,6 +979,9 @@ export type PlaneInfo = {
   width: number
   height: number
   transform: StageTransform
+  /** When it is in the scene, and its keyed placement — the document's. */
+  visibility?: VisibilityWindow[]
+  keys?: Record<string, DialKey[]>
   /** A MOVING card. The element that plays it lives beside this and its frames
    *  are pushed into the card's texture; null for a still or an animated image. */
   video: HTMLVideoElement | null

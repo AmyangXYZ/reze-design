@@ -43,7 +43,9 @@ import type { FadeCurve } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 /** One row, the Effects list's `h-6`, so the list and the lanes scroll as one. */
-export const LANE_H = 22
+export const LANE_H = 24
+/** Room between the time ruler and the first lane. */
+export const LANE_TOP = 4
 /** How close to an end grabs the end rather than the block, in pixels. Wide
  *  enough to land on without aiming, and above the ramp knobs: an end is the
  *  commoner grab, so where the two meet the end wins. */
@@ -96,6 +98,8 @@ export type EffectLanesData<T extends LaneRow = LaneRow> = {
   onToggle?: (uid: string) => void
   /** Open a row's curves — the Effects tab's "Edit curves…". */
   onEditCurves?: (uid: string) => void
+  /** Key every field of a row's object at the playhead, as it stands. */
+  onKeyAll?: (uid: string) => void
   /** The row list's scroll, which the lanes follow. */
   scrollTop: number
 }
@@ -774,19 +778,15 @@ export function EffectLanes<T extends LaneRow>({
       className="pointer-events-none absolute overflow-hidden outline-none"
       style={{ top, bottom, left: labelWidth, right: 0 }}
     >
-      <div style={{ transform: `translateY(${-scrollTop}px)` }}>
+      <div style={{ transform: `translateY(${-scrollTop}px)`, paddingTop: LANE_TOP }}>
         {rows.map((effect) => {
           const uid = effect.uid ?? effect.id
           return (
             <div
               key={uid}
-              // The picked row as the accent's fill, edged above and below so
-              // it reads on light paper and dark alike: at a few percent it was
-              // the same colour as its neighbours.
-              className={cn(
-                "relative border-b border-line",
-                selectedEffect === effect.uid && "bg-blue-400/[0.12] shadow-[inset_0_1px_0_var(--color-blue-400),inset_0_-1px_0_var(--color-blue-400)]",
-              )}
+              // No rules between rows: the clips are what a lane shows, and the
+              // picked row shows as its clips, selected.
+              className="relative"
               style={{ height: LANE_H }}
             >
               {blocksOf(effect).map((w, i) => {
@@ -919,12 +919,15 @@ export function EffectLanesMenu({
   apiRef,
   enabled,
   onEditCurves,
+  onKeyAll,
   children,
 }: {
   apiRef: RefObject<EffectLanesApi | null>
   enabled: boolean
-  /** The Effects tab's way into a clip's curves; absent on other tabs. */
+  /** The way into a row's curves; absent where rows have none. */
   onEditCurves?: (uid: string) => void
+  /** Record a row's object as it stands, at the playhead. */
+  onKeyAll?: (uid: string) => void
   children: ReactElement
 }) {
   const t = useT()
@@ -949,6 +952,11 @@ export function EffectLanesMenu({
             <ContextMenuItem disabled={!can.row} onSelect={() => can.row && onEditCurves(can.row)}>
               {t.lab.timeline.editCurves}
             </ContextMenuItem>
+            {onKeyAll && (
+              <ContextMenuItem disabled={!can.row} onSelect={() => can.row && onKeyAll(can.row)}>
+                {t.lab.timeline.keyAll}
+              </ContextMenuItem>
+            )}
             <ContextMenuSeparator />
           </>
         )}

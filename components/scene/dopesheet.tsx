@@ -18,7 +18,7 @@ import {
 } from "react";
 import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { Timeline, defaultTabForSelection, tabsForSelection, type ParentHold, type SelectionKind } from "@/components/scene/timeline"
-import type { EffectLanesData, LaneRow } from "@/components/scene/effect-lanes";
+import { LANE_TOP, type EffectLanesData, type LaneRow } from "@/components/scene/effect-lanes";
 import type { DialCurvesData } from "@/components/scene/dial-curves";
 import { TimelineOutliner, useOutlineRows, type OutlineData } from "@/components/timeline/outliner";
 import { RULER_H } from "@/components/scene/timeline";
@@ -497,7 +497,22 @@ export function Dopesheet({
                 effectLanes={effectLanes && kind === "effect" ? { ...effectLanes, effects: [...effectLanes.effects].reverse(), scrollTop: 0 } : null}
                 visibilityLanes={visibilityLanes && (kind === "visibility" || kind === "layer") ? { ...visibilityLanes, scrollTop: 0 } : null}
                 dialCurves={kind === "effect" || kind === "layer" ? dialCurves : null}
-                aside={outline ? <TimelineOutliner outline={outline} rows={rows} firstH={RULER_H} /> : null}
+                aside={
+                  outline ? (
+                    <TimelineOutliner
+                      outline={outline}
+                      rows={rows}
+                      firstH={RULER_H}
+                      // Lanes showing: the same room under the ruler as they leave.
+                      gap={
+                        !((kind === "effect" || kind === "layer") && dialCurves) &&
+                        ((kind === "effect" && effectLanes) || ((kind === "visibility" || kind === "layer") && visibilityLanes))
+                          ? LANE_TOP
+                          : 0
+                      }
+                    />
+                  ) : null
+                }
               />
             </div>
           </div>

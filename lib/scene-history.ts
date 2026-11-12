@@ -2,7 +2,8 @@
 //
 // What it covers is the document's configuration: settings, camera, effects
 // (their clips included), lamps (their keys included), style groups, hidden
-// materials and who is on stage when. Not the clips (they have their own history, in
+// materials, who is on stage when, where the overlays sit and in what order,
+// and where the planes stand — each object's keys and lanes included. Not the clips (they have their own history, in
 // clip-history.tsx) and not the assets (a model or a stage is added or removed,
 // not undone).
 //
@@ -20,7 +21,7 @@
 
 import type { StyleGroup } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
-import type { SceneCamera, SceneLight } from "@/lib/scene"
+import type { SceneCamera, SceneLight, SceneOverlay, ScenePlane } from "@/lib/scene"
 import type { VisibilityWindow } from "@/lib/timeline"
 import type { SceneSettings } from "@/lib/scene-settings"
 
@@ -34,7 +35,18 @@ export type SceneSnapshot = {
   hidden: Record<string, string[]>
   /** When each model is on stage — its visibility clips, per model id. */
   visibility: Record<string, VisibilityWindow[]>
+  /** The overlays' placements, back to front. Which pictures exist is an
+   *  asset matter; where they sit and how they stack is configuration. */
+  overlays: OverlayPlacement[]
+  /** The planes' placements, by model id. */
+  planes: PlanePlacement[]
 }
+
+/** A plane without its picture or its size. */
+export type PlanePlacement = Pick<ScenePlane, "transform" | "visibility" | "keys"> & { id: string }
+
+/** An overlay without its picture: what an undo can put back. */
+export type OverlayPlacement = Omit<SceneOverlay, "asset" | "aspect">
 
 export type HistoryStep = {
   /** What changed, for "Undo Sun" and an AI turn's change card. */
@@ -72,6 +84,8 @@ export function changedParts(a: SceneSnapshot, b: SceneSnapshot): string[] {
   for (const id of new Set([...Object.keys(a.visibility), ...Object.keys(b.visibility)])) {
     if (!same(a.visibility[id] ?? [], b.visibility[id] ?? [])) parts.push(`visibility.${id}`)
   }
+  if (!same(a.overlays ?? [], b.overlays ?? [])) parts.push("overlays")
+  if (!same(a.planes ?? [], b.planes ?? [])) parts.push("planes")
   return parts
 }
 
@@ -89,6 +103,8 @@ export function labelFor(parts: string[], modelName: (id: string) => string = (i
     if (p === "camera") return "Camera"
     if (p === "effects") return "Effects"
     if (p === "lights") return "Lamps"
+    if (p === "overlays") return "Overlays"
+    if (p === "planes") return "Planes"
     const dot = p.indexOf(".")
     const head = p.slice(0, dot)
     const rest = p.slice(dot + 1)

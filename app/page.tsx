@@ -121,7 +121,7 @@ import {
 import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
 import { RangeRow, VALUE_BOX } from "@/components/scene/scene-sidebar"
-import { SizeRow } from "@/components/scene/size-row"
+import { PlaneDials } from "@/components/scene/plane-dials"
 import { OverlayDials } from "@/components/scene/overlay-dials"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
@@ -148,9 +148,9 @@ import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspectorColumn, type DialEditing, type ObjectEditing } from "@/components/scene/clip-inspector"
 import { XrayGroups } from "@/components/scene/xray-groups"
-import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, propRow, SCENE_ROW, STAGE_ROW, toggleRow, type RowLabels, type RowSource, type TimelineRow } from "@/lib/timeline/rows"
+import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, OVERLAYS_ROW, propRow, SCENE_ROW, STAGE_ROW, toggleRow, type RowLabels, type RowSource, type TimelineRow } from "@/lib/timeline/rows"
 import { holdsOf } from "@/lib/prop-throw"
-import { normalizeVisibility, timelineOf, type VisibilityWindow } from "@/lib/timeline"
+import { normalizeVisibility, planeTransformAt, timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import Link from "next/link"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
@@ -164,7 +164,8 @@ import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-sc
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { FALLBACK_CLIP, useFallbackClock } from "@/hooks/use-fallback-clock"
 import { SceneOverlays } from "@/components/scene/scene-overlays"
-import { OVERLAY_ACCEPT, OVERLAY_FIELDS, OVERLAY_FILE, overlayDecls, overlayFieldsAt, withFieldKeys, type LiveOverlay, type OverlayField } from "@/lib/overlays"
+import { OVERLAY_ACCEPT, OVERLAY_FIELDS, OVERLAY_FILE, overlayAt, overlayDecls, overlayFieldsAt, withFieldKeys, type LiveOverlay, type OverlayField } from "@/lib/overlays"
+import { planeDecls, planeFields, recordAll, withKeys, type PlaneField } from "@/lib/planes"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
@@ -1611,6 +1612,25 @@ function UploadInvite({
  *
  *  size-5 fits the line exactly — anything taller sets the row height from the
  *  buttons rather than the text. */
+/** An object on the timeline — an overlay or a plane — as its lanes and
+ *  curves see it: fields as dials, keys, a lane, and the writes back. */
+type LayerItem = {
+  uid: string
+  name: string
+  decls: EffectParamDecl[]
+  keys?: Record<string, DialKey[]>
+  /** Each field's unkeyed value. */
+  plain: Record<string, number>
+  /** The curve tab it opens on. */
+  firstTab: string
+  visibility?: VisibilityWindow[]
+  /** What each field shows at a frame, keys applied. */
+  valuesAt: (frame: number) => Record<string, number>
+  setKeys: (name: string, keys: DialKey[] | undefined) => void
+  setAllKeys: (keys: Record<string, DialKey[]> | undefined) => void
+  setVisibility: (w: VisibilityWindow[] | undefined) => void
+}
+
 function CastAction({
   icon: Icon,
   label,
@@ -2469,7 +2489,7 @@ function Lab() {
     planes,
     addPlaneFromFile,
     tickPlanes,
-    setPlaneTransform,
+    updatePlane,
     removePlane,
     clearPlanes,
     setCameraView,
@@ -2754,7 +2774,7 @@ function Lab() {
     },
   })
   // Pictures over the frame — restored with the scene, packed with its bundle.
-  const { overlays, addOverlay, updateOverlay, removeOverlay } = useOverlays({ scene, bundleReady, bundleFile })
+  const { overlays, addOverlay, updateOverlay, removeOverlay, reorderOverlay, placeOverlays } = useOverlays({ scene, bundleReady, bundleFile })
   // The scene document's cameraAnimation slot. Seeded from the document like the
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
@@ -3091,6 +3111,15 @@ function Lab() {
   }
   /** Which card's controls the section is showing. */
   const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
+  const planeLabels: Record<PlaneField, string> = {
+    scale: t.lab.ctl.scale,
+    px: t.lab.ctl.pos("X"),
+    py: t.lab.ctl.pos("Y"),
+    pz: t.lab.ctl.pos("Z"),
+    rx: t.lab.ctl.rot("X"),
+    ry: t.lab.ctl.rot("Y"),
+    rz: t.lab.ctl.rot("Z"),
+  }
   const [selectedProp, setSelectedProp] = useState<string | null>(null)
   // The stage the Environment pane is showing, of the scene's several.
   const [selectedStage, setSelectedStage] = useState<string | null>(null)
@@ -4457,7 +4486,7 @@ function Lab() {
    * declarative parts reach the engine where they are edited (the effect sync,
    * the prop setters), through the same module's push.
    */
-  const timeline = useMemo(() => timelineOf({ models, props, effects: bgEffects }), [models, props, bgEffects])
+  const timeline = useMemo(() => timelineOf({ models, props, effects: bgEffects, planes }), [models, props, bgEffects, planes])
   /**
    * Footstep sounds: a foot that lands is heard (lib/footsteps.ts). A switch in the
    * scene's audio settings rather than a file — the landings are found from
@@ -6122,13 +6151,59 @@ function Lab() {
   const curveKeys = curveEffect?.keys?.[curveTab] ?? []
   const curveDecl = curveDecls.find((d) => d.name === curveTab) ?? null
 
-  // ── Overlays on the timeline ──
+  // ── Objects on the timeline: overlays and planes ──
   // A lane each for when it is up, and its placement keyed on the effect
   // dials' curves: the same band, the same editor, its fields as the dials.
-  const [curveOverlay, setCurveOverlay] = useState<{ id: string; tab: string; keys: number[] } | null>(null)
-  const curveOverlayItem = curveOverlay ? (overlays.find((o) => o.id === curveOverlay.id) ?? null) : null
-  const overlayCurveDecls = curveOverlayItem ? overlayDecls(curveOverlayItem, overlayLabels) : []
-  const overlayCurveTab = curveOverlay && OVERLAY_FIELDS.some((f) => f === curveOverlay.tab) ? curveOverlay.tab : "size"
+  // One list for both kinds, a plane's uid prefixed so the two cannot meet.
+  const layerItems: LayerItem[] = [
+    ...overlays.map(
+      (o): LayerItem => ({
+        uid: o.id,
+        name: o.name,
+        decls: overlayDecls(o, overlayLabels),
+        keys: o.keys,
+        plain: Object.fromEntries(OVERLAY_FIELDS.map((f) => [f, o[f]])),
+        firstTab: "size",
+        visibility: o.visibility,
+        valuesAt: (frame) => {
+          const at = overlayAt(o, frame)
+          return Object.fromEntries(OVERLAY_FIELDS.map((f) => [f, at[f]]))
+        },
+        setKeys: (name, ks) => updateOverlay(o.id, { keys: withFieldKeys(o.keys, name, ks) }),
+        setAllKeys: (keys) => updateOverlay(o.id, { keys }),
+        setVisibility: (w) => updateOverlay(o.id, { visibility: w }),
+      }),
+    ),
+    ...planes.map(
+      (p): LayerItem => ({
+        uid: `plane:${p.id}`,
+        name: p.file,
+        decls: planeDecls(p.transform, planeLabels),
+        keys: p.keys,
+        plain: planeFields(p.transform),
+        firstTab: "px",
+        visibility: p.visibility,
+        valuesAt: (frame) => planeFields(planeTransformAt(p, frame)),
+        setKeys: (name, ks) => updatePlane(p.id, { keys: withKeys(p.keys, name, ks) }),
+        setAllKeys: (keys) => updatePlane(p.id, { keys }),
+        setVisibility: (w) => updatePlane(p.id, { visibility: w }),
+      }),
+    ),
+  ]
+  // Open or not, and on which field: the item is always the picked one, so
+  // the dock, the lanes and the curves cannot be on different objects.
+  const [curveOverlay, setCurveOverlay] = useState<{ tab: string; keys: number[] } | null>(null)
+  /** The picked item: the dock's, in whichever tab is showing. */
+  const selectedLayer =
+    objectTab === "plane" && planes.length
+      ? `plane:${planes.some((p) => p.id === selectedPlane) ? selectedPlane : planes[0].id}`
+      : overlays.some((o) => o.id === selectedOverlay)
+        ? selectedOverlay
+        : (overlays[0]?.id ?? null)
+  const curveOverlayItem = curveOverlay ? (layerItems.find((o) => o.uid === selectedLayer) ?? null) : null
+  const overlayCurveDecls = curveOverlayItem?.decls ?? []
+  const overlayCurveTab =
+    curveOverlay && overlayCurveDecls.some((d) => d.name === curveOverlay.tab) ? curveOverlay.tab : (curveOverlayItem?.firstTab ?? "")
   const overlayCurves: DialCurvesData | null =
     curveOverlay && curveOverlayItem && editingKind === "layer"
       ? {
@@ -6137,29 +6212,48 @@ function Lab() {
           tab: overlayCurveTab,
           onTab: (tab) => setCurveOverlay((c) => (c ? { ...c, tab, keys: [] } : c)),
           keys: curveOverlayItem.keys ?? {},
-          plain: Object.fromEntries(OVERLAY_FIELDS.map((f) => [f, curveOverlayItem[f]])),
-          onKeys: (name, ks) => updateOverlay(curveOverlayItem.id, { keys: withFieldKeys(curveOverlayItem.keys, name, ks) }),
+          plain: curveOverlayItem.plain,
+          onKeys: curveOverlayItem.setKeys,
           selected: curveOverlay.keys,
           onSelect: (keys) => setCurveOverlay((c) => (c ? { ...c, keys } : c)),
           onClose: () => setCurveOverlay(null),
           zh: locale === "zh",
         }
       : null
-  /** Top of the stack first, as the outliner lists them; the band draws its
-   *  last row on top, so the list goes in as it is stacked. */
-  const overlayLaneRows: LaneRow[] = overlays.map((o) => ({
-    id: o.id,
-    uid: o.id,
+  /** Pick an item everywhere: the dock's tab and chip, the outliner's row,
+   *  and the curves when they are open. */
+  const pickLayer = (uid: string) => {
+    setCurveOverlay((c) => (c ? { ...c, keys: [] } : c))
+    setOutlinePicked(`${OVERLAYS_ROW}/${uid}`)
+    if (uid.startsWith("plane:")) {
+      setSelectedPlane(uid.slice(6))
+      setObjectTab("plane")
+    } else {
+      setSelectedOverlay(uid)
+      setObjectTab("overlay")
+    }
+  }
+  /** Every field of an item keyed at the playhead, with what it shows there. */
+  const keyAllLayer = (uid: string) => {
+    const item = layerItems.find((o) => o.uid === uid)
+    if (!item) return
+    const frame = Math.round(playheadFrame())
+    item.setAllKeys(recordAll(item.keys, item.valuesAt(frame), frame))
+  }
+  /** The band's rows, overlays then planes. */
+  const overlayLaneRows: LaneRow[] = layerItems.map((o) => ({
+    id: o.uid,
+    uid: o.uid,
     name: o.name,
     ...(o.visibility?.length ? { window: o.visibility } : {}),
   }))
-  /** The lanes, written back: a row the band dropped is an overlay whose last
+  /** The lanes, written back: a row the band dropped is an item whose last
    *  clip went, which is up throughout. Only the ones that moved are touched. */
   const onOverlayRows = (next: LaneRow[]) => {
     const byId = new Map(next.map((r) => [r.uid ?? r.id, r.window ?? []]))
-    for (const o of overlays) {
-      const want = normalizeVisibility(byId.get(o.id) ?? [])
-      if (JSON.stringify(want) !== JSON.stringify(o.visibility ?? [])) updateOverlay(o.id, { visibility: want.length ? want : undefined })
+    for (const o of layerItems) {
+      const want = normalizeVisibility(byId.get(o.uid) ?? [])
+      if (JSON.stringify(want) !== JSON.stringify(o.visibility ?? [])) o.setVisibility(want.length ? want : undefined)
     }
   }
 
@@ -6214,7 +6308,8 @@ function Lab() {
       effects: bgEffects.map((e) => ({ uid: e.uid ?? e.id, name: e.name, models: e.models, cast: followsCharacter(e.wgsl), keyCount: Object.values(e.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
       // Always: a camera with no clip yet is still one you can key.
       camera: true,
-      overlays: overlays.map((o) => ({ id: o.id, name: o.name, keyCount: Object.values(o.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
+      // Listed top first: the overlays as stacked, then the planes.
+      overlays: [...layerItems].reverse().map((o) => ({ id: o.uid, name: o.name, keyCount: Object.values(o.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
   }
   const outlineLabels: RowLabels = {
       scene: t.lab.timeline.outline.scene,
@@ -6305,10 +6400,8 @@ function Lab() {
       case "overlay":
         go({ modelId: editingModelId ?? cast[0]?.id ?? "", kind: "layer" })
         if (row.ref) {
-          setSelectedOverlay(row.ref)
-          // Curves open stay open, on the overlay just picked.
-          const id = row.ref
-          setCurveOverlay((c) => (c ? { id, tab: c.tab, keys: [] } : c))
+          // Curves open stay open, on the item just picked.
+          pickLayer(row.ref)
         }
         break
     }
@@ -6320,11 +6413,12 @@ function Lab() {
         label: `${overlayCurves.name} · ${overlayCurveDecl.label ?? overlayCurveDecl.name}`,
         decl: overlayCurveDecl,
         keys: curveOverlayItem.keys?.[overlayCurveTab] ?? [],
-        plain: curveOverlayItem[overlayCurveTab as OverlayField],
+        plain: curveOverlayItem.plain[overlayCurveTab],
         frameNow: playheadFrame,
         selected: curveOverlay?.keys ?? [],
-        onKeys: (ks) => updateOverlay(curveOverlayItem.id, { keys: withFieldKeys(curveOverlayItem.keys, overlayCurveTab, ks) }),
+        onKeys: (ks) => curveOverlayItem.setKeys(overlayCurveTab, ks),
         onSelect: (keys) => setCurveOverlay((c) => (c ? { ...c, keys } : c)),
+        onInsertAll: () => keyAllLayer(curveOverlayItem.uid),
       }
     : dialCurves && curveDecl
                   ? {
@@ -6653,6 +6747,32 @@ function Lab() {
     () => Object.fromEntries(models.filter((m) => m.visibility?.length).map((m) => [m.id, m.visibility ?? []])),
     [models],
   )
+  // Where the overlays sit, without their pictures: a new list only when one moved.
+  const overlayPlacements = useMemo(
+    () =>
+      overlays.map(({ id, x, y, size, rotation, opacity, visibility, keys }) => ({
+        id,
+        x,
+        y,
+        size,
+        rotation,
+        opacity,
+        ...(visibility?.length ? { visibility } : {}),
+        ...(keys && Object.keys(keys).length ? { keys } : {}),
+      })),
+    [overlays],
+  )
+  // Where the planes stand, keys and lanes with them.
+  const planePlacements = useMemo(
+    () =>
+      planes.map(({ id, transform, visibility, keys }) => ({
+        id,
+        transform,
+        ...(visibility?.length ? { visibility } : {}),
+        ...(keys && Object.keys(keys).length ? { keys } : {}),
+      })),
+    [planes],
+  )
   const historySnapshot = useMemo<SceneSnapshot>(
     () => ({
       settings,
@@ -6662,20 +6782,32 @@ function Lab() {
       groups: groupsByModel,
       hidden: hiddenByModel,
       visibility: visibilityByModel,
+      overlays: overlayPlacements,
+      planes: planePlacements,
     }),
-    [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel, visibilityByModel],
+    [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel, visibilityByModel, overlayPlacements, planePlacements],
   )
   const sceneHistory = useSceneHistory({
     scene,
     active: ready && !forkPending,
     snapshot: historySnapshot,
-    castKey: models.map((m) => m.id).join("|"),
+    // Pictures added or taken away are assets, as models are: setup, not a step.
+    castKey: [...models.map((m) => m.id), ...overlays.map((o) => o.id).sort(), ...planes.map((p) => p.id)].join("|"),
     modelName: (id) => models.find((m) => m.id === id)?.file ?? id,
     restore: (target, current) => {
       if (target.settings !== current.settings) setSettings(target.settings)
       if (target.camera !== current.camera) changeCamera(target.camera)
       if (target.effects !== current.effects) setBgEffectsState(target.effects)
       if (target.lights !== current.lights) setLightsState(target.lights)
+      if (target.overlays !== current.overlays) placeOverlays(target.overlays)
+      if (target.planes !== current.planes) {
+        // Only planes still in the scene; each takes back its whole placement.
+        for (const want of target.planes) {
+          const now = current.planes.find((p) => p.id === want.id)
+          if (now && JSON.stringify(now) !== JSON.stringify(want))
+            updatePlane(want.id, { transform: want.transform, visibility: want.visibility, keys: want.keys })
+        }
+      }
       // Only models still in the scene: one removed since cannot take its groups back.
       for (const m of models) {
         const groups = target.groups[m.id]
@@ -6731,6 +6863,11 @@ function Lab() {
       visibility: m.visibility ?? [],
     })),
     setVisibility: (id, windows) => setCastVisibility(id, windows),
+    overlays,
+    updateOverlay,
+    reorderOverlay,
+    planes: planes.map((p) => ({ id: p.id, name: p.file, width: p.width, height: p.height, transform: p.transform, visibility: p.visibility, keys: p.keys })),
+    updatePlane,
     shaderLibrary: [...stockGraphs(), ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
       name: g.name,
       about: g.description ?? "",
@@ -7071,6 +7208,8 @@ function Lab() {
                   width: p.width,
                   height: p.height,
                   transform: p.transform,
+                  visibility: p.visibility,
+                  keys: p.keys,
                 },
               ]
             : []
@@ -8124,7 +8263,9 @@ function Lab() {
         // camera keeps the frame.
         editable={openRow === "object" && objectTab === "overlay" && !uiHidden}
         selected={overlays.some((o) => o.id === selectedOverlay) ? selectedOverlay : (overlays[0]?.id ?? null)}
-        onPick={setSelectedOverlay}
+        onPick={pickLayer}
+        onOrder={reorderOverlay}
+        orderNames={t.lab.ctl.orderSteps}
         onChange={(id, patch) => {
           const o = overlays.find((x) => x.id === id)
           if (o) updateOverlay(id, overlayFieldsAt(o, patch, Math.round(playheadFrame())))
@@ -10083,7 +10224,7 @@ function Lab() {
                                       {/* The underline on the words themselves: a span's
                                           does not reach into the button's own box. */}
                                       <Button variant="bare"
-                                        onClick={() => setSelectedOverlay(o.id)}
+                                        onClick={() => pickLayer(o.id)}
                                         className={cn(
                                           // The chip's own type, not a button's; the picked one's rule drawn
                                           // under the box, where truncating the words cannot clip it.
@@ -10113,10 +10254,15 @@ function Lab() {
                                     overlay={o}
                                     labels={overlayLabels}
                                     sizeLabel={t.lab.ctl.size}
+                                    insertLabel={t.lab.timeline.keyAll}
+                                    onInsertKeys={() => keyAllLayer(o.id)}
                                     outHeight={exportDims()[1]}
                                     frameNow={playheadFrame}
                                     onUpdate={(patch) => updateOverlay(o.id, patch)}
                                     onPreview={(patch) => overlayPreview.current?.(o.id, patch)}
+                                    layerLabel={t.lab.ctl.layer}
+                                    place={[overlays.indexOf(o), overlays.length]}
+                                    onLayer={(at) => reorderOverlay(o.id, at)}
                                   />
                                 )
                               })()}
@@ -10165,7 +10311,7 @@ function Lab() {
                                   )}
                                 >
                                   <Button variant="bare"
-                                    onClick={() => setSelectedPlane(plane.id)}
+                                    onClick={() => pickLayer(`plane:${plane.id}`)}
                                     className={cn(
                                       // The chip's own type, not a button's; the picked one's rule drawn
                                       // under the box, where truncating the words cannot clip it.
@@ -10202,84 +10348,15 @@ function Lab() {
                           {(() => {
                             const plane = planes.find((p) => p.id === selectedPlane) ?? planes[0]
                             return (
-                              <div className="mt-3.5">
-                                {/* SIZE, in the world's own units — not a
-                                    scale. A multiplier is a ratio to something
-                                    you cannot see: 2× of what?
-
-                                    Two boxes, one row, and they are LINKED: the
-                                    card was built at its picture's proportions
-                                    and keeps them, so typing either dimension
-                                    sets the card and the other follows. Two
-                                    numbers rather than one because a size is
-                                    two numbers — showing only the height would
-                                    make you compute the width you were actually
-                                    aiming at. */}
-                                <SizeRow
-                                  label={t.lab.ctl.size}
-                                  width={plane.width * plane.transform.scale}
-                                  height={plane.height * plane.transform.scale}
-                                  onWidth={(v) =>
-                                    setPlaneTransform(plane.id, {
-                                      scale: v / plane.width,
-                                    })
-                                  }
-                                  onHeight={(v) =>
-                                    setPlaneTransform(plane.id, {
-                                      scale: v / plane.height,
-                                    })
-                                  }
-                                />
-                                {/* The same value the boxes above set, as a
-                                    thing you can drag. Typing is for a size you
-                                    already know; a slider is for finding one by
-                                    looking, and a card is judged by eye. */}
-                                <SliderRow
-                                  label={t.lab.ctl.scale}
-                                  value={plane.transform.scale}
-                                  min={0.05}
-                                  max={10}
-                                  step={0.05}
-                                  // As the stage and the cast: the field takes
-                                  // any factor, and keeps out the one number
-                                  // that collapses the transform matrix.
-                                  inputMin={0.001}
-                                  onChange={(v) => setPlaneTransform(plane.id, { scale: v })}
-                                  fmt={(v) => `${v.toFixed(2)}×`}
-                                />
-                                {(["X", "Y", "Z"] as const).map((axis, i) => (
-                                  <SliderRow
-                                    key={`p${axis}`}
-                                    label={t.lab.ctl.pos(axis)}
-                                    value={plane.transform.position[i]}
-                                    min={-50}
-                                    max={50}
-                                    step={0.5}
-                                    onChange={(v) => {
-                                      const position = [...plane.transform.position] as [number, number, number]
-                                      position[i] = v
-                                      setPlaneTransform(plane.id, { position })
-                                    }}
-                                    fmt={(v) => v.toFixed(1)}
-                                  />
-                                ))}
-                                {(["X", "Y", "Z"] as const).map((axis, i) => (
-                                  <SliderRow
-                                    key={`r${axis}`}
-                                    label={t.lab.ctl.rot(axis)}
-                                    value={plane.transform.rotation[i]}
-                                    min={-180}
-                                    max={180}
-                                    step={1}
-                                    onChange={(v) => {
-                                      const rotation = [...plane.transform.rotation] as [number, number, number]
-                                      rotation[i] = v
-                                      setPlaneTransform(plane.id, { rotation })
-                                    }}
-                                    fmt={(v) => `${v.toFixed(0)}°`}
-                                  />
-                                ))}
-                              </div>
+                              <PlaneDials
+                                plane={plane}
+                                labels={planeLabels}
+                                sizeLabel={t.lab.ctl.size}
+                                insertLabel={t.lab.timeline.keyAll}
+                                onInsertKeys={() => keyAllLayer(`plane:${plane.id}`)}
+                                frameNow={playheadFrame}
+                                onUpdate={(patch) => updatePlane(plane.id, patch)}
+                              />
                             )
                           })()}
                         </>
@@ -11955,12 +12032,13 @@ function Lab() {
                           ? {
                               effects: overlayLaneRows,
                               onEffects: onOverlayRows,
-                              selectedEffect: selectedOverlay,
-                              onSelectEffect: (id: string | null) => id && setSelectedOverlay(id),
+                              selectedEffect: selectedLayer,
+                              onSelectEffect: (id: string | null) => id && pickLayer(id),
                               onEditCurves: (id: string) => {
-                                setSelectedOverlay(id)
-                                setCurveOverlay({ id, tab: "size", keys: [] })
+                                pickLayer(id)
+                                setCurveOverlay({ tab: "", keys: [] })
                               },
+                              onKeyAll: keyAllLayer,
                             }
                           : {
                               effects: shownVisibilityRows,

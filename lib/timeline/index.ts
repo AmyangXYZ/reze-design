@@ -40,11 +40,14 @@ import { parentKeysToEngine, parentTrackOf, type PropTrackSource } from "./paren
 import { visibilityAt, type VisibilityWindow } from "./visibility"
 import { applyLampFrame } from "./lights"
 import { applyUniformFrame } from "./uniforms"
+import { applyPlaneFrame } from "./planes"
+import type { SceneStageTransform } from "@/lib/scene"
 
 export * from "./visibility"
 export * from "./parents"
 export * from "./lights"
 export * from "./uniforms"
+export * from "./planes"
 
 /** One applied effect's timing, in list order — the order the engine installs
  *  them in, which is what an index into `effects` addresses. */
@@ -80,6 +83,9 @@ export type SceneTimeline = {
   /** Every prop's parent track by id: its start hold at frame 0, then each
    *  switch. See parentTrackOf. */
   parents: Record<string, SceneParentKey[]>
+  /** The keyed cards by model id: each one's placement and its keys. A card
+   *  with no keys stands where it was put and is not here. */
+  planes: Record<string, { transform: SceneStageTransform; keys: Record<string, DialKey[]> }>
 }
 
 /** What a timeline is read from. Every part is optional so a caller that owns
@@ -95,12 +101,21 @@ export type TimelineSource = {
   }[]
   props?: readonly (PropTrackSource & { id: string })[]
   effects?: readonly { influence?: number; window?: EffectWindow[]; models?: string[]; keys?: Record<string, DialKey[]> }[]
+  /** The cards: on stage by their lanes, placed by their keys. */
+  planes?: readonly { id: string; transform: SceneStageTransform; visibility?: VisibilityWindow[]; keys?: Record<string, DialKey[]> }[]
 }
 
 /** The scene's timed parts, read off its state. Pure. */
-export function timelineOf({ models = [], props = [], effects = [] }: TimelineSource): SceneTimeline {
+export function timelineOf({ models = [], props = [], effects = [], planes = [] }: TimelineSource): SceneTimeline {
   const visibility: Record<string, VisibilityWindow[]> = {}
   for (const m of models) if (m.visibility?.length) visibility[m.id] = m.visibility
+  // A card is a model to the engine, so its lane is one more model's.
+  for (const p of planes) if (p.visibility?.length) visibility[p.id] = p.visibility
+  const keyedPlanes: SceneTimeline["planes"] = {}
+  for (const p of planes) {
+    const keys = Object.fromEntries(Object.entries(p.keys ?? {}).filter(([, ks]) => ks.length > 0))
+    if (Object.keys(keys).length) keyedPlanes[p.id] = { transform: p.transform, keys }
+  }
   const parts: SceneTimeline["parts"] = {}
   for (const m of models) {
     const laned = Object.entries(m.materialVisibility ?? {}).filter(([, w]) => w.length > 0)
@@ -113,6 +128,7 @@ export function timelineOf({ models = [], props = [], effects = [] }: TimelineSo
     parts,
     effects: effects.map((e) => ({ influence: e.influence ?? 1, window: e.window ?? null, models: e.models ?? null, keys: e.keys ?? null })),
     parents,
+    planes: keyedPlanes,
   }
 }
 
@@ -188,7 +204,7 @@ export function pushTimeline(
 }
 
 /** As much of the engine as the frame needs: who is loaded, and the dissolve dial. */
-type FrameEngine = {
+type FrameEngine = Parameters<typeof applyPlaneFrame>[0] & {
   getModel(id: string): { visible: boolean; setVisible(on: boolean): void } | null | undefined
   setModelDissolve(id: string, value: number): boolean
   setMaterialDissolve(id: string, values: Readonly<Record<string, number>> | null): boolean
@@ -220,6 +236,8 @@ export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline,
   // The game props' keyed material values, at this frame (uniforms.ts).
   // Nothing when no look keys any or the frame has not moved.
   applyUniformFrame(engine, frame)
+  // The keyed cards, where their keys put them at this frame.
+  applyPlaneFrame(engine, timeline.planes, frame)
   const lanes = timeline.visibility
   for (const id in lanes) {
     const model = engine.getModel(id)

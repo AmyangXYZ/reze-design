@@ -6,9 +6,10 @@
 // measured and land where the export puts them. One loop a frame sets each
 // one's opacity from its lane and paints the animated ones on the scene clock.
 
-import { useEffect, useRef, type CSSProperties } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { imageSource, type Source } from "@/hooks/use-media-backdrop"
-import { overlayAlphaAt, overlayAt, overlayDrag, type LiveOverlay, type OverlayField } from "@/lib/overlays"
+import { overlayAlphaAt, overlayAt, overlayDrag, type LiveOverlay, type OverlayField, type OverlayOrder } from "@/lib/overlays"
 import { FPS } from "@/lib/clip"
 
 /**
@@ -80,6 +81,8 @@ export function SceneOverlays({
   selected = null,
   onPick,
   onChange,
+  onOrder,
+  orderNames,
   className,
   style,
 }: {
@@ -95,6 +98,9 @@ export function SceneOverlays({
   onPick?: (id: string) => void
   /** A drag let go: what it moved — centre, size or turn. */
   onChange?: (id: string, patch: Partial<Pick<LiveOverlay, "x" | "y" | "size" | "rotation">>) => void
+  /** A right-click's Arrange item, as a slide's picture has. */
+  onOrder?: (id: string, to: OverlayOrder) => void
+  orderNames?: Record<OverlayOrder, string>
   /** The scene's playhead, in frames, read every display frame. */
   frameNow: () => number
   className?: string
@@ -254,11 +260,24 @@ export function SceneOverlays({
   }
 
   const shown = editable ? overlays.find((o) => o.id === selected) : undefined
+  /** The overlay a right-click landed on, what its menu arranges. */
+  const [menuFor, setMenuFor] = useState<string | null>(null)
 
   if (overlays.length === 0) return null
-  return (
+  const at = menuFor ? overlays.findIndex((o) => o.id === menuFor) : -1
+  const layer = (
     // data-keep: overlays are the picture, and stay when the UI is hidden.
-    <div ref={box} data-keep className={className} style={{ ...style, overflow: "hidden", pointerEvents: "none" }}>
+    <div
+      ref={box}
+      data-keep
+      className={className}
+      style={{ ...style, overflow: "hidden", pointerEvents: "none" }}
+      onContextMenuCapture={(e) => {
+        const id = (e.target as HTMLElement).closest<HTMLElement>("[data-overlay-id]")?.dataset.overlayId ?? null
+        setMenuFor(id)
+        if (id) onPick?.(id)
+      }}
+    >
       {overlays.map((o) => {
         // Keyed fields are the loop's to write; React writes the plain ones.
         const placed: CSSProperties = {
@@ -276,6 +295,7 @@ export function SceneOverlays({
         }
         const handlers = {
           "data-overlay": "",
+          "data-overlay-id": o.id,
           onPointerDown: (e: React.PointerEvent<HTMLElement>) => startDrag(e, o, "move"),
           draggable: false,
         }
@@ -302,6 +322,7 @@ export function SceneOverlays({
         // square at each corner and side to scale it; a knob above to turn it.
         <div
           ref={handles}
+          data-overlay-id={shown.id}
           // cover-type: the ink and its soft edge are the cover's, set there.
           className="cover-type"
           style={{
@@ -357,5 +378,22 @@ export function SceneOverlays({
         </div>
       )}
     </div>
+  )
+  if (!editable || !onOrder || !orderNames) return layer
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{layer}</ContextMenuTrigger>
+      <ContextMenuContent className="w-40">
+        {(["front", "forward", "backward", "back"] as const).map((to) => (
+          <ContextMenuItem
+            key={to}
+            disabled={at < 0 || (to === "front" || to === "forward" ? at >= overlays.length - 1 : at <= 0)}
+            onSelect={() => menuFor && onOrder(menuFor, to)}
+          >
+            {orderNames[to]}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

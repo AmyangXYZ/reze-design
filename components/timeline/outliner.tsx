@@ -5,7 +5,7 @@
 // time. Opening a section is choosing whose tracks you are editing; picking a
 // row inside it is choosing which. Built by lib/timeline/rows.ts, drawn here.
 
-import { useEffect, useRef } from "react"
+import { Fragment, useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -33,13 +33,15 @@ export type OutlinerProps = {
   onScroll?: (top: number) => void
   /** The first row's height: it sits beside the time axis, not under it. */
   firstH?: number
+  /** Room under the first row, where the lanes leave it under the ruler. */
+  gap?: number
 }
 
 const INDENT = 12
 /** The column's width, which the header's position bar is sized against. */
 export const OUTLINER_W = 184
 
-export function Outliner({ rows, selected, onSection, onToggle, onPick, cast, onCopyTo, onMoveTo, onScroll, firstH }: OutlinerProps) {
+export function Outliner({ rows, selected, onSection, onToggle, onPick, cast, onCopyTo, onMoveTo, onScroll, firstH, gap = 0 }: OutlinerProps) {
   const t = useT()
   // The picked row kept in view: a bone picked in the viewport may be far down.
   const listRef = useRef<HTMLDivElement>(null)
@@ -58,16 +60,24 @@ export function Outliner({ rows, selected, onSection, onToggle, onPick, cast, on
     >
       {rows.map((row, i) => {
         const height = i === 0 && firstH ? firstH : LANE_H
-        const body = (
-          <OutlineRow key={row.id} row={row} height={height} picked={row.id === selected} onSection={onSection} onToggle={onToggle} onPick={onPick} />
-        )
+        const row0 = <OutlineRow key={row.id} row={row} height={height} picked={row.id === selected} onSection={onSection} onToggle={onToggle} onPick={onPick} />
+        const body =
+          i === 0 && gap > 0 ? (
+            <Fragment key={row.id}>
+              {row0}
+              <div style={{ height: gap }} />
+            </Fragment>
+          ) : (
+            row0
+          )
         if (row.kind !== "effect" || !row.ref) return body
         const uid = row.ref
         // A character's effect can go to another character; a scene effect
         // is no one's to hand on.
-        if (row.owner === null) return body
+        if (!row.owner) return body
         const from = row.owner
         const others = cast.filter((m) => m.id !== from)
+        if (others.length === 0) return body
         return (
           <ContextMenu key={row.id}>
             <ContextMenuTrigger asChild>
@@ -202,7 +212,19 @@ export function useOutlineRows(outline: OutlineData | null): TimelineRow[] {
 
 /** The outliner inside the clip editor: a picked bone or morph is also the
  *  clip's selection, which only the editor's store can set. */
-export function TimelineOutliner({ outline, rows, onScroll, firstH }: { outline: OutlineData; rows: TimelineRow[]; onScroll?: (top: number) => void; firstH?: number }) {
+export function TimelineOutliner({
+  outline,
+  rows,
+  onScroll,
+  firstH,
+  gap,
+}: {
+  outline: OutlineData
+  rows: TimelineRow[]
+  onScroll?: (top: number) => void
+  firstH?: number
+  gap?: number
+}) {
   const { setSelectedBone, setSelectedMorph } = useClipActions()
   // A bone picked anywhere — a double-click in the viewport most often — opens
   // its way here and is picked, so the list never disagrees with the gizmo.
@@ -218,6 +240,7 @@ export function TimelineOutliner({ outline, rows, onScroll, firstH }: { outline:
       rows={rows}
       onScroll={onScroll}
       firstH={firstH}
+      gap={gap}
       onPick={(row) => {
         outline.onPick(row)
         if (row.kind === "bone" && row.ref) setSelectedBone(row.ref)

@@ -99,6 +99,8 @@ export function sceneOverlayOf(o: LiveOverlay, asset: AssetRef): SceneOverlay {
 /** The fields an overlay keys, in the order its dials and curve tabs list them. */
 export const OVERLAY_FIELDS = ["size", "x", "y", "rotation", "opacity"] as const
 export type OverlayField = (typeof OVERLAY_FIELDS)[number]
+/** Where a restack sends an overlay: to an end of the pile, or one step. */
+export type OverlayOrder = "front" | "forward" | "backward" | "back"
 
 /** An overlay's placement at a frame (30fps clip frames): each keyed field
  *  through its keys, the rest as placed. */

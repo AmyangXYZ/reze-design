@@ -48,7 +48,7 @@ eq(tl.effects, [
   { influence: 1, window: null, models: null, keys: null },
   { influence: 0.5, window: [{ start: 30, end: 60 }], models: ["miku"], keys: null },
 ], "effects default to fully on, throughout, on everyone, nothing keyed")
-eq(timelineOf({}), { visibility: {}, parts: {}, effects: [], parents: {} }, "an empty source is an empty timeline")
+eq(timelineOf({}), { visibility: {}, parts: {}, effects: [], parents: {}, planes: {} }, "an empty source is an empty timeline")
 
 // ── The declarative push ──────────────────────────────────────────────────
 const writes: string[] = []
@@ -95,6 +95,7 @@ const frameEngine = {
   setModelDissolve: (id: string, v: number) => ((dissolve[id] = v), true),
   setMaterialDissolve: (id: string, v: Readonly<Record<string, number>> | null) => ((partDissolve[id] = v), true),
   setModelPhysicsWhileHidden: () => true,
+  setModelTransform: () => {},
 }
 const at = (t: SceneTimeline, f: number) => {
   applyTimelineFrame(frameEngine, t, f)

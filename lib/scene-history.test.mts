@@ -15,6 +15,8 @@ const base = (): SceneSnapshot =>
     groups: { m1: [] },
     hidden: { m1: [] },
     visibility: {},
+    overlays: [],
+    planes: [],
   }) as unknown as SceneSnapshot
 
 const withSetting = (s: SceneSnapshot, key: string, value: unknown): SceneSnapshot => ({

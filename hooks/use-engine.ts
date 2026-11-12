@@ -52,7 +52,7 @@ import type {
   NativeStageInfo,
   NativeStageProgress,
 } from "@/lib/scene-host"
-import { laneChanged, normalizeVisibility, type VisibilityWindow } from "@/lib/timeline"
+import { forgetPlaneFrame, laneChanged, normalizeVisibility, type VisibilityWindow } from "@/lib/timeline"
 import { clearEngineScene, setNativeStageInTurn, undress } from "@/lib/unity-native"
 
 // Re-exported, because these are this module's public surface as far as the
@@ -840,6 +840,30 @@ export function useEngine(
       }),
     )
   }, [])
+
+  /** A card's lane or keyed placement, written back. A lane goes to the engine
+   *  at once, as a model's does; keys are evaluated per frame by the timeline,
+   *  and the card stands at its plain transform until they say otherwise. */
+  const updatePlane = useCallback(
+    (id: string, patch: { transform?: StageTransform; visibility?: VisibilityWindow[] | undefined; keys?: PlaneInfo["keys"] }) => {
+      setPlanes((prev) =>
+        prev.map((p) => {
+          if (p.id !== id) return p
+          const next = { ...p, ...patch }
+          const engine = engineRef.current
+          if (engine) {
+            if ("visibility" in patch) laneChanged(engine, id, next.visibility ?? [])
+            if (patch.transform || "keys" in patch) {
+              engine.setModelTransform(id, stageTransformToEngine(next.transform))
+              forgetPlaneFrame(engine, id)
+            }
+          }
+          return next
+        }),
+      )
+    },
+    [],
+  )
 
   /** Take every card out of the scene: the models, the decoders, the elements
    *  and the retained bytes. What a reset needs, and what a new scene needs. */
@@ -1732,6 +1756,7 @@ export function useEngine(
     addPlaneFromFile,
     tickPlanes,
     setPlaneTransform,
+    updatePlane,
     removePlane,
     clearPlanes,
     setStageMorph,

@@ -6,8 +6,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { fetchMedia } from "@/lib/net"
-import { NEW_OVERLAY, probeOverlay, type LiveOverlay } from "@/lib/overlays"
+import { NEW_OVERLAY, probeOverlay, type LiveOverlay, type OverlayOrder } from "@/lib/overlays"
 import { newSceneId, type Scene } from "@/lib/scene"
+import type { OverlayPlacement } from "@/lib/scene-history"
 import { servedUrl } from "@/hooks/use-scene-media"
 
 const release = (list: LiveOverlay[]) => list.forEach((o) => URL.revokeObjectURL(o.url))
@@ -116,5 +117,48 @@ export function useOverlays({
     })
   }, [])
 
-  return { overlays, addOverlay, updateOverlay, removeOverlay }
+  /** Restacked, as a slide's objects are: the list runs back to front, so the
+   *  last one drawn is on top. */
+  /** `to` is a step, or the place in the pile, 0 at the back. */
+  const reorderOverlay = useCallback((id: string, to: OverlayOrder | number) => {
+    setOverlays((list) => {
+      const i = list.findIndex((o) => o.id === id)
+      if (i < 0) return list
+      const last = list.length - 1
+      const j =
+        typeof to === "number"
+          ? Math.min(last, Math.max(0, Math.round(to)))
+          : to === "back"
+            ? 0
+            : to === "front"
+              ? last
+              : to === "backward"
+                ? Math.max(0, i - 1)
+                : Math.min(last, i + 1)
+      if (j === i) return list
+      const next = list.slice()
+      const [o] = next.splice(i, 1)
+      next.splice(j, 0, o)
+      return next
+    })
+  }, [])
+
+  /** Placements put back, an undo's step: each overlay still here takes its
+   *  remembered fields and place in the pile; one added since keeps its own,
+   *  on top. */
+  const placeOverlays = useCallback((placed: OverlayPlacement[]) => {
+    setOverlays((list) => {
+      const byId = new Map(list.map((o) => [o.id, o]))
+      const kept = placed.flatMap((p) => {
+        const o = byId.get(p.id)
+        // Every placement field, absent ones included: a key or a lane the
+        // step did not have comes off.
+        return o ? [{ ...o, visibility: undefined, keys: undefined, ...p }] : []
+      })
+      const ids = new Set(placed.map((p) => p.id))
+      return [...kept, ...list.filter((o) => !ids.has(o.id))]
+    })
+  }, [])
+
+  return { overlays, addOverlay, updateOverlay, removeOverlay, reorderOverlay, placeOverlays }
 }

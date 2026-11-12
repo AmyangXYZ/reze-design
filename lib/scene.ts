@@ -410,6 +410,11 @@ export type ScenePlane = {
   width: number
   height: number
   transform: SceneStageTransform
+  /** When it is in the scene. No lane is throughout. */
+  visibility?: VisibilityWindow[]
+  /** Its placement keyed, per field (lib/timeline/planes): the transform's
+   *  value where a field has none. */
+  keys?: Record<string, DialKey[]>
 }
 
 /**
@@ -555,6 +560,8 @@ export type ScenePlaneDoc = {
   width: number
   height: number
   transform: SceneStageTransform
+  visibility?: VisibilityWindow[]
+  keys?: Record<string, DialKey[]>
 }
 
 /** An overlay in the document: its picture's path and where it sits. */
@@ -905,6 +912,8 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
             width: Number.isFinite(p.width) && p.width > 0 ? p.width : 1,
             height: Number.isFinite(p.height) && p.height > 0 ? p.height : 1,
             transform: p.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+            ...visibilityFieldOf(p.visibility),
+            ...(p.keys && typeof p.keys === "object" && Object.keys(p.keys).length ? { keys: p.keys } : {}),
           })),
         }
       : {}),
@@ -991,6 +1000,8 @@ export const planeDocOf = (p: ScenePlane) => ({
   width: p.width,
   height: p.height,
   transform: p.transform,
+  ...(p.visibility?.length ? { visibility: p.visibility } : {}),
+  ...(p.keys && Object.keys(p.keys).length ? { keys: p.keys } : {}),
 })
 
 /**

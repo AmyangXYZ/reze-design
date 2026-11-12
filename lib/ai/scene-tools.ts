@@ -13,11 +13,13 @@
 import type { Engine, StyleGroup } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
 import type { BackdropMedia } from "@/lib/backdrop"
-import type { SceneCamera, SceneLight } from "@/lib/scene"
+import type { SceneCamera, SceneLight, SceneStageTransform } from "@/lib/scene"
 import type { VisibilityWindow } from "@/lib/timeline"
 import type { LookPack } from "@/lib/materials"
 import { LOOK_TOOLS } from "@/lib/ai/look-tools"
 import { TIMELINE_TOOLS } from "@/lib/ai/timeline-tools"
+import { OBJECT_TOOLS } from "@/lib/ai/object-tools"
+import type { DialKey } from "@/lib/effects"
 import type { SceneSettings } from "@/lib/scene-settings"
 import type { CaptureView } from "@/lib/video-export"
 import { recentLogs } from "@/lib/crash-log"
@@ -60,6 +62,40 @@ export type SceneToolHandles = {
   /** Characters and props with their visibility clips (frames). */
   lanes: { id: string; name: string; kind: "character" | "prop"; visibility: VisibilityWindow[] }[]
   setVisibility: (id: string, windows: VisibilityWindow[]) => void
+  /** Pictures and videos over the frame, bottom layer first (lib/overlays). */
+  overlays: {
+    id: string
+    name: string
+    kind: "image" | "animated" | "video"
+    aspect: number
+    x: number
+    y: number
+    size: number
+    rotation: number
+    opacity: number
+    visibility?: VisibilityWindow[]
+    keys?: Record<string, DialKey[]>
+  }[]
+  updateOverlay: (
+    id: string,
+    patch: Partial<{ x: number; y: number; size: number; rotation: number; opacity: number; visibility: VisibilityWindow[] | undefined; keys: Record<string, DialKey[]> | undefined }>,
+  ) => void
+  /** To a place in the pile, 0 at the bottom. */
+  reorderOverlay: (id: string, index: number) => void
+  /** Pictures and videos standing in the scene. */
+  planes: {
+    id: string
+    name: string
+    width: number
+    height: number
+    transform: SceneStageTransform
+    visibility?: VisibilityWindow[]
+    keys?: Record<string, DialKey[]>
+  }[]
+  updatePlane: (
+    id: string,
+    patch: { transform?: SceneStageTransform; visibility?: VisibilityWindow[] | undefined; keys?: Record<string, DialKey[]> | undefined },
+  ) => void
   /** Shaders a group can wear: built-ins and community, with what they are for. */
   shaderLibrary: { name: string; about: string }[]
   /** Put a library shader on a group; returns an error to report, or null. */
@@ -405,7 +441,7 @@ const CORE_TOOLS: SceneTool[] = [
 ]
 
 /** Every tool, in the order the agent reads them. */
-export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...SEEING_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS, ...AUTHOR_TOOLS]
+export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...SEEING_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS, ...OBJECT_TOOLS, ...AUTHOR_TOOLS]
 
 /** Run a tool by name; an unknown name or a throw comes back as an error for
  *  the model to read, never as an exception through the loop. */

@@ -4,7 +4,7 @@
 // editing. Assets come out of the scene's zip (models, motions, audio) — which is
 // why publishing bundles them in the first place.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronsLeft, GitFork, Heart, ScrollText } from "lucide-react"
@@ -14,6 +14,9 @@ import { stockEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useSceneMedia } from "@/hooks/use-scene-media"
+import { useOverlays } from "@/hooks/use-overlays"
+import { SceneOverlays } from "@/components/scene/scene-overlays"
+import { FPS } from "@/lib/clip"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { useFallbackClock } from "@/hooks/use-fallback-clock"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
@@ -520,6 +523,7 @@ function SceneStage({
     bundleFile,
     bundleFiles,
     tickPlanes,
+    planes,
     stages,
     props,
     loadVmdFile,
@@ -535,8 +539,11 @@ function SceneStage({
     bundleFilesRef.current = bundleFiles
   }, [bundleFilesRef, bundleFiles])
 
+  // Pictures the author laid over the frame, restored from the same bundle.
+  const { overlays } = useOverlays({ scene, bundleReady, bundleFile })
+
   // The cover's ink, from what this stage draws (the page's type sits over it).
-  useCoverInk(mainRef, canvasRef, true, [ready, stageReady, bundleReady, stages.length, models.length].join("|"))
+  useCoverInk(mainRef, canvasRef, true, [ready, stageReady, bundleReady, stages.length, models.length, overlays.length].join("|"))
 
   const loadingLabel = useLoadingLabel({
     scene,
@@ -577,8 +584,8 @@ function SceneStage({
    * the export already run.
    */
   const timeline = useMemo(
-    () => timelineOf({ models, props, effects: scene.state.backgroundEffects }),
-    [models, props, scene.state.backgroundEffects],
+    () => timelineOf({ models, props, effects: scene.state.backgroundEffects, planes }),
+    [models, props, scene.state.backgroundEffects, planes],
   )
   // The scene as its maker published it, eyes included: the viewer plays it.
   const settings = scene.state.settings
@@ -633,6 +640,15 @@ function SceneStage({
     musicUrl: audioSrc,
   })
   const transport = useMemo(() => (animated.length ? animated : fallbackClock ? [fallbackClock] : []), [animated, fallbackClock])
+  /** The playhead in clip frames, read every display frame by the overlays. */
+  const masterRef = useRef<string | null>(null)
+  useEffect(() => {
+    masterRef.current = transport[0] ?? null
+  })
+  const playheadFrame = useCallback(() => {
+    const id = masterRef.current
+    return id ? (engineRef.current?.getModel(id)?.getAnimationProgress().current ?? 0) * FPS : 0
+  }, [engineRef])
   // The clock — the SAME one the editor runs (hooks/use-audio-clock): the first
   // animated model's clip is the master, and the track, the rzAudio*/MIDI
   // clocks, the lyric pages, moving cards and the backdrop all follow it. The
@@ -675,6 +691,7 @@ function SceneStage({
         className="frame-layer absolute inset-0 h-full w-full object-cover"
       />
       <canvas data-keep ref={canvasRef} className="frame-layer absolute inset-0 h-full w-full touch-none object-contain" />
+      <SceneOverlays overlays={overlays} frameNow={playheadFrame} className="frame-layer absolute inset-0 h-full w-full" />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && <LoadError error={error} failure={downloadFailure} onRetry={() => window.location.reload()} />}

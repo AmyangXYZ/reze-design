@@ -50,6 +50,7 @@ import {
   EffectLanes,
   EffectLanesMenu,
   LANE_H,
+  LANE_TOP,
   type EffectLanesApi,
   type EffectLanesData,
   type LaneRow,
@@ -2739,7 +2740,7 @@ export function Timeline({
   const [laneScroll, setLaneScroll] = useState(0)
   const activeLanes = dialCurves ? null : (visibilityLanes ?? effectLanes)
   const laneView = Math.max(LANE_H, areaH - RULER_H - DOPE_H - AUDIO_H - 1)
-  const laneSpan = (activeLanes?.effects.length ?? 0) * LANE_H
+  const laneSpan = (activeLanes?.effects.length ?? 0) * LANE_H + LANE_TOP
   const laneMax = Math.max(0, laneSpan - laneView)
   const [laneFollowed, setLaneFollowed] = useState<string | null>(null)
   const laneWanted = activeLanes?.selectedEffect ?? null
@@ -2749,7 +2750,7 @@ export function Timeline({
     const shown = activeLanes ? [...activeLanes.effects].reverse() : []
     const at = shown.findIndex((r) => (r.uid ?? r.id) === laneWanted)
     if (at >= 0) {
-      const top = at * LANE_H
+      const top = at * LANE_H + LANE_TOP
       if (top < laneScroll) setLaneScroll(top)
       else if (top + LANE_H > laneScroll + laneView) setLaneScroll(Math.min(laneMax, top + LANE_H - laneView))
     }
@@ -3643,7 +3644,8 @@ export function Timeline({
       <EffectLanesMenu
         apiRef={lanesApi}
         enabled={blank && (effectLanes !== null || visibilityLanes !== null) && clip !== null && !dialCurves}
-        onEditCurves={menuKind === "fx" ? effectLanes?.onEditCurves : undefined}
+        onEditCurves={(menuKind === "fx" ? effectLanes : visibilityLanes)?.onEditCurves}
+        onKeyAll={menuKind === "vis" ? visibilityLanes?.onKeyAll : undefined}
       >
       <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {clip ? (
@@ -3731,7 +3733,7 @@ export function Timeline({
             />
             </div>
           )}
-          {visibilityLanes && (
+          {visibilityLanes && !dialCurves && (
             <div
               className="contents"
               onContextMenuCapture={() => {

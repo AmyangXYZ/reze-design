@@ -62,7 +62,15 @@ export type SceneSlotsInput = {
    *  is what lights, and a scene can want both. */
   hdri: { name: string; file: File } | null
   /** Media planes, each with the file it is made from. */
-  planes: { name: string; file: File; width: number; height: number; transform: SceneStageTransform }[]
+  planes: {
+    name: string
+    file: File
+    width: number
+    height: number
+    transform: SceneStageTransform
+    visibility?: ScenePlane["visibility"]
+    keys?: ScenePlane["keys"]
+  }[]
   /** Overlays, lowest first, each with its picture. Optional: a caller with no
    *  such slot collects a scene without any. */
   overlays?: LiveOverlay[]
@@ -321,7 +329,14 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     // The display name travels beside the path: the path now carries an index
     // that is bookkeeping, and a card called "0-blue.mp4" in the UI would be
     // this leaking out — and re-packing THAT would prefix it again every load.
-    return { asset: { name: p.name, url: path }, width: p.width, height: p.height, transform: p.transform }
+    return {
+      asset: { name: p.name, url: path },
+      width: p.width,
+      height: p.height,
+      transform: p.transform,
+      ...(p.visibility?.length ? { visibility: p.visibility } : {}),
+      ...(p.keys && Object.keys(p.keys).length ? { keys: p.keys } : {}),
+    }
   })
 
   // Overlays, packed like the cards and indexed for the same reason.

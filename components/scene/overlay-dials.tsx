@@ -7,8 +7,10 @@
 // it, the page does not.
 
 import { useSyncExternalStore } from "react"
+import { SliderRow } from "@/components/scene/scene-sidebar"
 import { EffectParams } from "@/components/scene/effect-params"
 import { SizeRow } from "@/components/scene/size-row"
+import { InsertKeysLine } from "@/components/scene/insert-keys-line"
 import {
   overlayDecls,
   overlayDrag,
@@ -22,14 +24,22 @@ export function OverlayDials({
   overlay,
   labels,
   sizeLabel,
+  insertLabel,
+  onInsertKeys,
   outHeight,
   frameNow,
   onUpdate,
   onPreview,
+  layerLabel,
+  place,
+  onLayer,
 }: {
   overlay: LiveOverlay
   labels: Record<OverlayField, string>
   sizeLabel: string
+  insertLabel: string
+  /** Every field keyed at the playhead, as it stands. */
+  onInsertKeys: () => void
   /** The export frame's height in pixels, what the exact size is measured in. */
   outHeight: number
   /** The playhead, in frames. */
@@ -37,7 +47,13 @@ export function OverlayDials({
   onUpdate: (patch: Partial<LiveOverlay>) => void
   /** A dial's drag, for the layer to show before the document has it. */
   onPreview: (patch: Partial<Pick<LiveOverlay, OverlayField>>) => void
+  layerLabel: string
+  /** Its place in the pile, 0 at the back, and the pile's height. */
+  place: [number, number]
+  /** Moved to a place in the pile, 0 at the back. */
+  onLayer: (at: number) => void
 }) {
+  const [at, count] = place
   const drag = useSyncExternalStore(overlayDrag.subscribe, overlayDrag.get, () => null)
   // A canvas drag on this overlay shows as its fields' values; a dragged field
   // reads as plain while the drag lasts, so its dial follows the pointer.
@@ -46,6 +62,7 @@ export function OverlayDials({
   const setSize = (size: number) => onUpdate(overlayFieldsAt(overlay, { size }, Math.round(frameNow())))
   return (
     <div className="mt-3.5">
+      <InsertKeysLine label={insertLabel} onInsert={onInsertKeys} />
       <SizeRow
         label={sizeLabel}
         width={shown.size * outHeight * overlay.aspect}
@@ -63,6 +80,22 @@ export function OverlayDials({
         frameNow={frameNow}
         onPreview={(name, v) => typeof v === "number" && onPreview({ [name]: v })}
       />
+      {/* Which layer it is, 1 at the bottom: slid past another, it goes over it. */}
+      {count > 1 && (
+        <div className="mt-1.5">
+          <SliderRow
+            label={layerLabel}
+            value={at + 1}
+            min={1}
+            max={count}
+            step={1}
+            onChange={(n) => onLayer(Math.round(n) - 1)}
+            fmt={(n) => `${Math.round(n)} / ${count}`}
+            dense
+            labelClass="w-[4.75rem]"
+          />
+        </div>
+      )}
     </div>
   )
 }
