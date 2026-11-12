@@ -21,6 +21,7 @@ import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, engineGroups } from "@/lib/material-maps"
 import { loadParticleTextures } from "@/lib/effect-textures"
+import { stageMaterialRig } from "@/lib/gltf-stage"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { castRotationToEngine, pushTimeline, seedLane, seedMaterialLanes, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
@@ -532,6 +533,17 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       const maps = await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
       // the pictures its particle systems draw (lib/effect-textures.ts)
       await loadParticleTextures(files, pmxFile.name, (f) => f.name)
+      // A converted stage's materials take the layers its lamps are grouped by,
+      // and its lamp-carried glows leave the probe, as at upload (page.tsx) —
+      // from its rig, since the .glb they were read from is not in the bundle.
+      if (entry.stage) {
+        const rigFile = files.find((f) => f.name === pmxFile.name.replace(/\.pmx$/i, "") + ".lights.json")
+        if (rigFile) {
+          const mats = stageMaterialRig(await rigFile.text())
+          if (Object.keys(mats.layers).length) engine.setMaterialLayers(entry.model.id, mats.layers)
+          for (const name of mats.outOfProbe) engine.setMaterialInProbe(entry.model.id, name, false)
+        }
+      }
       // The same line the upload path prints, because a stage that came back
       // from the bundle without its ORM maps is a rough white metal — no
       // highlight, nothing that moves with the camera — and looks like a

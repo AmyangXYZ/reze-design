@@ -941,6 +941,17 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     }))
     notes.push(`${particles.length} particle systems drawn by the game's own rules and pictures: ${particles.map((c) => c.name).join(", ")}`)
   }
+  // AND WHOM EACH MATERIAL IS LIT BY: its own layers, and the glows left out of
+  // the probe. The upload sets both from the .glb; the bundle a scene reloads
+  // from holds the PMX and this file, not the .glb, so they ride here too
+  // (stageMaterialRig) — without them every lamp of a layered stage lit nothing
+  // after a refresh.
+  const matRig = Object.fromEntries(
+    materials
+      .filter((m) => m.layers !== null || !m.inProbe)
+      .map((m) => [m.name, { ...(m.layers !== null ? { layers: m.layers } : {}), ...(m.inProbe ? {} : { inProbe: false }) }]),
+  )
+  if (Object.keys(matRig).length) rig.materials = matRig
   files.push({ path: `${dir}${stem}.lights.json`, bytes: new TextEncoder().encode(JSON.stringify(rig, null, 1)) })
 
   // ── The PMX ──
@@ -1862,6 +1873,27 @@ const converted = new WeakMap<File, { materials: GlbMaterial[]; notes: string[] 
 
 export const isFromGlb = (pmx: File) => converted.has(pmx)
 export const glbStageOf = (pmx: File) => converted.get(pmx)
+
+/**
+ * The per-material half of a converted stage's rig (`<Name>.lights.json`
+ * `materials`): each material's rendering layers, and the glows kept out of the
+ * reflection probe — what the upload sets from the .glb itself, for a stage
+ * that comes back from a bundle as its PMX.
+ */
+export function stageMaterialRig(text: string): { layers: Record<string, number>; outOfProbe: string[] } {
+  const out = { layers: {} as Record<string, number>, outOfProbe: [] as string[] }
+  let rig: { materials?: Record<string, { layers?: unknown; inProbe?: unknown }> }
+  try {
+    rig = JSON.parse(text)
+  } catch {
+    return out
+  }
+  for (const [name, m] of Object.entries(rig.materials ?? {})) {
+    if (typeof m?.layers === "number" && Number.isInteger(m.layers) && m.layers > 0) out.layers[name] = m.layers >>> 0
+    if (m?.inProbe === false) out.outOfProbe.push(name)
+  }
+  return out
+}
 
 /**
  * The identity a rewritten .pmx has to keep.
