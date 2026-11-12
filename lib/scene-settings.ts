@@ -17,6 +17,11 @@ export type WorldLight = { color: string; strength: number }
 export type FillLight = { color: string; strength: number }
 export const NO_FILL: FillLight = { color: "#ffffff", strength: 0 }
 
+/** A stage's key light for its cast, turning with the camera as the game's
+ *  CharacterEffect key does (the engine's setCastKey): degrees above the ground
+ *  and round from straight behind the camera. */
+export type StageCastKey = { color: string; strength: number; inclination: number; azimuth: number }
+
 /** A stage's own colour grade: the cube its game's pipeline bakes, size³
  *  texels of 8-bit sRGB RGB, red fastest, base64. Applied after the view and
  *  before the author's grade — see the engine's setStageGrade. */
@@ -149,6 +154,8 @@ export type SceneSettings = {
   /** The stage's own distance fog, PMX units (see the engine's setSceneFog),
    *  and which stage — it leaves with it. */
   stageFog?: { stage: string; fog: StageFog }
+  /** The cast's key light a stage brought (StageCastKey); leaves with it. */
+  stageCastKey?: { stage: string; key: StageCastKey }
   /** The stage reflects its world, not the engine's capture of it (see the
    *  engine's setReflectionProbe), and which stage. Drawn only while that
    *  stage's world claim stands, like stageAmbient. With a probe, the stage

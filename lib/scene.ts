@@ -20,6 +20,7 @@ import {
   type StageGrade,
   type StageView,
   type StageFog,
+  type StageCastKey,
   type StageFogLayer,
   type StageReflectionProbe,
   type StagePixelFilter,
@@ -1124,6 +1125,7 @@ export function parseSceneDoc(
         stageView: stageViewFromDoc(settings.stageView),
         stageAmbient: stageAmbientFromDoc(settings.stageAmbient),
         stageFog: stageFogFromDoc(settings.stageFog),
+        stageCastKey: stageCastKeyFromDoc(settings.stageCastKey),
         stageReflections: stageReflectionsFromDoc(settings.stageReflections),
         background: { color: background.color },
       },
@@ -1216,6 +1218,8 @@ export function stageLightsFromFile(
   sun: Partial<SceneSettings["sun"]>
   effects: { name: string; params: Record<string, EffectParamValue> }[]
   fill: { color: string; strength: number } | null
+  /** The key its cast is lit by, turning with the camera. */
+  castKey: StageCastKey | null
   /** The world the stage was lit under: a colour, or the strength of the
    *  .hdr beside it. Absent means the .hdr at 1 or the scene's own. */
   world: { color?: string; strength: number } | null
@@ -1243,6 +1247,7 @@ export function stageLightsFromFile(
     sun?: Record<string, unknown>
     effects?: unknown[]
     fill?: Record<string, unknown>
+    castKey?: unknown
     world?: Record<string, unknown>
     view?: Record<string, unknown>
     grade?: Record<string, unknown>
@@ -1288,6 +1293,7 @@ export function stageLightsFromFile(
     f && typeof f.color === "string" && /^#[0-9a-f]{6}$/i.test(f.color) && num(f.strength) && (f.strength as number) >= 0
       ? { color: f.color, strength: f.strength as number }
       : null
+  const castKey = stageCastKeyFrom(raw.castKey)
   const w = raw.world
   const world =
     w && num(w.strength) && (w.strength as number) >= 0 && (w.color === undefined || (typeof w.color === "string" && /^#[0-9a-f]{6}$/i.test(w.color)))
@@ -1311,7 +1317,7 @@ export function stageLightsFromFile(
     return typeof e?.name === "string" && typeof e.wgsl === "string" ? [{ name: e.name, wgsl: e.wgsl }] : []
   })
   return {
-    particles, lamps, sun, effects, fill, world, view, grade, viewLut, bloom: stageBloomFrom(raw.bloom), ambient, fog: stageFogFrom(raw.fog),
+    particles, lamps, sun, effects, fill, castKey, world, view, grade, viewLut, bloom: stageBloomFrom(raw.bloom), ambient, fog: stageFogFrom(raw.fog),
     reflectsWorld: raw.reflections === "world", reflectionProbe: reflectionProbeFrom(raw.reflectionProbe) }
 }
 
@@ -1328,6 +1334,21 @@ function stageFogFrom(v: unknown): StageFog | null {
   if (!haze) return null
   const dyn = fogLayerFrom((v as { dyn?: unknown }).dyn)
   return dyn ? { ...haze, dyn } : haze
+}
+
+/** A stage's cast key, whole or not at all. */
+function stageCastKeyFrom(v: unknown): StageCastKey | null {
+  const k = v as Partial<Record<keyof StageCastKey, unknown>> | null
+  const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x)
+  return k && typeof k.color === "string" && /^#[0-9a-f]{6}$/i.test(k.color) && fin(k.strength) && k.strength >= 0 && fin(k.inclination) && fin(k.azimuth)
+    ? { color: k.color, strength: k.strength, inclination: k.inclination, azimuth: k.azimuth }
+    : null
+}
+
+function stageCastKeyFromDoc(v: unknown): SceneSettings["stageCastKey"] {
+  const s = v as { stage?: unknown; key?: unknown } | null
+  const key = s && typeof s.stage === "string" ? stageCastKeyFrom(s.key) : null
+  return key ? { stage: s!.stage as string, key } : undefined
 }
 
 function stageFogFromDoc(v: unknown): SceneSettings["stageFog"] {
@@ -1861,6 +1882,7 @@ function restored(base: Scene): Scene {
         stageView: stageViewFromDoc(settingsBase.stageView ?? base.state.settings.stageView),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),
         stageFog: stageFogFromDoc(settingsBase.stageFog ?? base.state.settings.stageFog),
+        stageCastKey: stageCastKeyFromDoc(settingsBase.stageCastKey ?? base.state.settings.stageCastKey),
         stageReflections: stageReflectionsFromDoc(settingsBase.stageReflections ?? base.state.settings.stageReflections),
       },
       groups: groupsUsable ? usableGroups : base.state.groups,

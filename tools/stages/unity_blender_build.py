@@ -199,6 +199,10 @@ def make_material(spec):
             **({"ripple": spec["ripple"]} if spec.get("ripple") else {}),
             **({"sea": spec["sea"]} if spec.get("sea") else {}),
             **({"fresnel": spec["fresnel"]} if spec.get("fresnel") else {}),
+            # the game's lamps for it, as rendering layers (unity_to_glb: PER_OBJECT_LAMPS)
+            **({"layers": spec["layers"]} if "layers" in spec else {}),
+            # its reflectance, the scene tint on its highlights
+            **({"specular": spec["specular"]} if "specular" in spec else {}),
     }
     return mat
 
@@ -338,6 +342,8 @@ scene["reze"] = {
         **({"fog": scene_json["fog"]} if scene_json.get("fog") else {}),
         # The game's character shadow on its ground (unity_to_glb).
         **({"groundShadow": scene_json["groundShadow"]} if scene_json.get("groundShadow") else {}),
+        # The key the game lights its cast by, turning with the camera (unity_to_glb).
+        **({"castKey": scene_json["castKey"]} if scene_json.get("castKey") else {}),
 }
 
 # The .blend is viewed under Filmic at +0.6 stops, the nearest Blender has to

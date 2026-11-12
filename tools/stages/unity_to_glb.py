@@ -90,6 +90,75 @@ GAME_CAST_LAYERS = 0x40000001
 RENDERING_LAYER_STAGE = 1
 RENDERING_LAYER_CAST = 1 << 30
 
+# EACH RENDERER, ITS OWN FEW LAMPS. The game's pipeline lights an object by the
+# additional lights Unity lists for it, at most four (SimPipeline/PBR/Standard,
+# decompiled: `min(unity_LightData.y, 4.0)` around the lamp loop). A stage of a
+# hundred lamps lights each wall by its four, not by the hundred whose ranges
+# reach it, which drawn all at once laid pools of light over X206's walls. The
+# app says it with rendering layers: the renderers that share a set of lamps
+# are a group with a bit of its own (bits 1..28, on their materials), and each
+# lamp reaches the groups it is among the four of. Bit 29 is a group no lamp
+# reaches; 0 and 30 stay the app's stage and cast.
+PER_OBJECT_LAMPS = 4
+LAMP_GROUP_BITS = 28
+RENDERING_LAYER_UNLAMPED = 1 << 29
+# The shaders that take the lamps (their own lamp loop); the rest are not split.
+LAMP_LIT = ("SimPipeline/PBR/", "SimPipeline/Scene/Plant", "SimPipeline/Scene/Transparent", "SimPipeline/Scene/Ripplet")
+
+
+def lamp_list(scene):
+    """The point and spot lamps the game lights its renderers with in real time."""
+    return [l for l in scene.lights() if l["on"] and l["baked"] != "2" and l["type"] in ("point", "spot")]
+
+
+def object_lamps(lamps, lo, hi, layer_mask):
+    """The lamps the game hands one renderer: those on a layer it is on whose range
+    reaches its bounds, the brightest at its centre first (colour x intensity under
+    the pipeline's own falloff, window / d²), PER_OBJECT_LAMPS of them."""
+    centre = [(lo[i] + hi[i]) / 2 for i in range(3)]
+    scored = []
+    for k, l in enumerate(lamps):
+        if not l["renderingLayerMask"] & layer_mask:
+            continue
+        p, r = l["position"], l["range"]
+        near = [min(max(p[i], lo[i]), hi[i]) for i in range(3)]
+        if sum((p[i] - near[i]) ** 2 for i in range(3)) >= r * r:
+            continue
+        d2 = max(sum((p[i] - centre[i]) ** 2 for i in range(3)), 1e-4)
+        t = d2 / (r * r)
+        window = max(1.0 - t * t, 0.0) ** 2
+        c = l["color"]
+        lum = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * l["intensity"]
+        scored.append((lum * window / d2, k))
+    scored.sort(reverse=True)
+    return tuple(sorted(k for _, k in scored[:PER_OBJECT_LAMPS]))
+
+
+def lamp_group_bits(sets, weight):
+    """A bit per set of lamps, at most LAMP_GROUP_BITS: past that, the two sets with the
+    fewest lamps between them that are not shared are lit together (their union), the
+    lightest first - so every renderer still has its own lamps, and a few more."""
+    groups = {s: {s} for s in sets}
+    while len(groups) > LAMP_GROUP_BITS:
+        keys = list(groups)
+        best = None
+        for i, a in enumerate(keys):
+            for b in keys[i + 1:]:
+                cost = (len(set(a) ^ set(b)), weight.get(a, 0) + weight.get(b, 0))
+                if best is None or cost < best[0]:
+                    best = (cost, a, b)
+        _, a, b = best
+        u = tuple(sorted(set(a) | set(b)))
+        members = groups.pop(a) | groups.pop(b) | groups.pop(u, set())
+        groups[u] = members
+        weight[u] = weight.get(a, 0) + weight.get(b, 0)
+    bit_of, lamps_of = {}, {}
+    for n, (u, members) in enumerate(groups.items()):
+        for s in members:
+            bit_of[s] = 1 << (n + 1)
+        lamps_of[1 << (n + 1)] = u
+    return bit_of, lamps_of
+
 
 def to_gltf(v):
     """Unity (left-handed, Y up) to glTF (right-handed, Y up): mirror X. The
@@ -876,6 +945,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     live_particles = drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card)
     particle_meshes = [p for p in scene.mesh_particles() if p["object"] not in live_particles]
     to_show, rhythm_walls = [], []
+    game_lamps = lamp_list(scene)
+    set_weight = {}
     for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
             continue
@@ -942,19 +1013,29 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
             - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
             + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
         ) < 0
+        lamp_set = None
+        if game_lamps and any((shader_of(materials_by_guid.get(g)) or "").startswith(LAMP_LIT) for g in r["materials"]):
+            pts = [transform(matrix, translation, p) for p in m.positions]
+            lo = [min(q[i] for q in pts) for i in range(3)]
+            hi = [max(q[i] for q in pts) for i in range(3)]
+            lamp_set = object_lamps(game_lamps, lo, hi, r.get("renderingLayerMask", 1) & 0xFFFFFFFF)
+            set_weight[lamp_set] = set_weight.get(lamp_set, 0) + len(pts)
         for slot_index, guid in enumerate(r["materials"]):
             i = r["firstSubMesh"] + slot_index
             if i >= len(m.submeshes):
                 break
             mat = materials_by_guid.get(guid)
             key = mat["name"] if mat else f"unnamed_{guid[:8]}"
+            own_lamps = lamp_set if (shader_of(mat) or "").startswith(LAMP_LIT) else None
+            if own_lamps is not None:
+                key = f"{key} @{','.join(map(str, own_lamps)) or 'none'}"
             # A PARTICLE'S OWN COLOUR tints what it wears (the effect shader's
             # vertex colour), so a tinted one is a material of its own.
             tint = tuple(round(c, 3) for c in (r.get("particle") or {}).get("color", (1.0, 1.0, 1.0, 1.0)))
             if tint != (1.0, 1.0, 1.0, 1.0):
                 key = f"{key} tint {tint[0]:.2f} {tint[1]:.2f} {tint[2]:.2f} {tint[3]:.2f}"
             if key not in per_material:
-                per_material[key] = {"guid": guid, "positions": [], "normals": [], "uvs": [], "indices": [], "tint": tint}
+                per_material[key] = {"guid": guid, "positions": [], "normals": [], "uvs": [], "indices": [], "tint": tint, "lamps": own_lamps}
                 order.append(key)
             bucket = per_material[key]
             shader_name = shader_of(mat)
@@ -1021,6 +1102,23 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         others = max((v for k, v in reach.items() if k != key), default=0.0)
         if r > 3.0 * others and others > 0.0:
             domes.add(key)
+
+    # each renderer's lamps as a layer bit, and the materials named by their group
+    lamp_sets = sorted({b["lamps"] for b in per_material.values() if b["lamps"] is not None})
+    bit_of, lamps_of = lamp_group_bits([s for s in lamp_sets if s], dict(set_weight))
+    if len(lamps_of) < len([s for s in lamp_sets if s]):
+        notes.append(f"lamps: {len(lamp_sets)} sets of an object's {PER_OBJECT_LAMPS} lamps, lit as {len(lamps_of)} groups (some objects take a neighbour's lamps too)")
+
+    def lamp_layers(lamps):
+        return None if lamps is None else (bit_of[lamps] if lamps else RENDERING_LAYER_UNLAMPED)
+
+    group_no = {bit: n + 1 for n, bit in enumerate(sorted(set(bit_of.values())))}
+
+    def shown_name(key, lamps):
+        base = key.rsplit(" @", 1)[0] if lamps is not None else key
+        if lamps is None:
+            return base
+        return f"{base} #{group_no[bit_of[lamps]]}" if lamps else f"{base} #0"
 
     copied = set()
     materials = []
@@ -1256,9 +1354,16 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         st = scene_tint if mat and shader in SCENE_TINTED and not shader.endswith("/Ripplet") else None
         if st:
             tint = tuple(t * c for t, c in zip(tint, st))
+        layers = lamp_layers(bucket["lamps"])
         materials.append(
             {
-                "name": key,
+                "name": shown_name(key, bucket["lamps"]),
+                **({"layers": layers} if layers is not None else {}),
+                # THE TINT ON ITS HIGHLIGHTS: the game multiplies the lamps' and the
+                # probe's reflections by it too. The base and the glow carry it above;
+                # a dielectric's reflectance (the app's `specular`, 0.5 = URP's 0.04)
+                # carries it here.
+                **({"specular": round(0.5 * (0.2126 * st[0] + 0.7152 * st[1] + 0.0722 * st[2]), 4)} if st else {}),
                 "geometry": f"geo/{index}.npz",
                 "shader": shader or "",
                 "baseColor": {"image": f"tex/{base}" if base else None, "factor": [min(1.0, tint[0]), min(1.0, tint[1]), min(1.0, tint[2]), alpha if alpha_mode != "OPAQUE" else 1.0]},
@@ -1308,7 +1413,11 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     for r in scene.renderers():
         stage_bits |= r["renderingLayerMask"] & 0xFFFFFFFF
     lamps, sun = [], None
+    lamp_index = -1
+    never_chosen = []
     for l in scene.lights():
+        if l["on"] and l["baked"] != "2" and l["type"] in ("point", "spot"):
+            lamp_index += 1      # its place in lamp_list, which the renderers' sets count by
         if not l["on"]:
             notes.append(f"left out {l['name']}: switched off in the game")
             continue
@@ -1330,7 +1439,15 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         if not lights_cast and not lights_stage:
             notes.append(f"left out {l['name']}: its layers reach nothing drawn")
             continue
-        reach = {} if lights_cast and lights_stage else {"layers": RENDERING_LAYER_STAGE if lights_stage else RENDERING_LAYER_CAST}
+        if lamps_of:
+            # the stage groups it is among the four of, and the cast where its layers reach her
+            bits = sum(bit for bit, chosen in lamps_of.items() if lamp_index in chosen) | (RENDERING_LAYER_CAST if lights_cast else 0)
+            if not bits:
+                never_chosen.append(l["name"])
+                continue
+            reach = {"layers": bits}
+        else:
+            reach = {} if lights_cast and lights_stage else {"layers": RENDERING_LAYER_STAGE if lights_stage else RENDERING_LAYER_CAST}
         lamps.append(
             {
                 "name": l["name"],
@@ -1348,6 +1465,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 **reach,
             }
         )
+    if never_chosen:
+        notes.append(f"left out {len(never_chosen)} lamps no object takes among its {PER_OBJECT_LAMPS}: {', '.join(never_chosen)}")
     by_layer = [x.get("layers") for x in lamps]
     if by_layer.count(RENDERING_LAYER_STAGE):
         notes.append(f"{by_layer.count(RENDERING_LAYER_STAGE)} lamps light the stage only, as the game's layers keep them off the cast")
@@ -1488,6 +1607,18 @@ def main():
         METRES = METRES / float(cast)
         print(f"[unity] the game's cast stands at {cast} here: a game unit is {METRES:.4f} m")
     build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root, args.origin)
+    # HER KEY LIGHT. The game lights its characters by CharacterEffect's own key, in
+    # the frame of the camera's view flattened to the ground — not by the room: a
+    # dorm's lamps sit on a layer she is not on, and X206_band's sun reaches one
+    # GameObject layer of the room alone. ag-rip records the stage character's
+    # (ag_stage.json castKey); the app draws it on the cast layer, turning with the
+    # camera, in place of the sun there.
+    key = json.load(open(meta, encoding="utf-8")).get("castKey") if os.path.isfile(meta) else None
+    if key:
+        scene_json["castKey"] = {"color": [gamma_to_linear(c) for c in key["color"]], "strength": float(key["intensity"]),
+                                 "inclination": float(key["inclination"]), "azimuth": float(key["azimuth"])}
+        scene_json["notes"].append(f"the cast's key: {key['skin']}'s, {key['inclination']}° up, {key['azimuth']}° round from the camera, x{key['intensity']}")
+        json.dump(scene_json, open(os.path.join(build, "scene.json"), "w", encoding="utf-8"), indent=1)
     grade = f"{scene_json['grading']['size']}^3" if scene_json["grading"] else "none"
     print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'}, grade {grade} -> {build}")
     for n in scene_json["notes"]:

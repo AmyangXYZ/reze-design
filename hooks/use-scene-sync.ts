@@ -281,6 +281,10 @@ export function useSceneSync({
     if (!p || (p.settings.stageReflections !== reflections || p.settings.world !== world)) {
       engine.setReflectionProbe(!reflectsWorld, reflections?.probe ?? null)
     }
+    if (!p || p.settings.stageCastKey !== settings.stageCastKey) {
+      const k = settings.stageCastKey?.key
+      engine.setCastKey(k ? { color: hexToLinearVec3(k.color), strength: k.strength, inclination: k.inclination, azimuth: k.azimuth } : null)
+    }
     if (!p || p.settings.stageFog !== settings.stageFog) {
       const f = settings.stageFog?.fog
       const layer = (l: NonNullable<typeof f>) => ({

@@ -5522,6 +5522,9 @@ function Lab() {
         stylingPending.current = applyGroups(id, glbStyleGroups(glb.materials))
         // a glow its lamps carry is reflected by them, not by the probe too
         for (const m of glb.materials) if (!m.inProbe) engineRef.current?.setMaterialInProbe(id, m.name, false)
+        // each renderer's own lamps, as the converter grouped them
+        const layers = Object.fromEntries(glb.materials.filter((m) => m.layers !== null).map((m) => [m.name, m.layers!]))
+        if (Object.keys(layers).length) engineRef.current?.setMaterialLayers(id, layers)
         return id
       }
       if (!ray) {
@@ -5600,6 +5603,7 @@ function Lab() {
       stageView: s2.stageView && ids.has(s2.stageView.stage) ? undefined : s2.stageView,
       stageAmbient: s2.stageAmbient && ids.has(s2.stageAmbient.stage) ? undefined : s2.stageAmbient,
       stageFog: s2.stageFog && ids.has(s2.stageFog.stage) ? undefined : s2.stageFog,
+      stageCastKey: s2.stageCastKey && ids.has(s2.stageCastKey.stage) ? undefined : s2.stageCastKey,
       stageReflections: s2.stageReflections && ids.has(s2.stageReflections.stage) ? undefined : s2.stageReflections,
     }))
     swapHdri((prev) => {
@@ -5664,6 +5668,9 @@ function Lab() {
     // AND ITS FOG, which leaves with it.
     const stageFog = rig?.fog
     setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
+    // AND THE KEY ITS CAST WAS LIT BY, turning with the camera, which leaves with it.
+    const castKey = rig?.castKey
+    setSettings((s2) => ({ ...s2, stageCastKey: castKey ? { stage: id, key: castKey } : undefined }))
     // AND WHAT ITS FLOORS REFLECT: its world, when that was measured inside it,
     // or itself, inside the room its cast stands in.
     const probe = rig?.reflectionProbe

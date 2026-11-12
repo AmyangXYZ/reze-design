@@ -134,12 +134,15 @@ function isAppStageGraph(graph: ShaderGraph): boolean {
   const fog = f && through
     ? { distance: [Number(f.inputs?.b ?? 0), Number(f.inputs?.c ?? 0)] as [number, number], amount: Number(through.inputs?.b ?? 0) }
     : null
+  // a game stage's tint on its highlights rides Lit's specular
+  const lit = graph.nodes.find((n) => n.id === "lit" && n.type === "lit")
+  const spec = typeof lit?.inputs?.specular === "number" ? lit.inputs.specular : null
   return (
     sameGraphLook(graph, stageSheetGraph(strength)) ||
     sameGraphLook(graph, stageLightSheetGraph(strength)) ||
     (!!fog && sameGraphLook(graph, stageLightSheetGraph(strength, [1, 1, 1], fog))) ||
-    sameGraphLook(graph, stagePbrGraph(strength)) ||
-    sameGraphLook(graph, stagePbrGraph(strength, true)) ||
+    sameGraphLook(graph, stagePbrGraph(strength, false, spec)) ||
+    sameGraphLook(graph, stagePbrGraph(strength, true, spec)) ||
     sameGraphLook(graph, stageLightmapGraph(strength)) ||
     sameGraphLook(graph, stageLightmapGraph(strength, true))
   )
