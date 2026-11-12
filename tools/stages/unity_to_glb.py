@@ -84,6 +84,11 @@ BLENDER = _find_blender()
 METRES = 0.64
 # PMX units per metre: the app's intensities are per PMX unit.
 PMX_PER_METRE = 12.5
+# The game's character renderers' renderingLayerMask (default + bit 30), and
+# the app's two lamp layers (reze-engine RENDERING_LAYER_DEFAULT / _CHARACTER).
+GAME_CAST_LAYERS = 0x40000001
+RENDERING_LAYER_STAGE = 1
+RENDERING_LAYER_CAST = 1 << 30
 
 
 def to_gltf(v):
@@ -1208,6 +1213,15 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         )
 
     # ── Lamps and the sun, in metres ──
+    # WHOM A LAMP LIGHTS is the game's rendering layers: its Forward+ list ands
+    # a lamp's renderingLayerMask with each renderer's (AGSimPipeline). The
+    # game's characters are drawn on 0x40000001 (default + bit 30, every
+    # character prefab read); the stage on whatever its renderers carry. A
+    # dorm room's lamps sit on bit 2 alone, so they light the room and never
+    # her — which the app says with its own two layers, stage and cast.
+    stage_bits = 0
+    for r in scene.renderers():
+        stage_bits |= r["renderingLayerMask"] & 0xFFFFFFFF
     lamps, sun = [], None
     for l in scene.lights():
         if not l["on"]:
@@ -1226,6 +1240,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         if l["type"] not in ("point", "spot"):
             notes.append(f"left out {l['name']}: {l['type']} light")
             continue
+        mask = l["renderingLayerMask"] & 0xFFFFFFFF
+        lights_cast, lights_stage = bool(mask & GAME_CAST_LAYERS), bool(mask & stage_bits)
+        if not lights_cast and not lights_stage:
+            notes.append(f"left out {l['name']}: its layers reach nothing drawn")
+            continue
+        reach = {} if lights_cast and lights_stage else {"layers": RENDERING_LAYER_STAGE if lights_stage else RENDERING_LAYER_CAST}
         lamps.append(
             {
                 "name": l["name"],
@@ -1240,8 +1260,14 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 "direction": list(to_gltf_dir(l["direction"])),
                 "angle": l["angle"],
                 "innerAngle": l["innerAngle"],
+                **reach,
             }
         )
+    by_layer = [x.get("layers") for x in lamps]
+    if by_layer.count(RENDERING_LAYER_STAGE):
+        notes.append(f"{by_layer.count(RENDERING_LAYER_STAGE)} lamps light the stage only, as the game's layers keep them off the cast")
+    if by_layer.count(RENDERING_LAYER_CAST):
+        notes.append(f"{by_layer.count(RENDERING_LAYER_CAST)} lamps light the cast only")
 
     look = scene.scene_setting() or {}
     fill = None
@@ -1359,8 +1385,17 @@ def main():
         raise SystemExit("--out is the stage file itself, e.g. stages/X323.glb")
     png_root = args.png_root or os.path.join(os.path.dirname(os.path.abspath(args.project)), "_png_textures")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    global INCLUDE_OFF
+    global INCLUDE_OFF, METRES
     INCLUDE_OFF = args.include_off
+    # A ROOM BUILT FOR SMALLER PEOPLE: ag-rip records the scale the game draws
+    # its characters at in this stage (ag_stage.json castScale; the dorm rooms'
+    # are 0.6). The app's cast is full size, so a game unit there is 1/castScale
+    # of one here — and everything metric (lamps, fog, particles) follows METRES.
+    meta = os.path.join(os.path.dirname(os.path.abspath(args.project)), "ag_stage.json")
+    cast = json.load(open(meta, encoding="utf-8")).get("castScale") if os.path.isfile(meta) else None
+    if cast:
+        METRES = METRES / float(cast)
+        print(f"[unity] the game's cast stands at {cast} here: a game unit is {METRES:.4f} m")
     build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root, args.origin)
     grade = f"{scene_json['grading']['size']}^3" if scene_json["grading"] else "none"
     print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'}, grade {grade} -> {build}")

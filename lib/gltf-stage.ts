@@ -177,7 +177,19 @@ export type SeaSpec = {
 /** `near`: the bulb's radius in metres — inside it the inverse square holds
  *  flat (SceneLight.near), which is what keeps a broad soft source (a Blender
  *  area light, a glowing panel) from blowing up a wall it stands beside. */
-type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number; near?: number; specular?: boolean; tube?: number[] }
+type RezeLamp = {
+  range?: number
+  intensity?: number
+  color?: number[]
+  angle?: number
+  innerAngle?: number
+  near?: number
+  specular?: boolean
+  tube?: number[]
+  /** The rendering layers it reaches (SceneLight.layers): a game lamp its
+   *  layers keep off the cast lights the stage alone. Absent reaches all. */
+  layers?: number
+}
 type RezeSun = { color?: number[]; shadow?: boolean }
 type RezeScene = {
   version?: number
@@ -784,6 +796,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     if (typeof ex.near === "number" && Number.isFinite(ex.near) && ex.near > 0) lamp.near = Math.round(ex.near * PMX_PER_METRE * 1000) / 1000
     // Diffuse only: a Blender light with glossy visibility off (SceneLight.specular).
     if (ex.specular === false) lamp.specular = false
+    // Whom it lights, by the game's layers: the stage alone, or the cast alone
+    if (typeof ex.layers === "number" && Number.isInteger(ex.layers) && ex.layers > 0) lamp.layers = ex.layers >>> 0
     // A glowing strip: the segment position ± this half-axis (glTF metres)
     if (Array.isArray(ex.tube) && ex.tube.length === 3 && ex.tube.every((v) => typeof v === "number" && Number.isFinite(v)))
       lamp.tube = toPmx(ex.tube as [number, number, number]).map((v) => Math.round(v * 1000) / 1000)

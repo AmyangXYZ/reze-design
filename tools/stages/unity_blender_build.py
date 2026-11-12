@@ -264,7 +264,8 @@ for l in scene_json["lamps"]:
     ob.location = blender_xyz(l["position"])
     d = Vector(blender_xyz(l["direction"]))
     ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-    ob["reze"] = {"range": l["range"], "intensity": l["intensity"], "color": c, "innerAngle": l["innerAngle"], "angle": l["angle"]}
+    ob["reze"] = {"range": l["range"], "intensity": l["intensity"], "color": c, "innerAngle": l["innerAngle"], "angle": l["angle"],
+                  **({"layers": l["layers"]} if "layers" in l else {})}
     stage.objects.link(ob)
 
 if scene_json["sun"]:
