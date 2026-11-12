@@ -238,6 +238,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // Its materials' own stretches, under the same rule.
       ...(m.materialVisibility && Object.keys(m.materialVisibility).length ? { materialVisibility: m.materialVisibility } : {}),
       ...(m.castShadow === false ? { castShadow: false as const } : {}),
+      ...(m.layers ? { layers: m.layers } : {}),
       ...(m.fill === false ? { fill: false as const } : {}),
       ...(m.bloom === false ? { bloom: false as const } : {}),
       ...(look ? { look } : {}),

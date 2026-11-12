@@ -667,6 +667,12 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       engine.setModelCastShadow(entry.model.id, false)
       info.castShadow = false
     }
+    if (entry.layers) {
+      // every material on the layers the entry names (0 in the table = the model's own)
+      const all = new Set(model.getMaterials().map((x) => x.name))
+      engine.setMaterialLayers(entry.model.id, Object.fromEntries([...all].map((n) => [n, entry.layers!])))
+      info.layers = entry.layers
+    }
     if (entry.fill === false) info.fill = false
     if (entry.bloom === false) info.bloom = false
     const modelGroups = withSpecialGroups(
@@ -943,6 +949,8 @@ export type EngineModelInfo = {
   spawnGuess?: boolean
   /** Left out of the sun's shadow — see SceneModel.castShadow. */
   castShadow?: false
+  /** The rendering layers it draws on — see SceneModel.layers. */
+  layers?: number
   /** Left out of the cast fill — see SceneModel.fill. */
   fill?: false
   /** Left out of the bloom — see SceneModel.bloom. */

@@ -138,6 +138,11 @@ export type SceneModel = {
   materialVisibility?: Record<string, VisibilityWindow[]>
   /** Left out of the sun's shadow. Absent = casts, as its PMX materials say. */
   castShadow?: false
+  /** The rendering layers it draws on, as a game stage's materials carry them
+   *  (Engine.setMaterialLayers): a prop the game lights as a character - a
+   *  band's instruments under the cast's key - says the cast's. Absent = its
+   *  kind's own. */
+  layers?: number
   /** Left out of the cast fill (settings.fill). Absent = lit by it. */
   fill?: false
   /** Left out of the bloom: its own bright pixels do not glow. Absent = glows. */
@@ -538,6 +543,8 @@ export type SceneModelDoc = {
   materialVisibility?: Record<string, VisibilityWindow[]>
   /** Left out of the sun's shadow. Absent = casts. */
   castShadow?: false
+  /** The rendering layers it draws on. Absent = its kind's own. */
+  layers?: number
   /** Left out of the cast fill. Absent = lit by it. */
   fill?: false
   /** Left out of the bloom. Absent = glows. */
@@ -806,7 +813,7 @@ const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "materialVisibility" | "castShadow" | "fill" | "bloom" | "look" | "origin"
+    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "materialVisibility" | "castShadow" | "layers" | "fill" | "bloom" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
@@ -827,6 +834,7 @@ function stageFieldsOf(
     ...visibilityFieldOf(m.visibility),
     ...materialVisibilityFieldOf(m.materialVisibility),
     ...(m.castShadow === false ? { castShadow: false as const } : {}),
+    ...(typeof m.layers === "number" && Number.isInteger(m.layers) && m.layers > 0 ? { layers: m.layers >>> 0 } : {}),
     ...(m.fill === false ? { fill: false as const } : {}),
     ...(m.bloom === false ? { bloom: false as const } : {}),
     // Here with the rest because it has the same three sites to survive.
