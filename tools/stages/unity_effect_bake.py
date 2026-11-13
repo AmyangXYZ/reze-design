@@ -397,15 +397,17 @@ def live_effect(material, png_for_guid, max_size=1024, always=False, asset_for_g
                 "plus": f.get("_IsDisturbUV_MainPlus", 1.0) > 0.5,
                 "mask": f.get("_IsDisturbUV_Mask", 0.0) > 0.5,
             }
-    # THE DISSOLVE (DISSOLVE_SIMPLE), a particle's alone: its custom data drives
-    # it (TEXCOORD2, Custom2), and a still sheet has none. Its picture slides
-    # as the other slots do — by time · _DissovleUVOffset, or by Custom2.xy under
-    # _DissovleUVOffset_X2Y2 — and gates the alpha by a smoothstep whose edge is
-    # Custom2.z (lib/unity-particles.ts draws the fragment). X338's water
-    # glints dissolve as they spread; X348's systems carry 0 there.
+    # THE DISSOLVE (DISSOLVE_SIMPLE): its picture slides as the other slots do —
+    # by time · _DissovleUVOffset, or by Custom2.xy under _DissovleUVOffset_X2Y2 —
+    # and gates the alpha by a smoothstep whose edge rides Custom2.z
+    # (lib/unity-particles.ts draws the fragment). X338's water glints dissolve
+    # as they spread; X348's systems carry 0 there. A still sheet's Custom2 is
+    # zero, its edge then _DissovleStrength: X206's floor wave is its scrolling
+    # light cut into dashes by a dissolve picture standing still
+    # (lib/gltf-stage.ts effectGraph).
     dissolve = None
     dslot = material["textures"].get("_DissovleTex")
-    if always and "DISSOLVE_SIMPLE" in material.get("keywords", ()) and dslot and dslot.get("guid"):
+    if "DISSOLVE_SIMPLE" in material.get("keywords", ()) and dslot and dslot.get("guid"):
         png = png_for_guid(dslot["guid"])
         if png and os.path.exists(png):
             im = Image.open(png).convert("RGBA")

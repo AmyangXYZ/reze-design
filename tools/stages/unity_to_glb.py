@@ -865,6 +865,8 @@ RHYTHM_SHADER = "SimPipeline/Scene/SceneRhythm"
 
 # --include-off: what the scene file switches off is kept anyway
 INCLUDE_OFF = False
+# show parts kept in the stage, always on (--keep-show): paths under the stage
+KEEP_SHOW = ()
 
 
 def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None):
@@ -967,15 +969,22 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
     mesh_card = flat_mesh_cards(proj)
     live_particles = drawn_as_particles(scene, materials_by_guid, shader_of, mesh_card)
     particle_meshes = [p for p in scene.mesh_particles() if p["object"] not in live_particles]
-    to_show, rhythm_walls = [], []
+    to_show, rhythm_walls, kept_show = [], [], []
     game_lamps = lamp_list(scene)
     set_weight = {}
     for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
             continue
-        if scene.driven_by_show(r["object"]):
+        # A SHOW PART KEPT IN THE STAGE (--keep-show) stands always on: X206_band's
+        # floor scanning wave (GroundLine/fx_X206_groundline_05, on for nearly half
+        # of the loop and the room's signature) waves on its own scroll.
+        path = scene.path_of(r["object"])
+        kept = any(path == k or path.endswith("/" + k) or ("/" + k + "/") in path for k in KEEP_SHOW)
+        if scene.driven_by_show(r["object"]) and not kept:
             to_show.append(r["name"])
             continue
+        if kept:
+            kept_show.append(r["name"])
         # A MUSIC WALL (SimPipeline/Scene/SceneRhythm: X206_band's spectrum bars) is
         # kept, its bars baked below (bake_rhythm) as its material draws them.
         if r["materials"] and all(shader_of(materials_by_guid[g]) == RHYTHM_SHADER for g in r["materials"] if g in materials_by_guid):
@@ -984,7 +993,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         # is off, and its moon is the billboard particle at the same spot, the
         # moon's own picture with its halo. Kept, the disc turned to the stage
         # centre cut through that camera-facing card and hid half its glow.
-        if not scene.active_in_hierarchy(r["object"]):
+        if not kept and not scene.active_in_hierarchy(r["object"]):
             switched_off.append(r["name"])
             if not INCLUDE_OFF:
                 continue
@@ -1544,6 +1553,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
 
     grade = stage_grading(scene, proj, look, notes)
 
+    if kept_show:
+        notes.append(f"{len(kept_show)} renderers of the show kept in the stage, always on (--keep-show {' '.join(KEEP_SHOW)}): "
+                     f"{', '.join(sorted(set(kept_show)))}")
     if rhythm_walls:
         notes.append(f"{len(rhythm_walls)} music walls (SceneRhythm) baked with every bar full, as their material draws them: "
                      f"{', '.join(sorted(set(rhythm_walls)))}")
@@ -1619,6 +1631,8 @@ def main():
     ap.add_argument("--include-off", action="store_true",
                     help="keep what the scene file switches off: a UI scene's code switches parts of it on per page (X100)")
     ap.add_argument("--origin", default=None, help="a GameObject to stand at the origin (a UI scene's cast spot: X100's 'position')")
+    ap.add_argument("--keep-show", action="append", default=[],
+                    help="a part of the stage's show (a path under the stage, e.g. GroundLine/fx_X206_groundline_05) kept in it, always on")
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--png", action="store_true", help="keep Blender's PNG textures (default: WebP q90, see glb_webp.py)")
     args = ap.parse_args()
@@ -1626,8 +1640,9 @@ def main():
         raise SystemExit("--out is the stage file itself, e.g. stages/X323.glb")
     png_root = args.png_root or os.path.join(os.path.dirname(os.path.abspath(args.project)), "_png_textures")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    global INCLUDE_OFF, METRES
+    global INCLUDE_OFF, METRES, KEEP_SHOW
     INCLUDE_OFF = args.include_off
+    KEEP_SHOW = tuple(args.keep_show)
     # A ROOM BUILT FOR SMALLER PEOPLE: ag-rip records the scale the game draws
     # its characters at in this stage (ag_stage.json castScale; the dorm rooms'
     # are 0.6). The app's cast is full size, so a game unit there is 1/castScale

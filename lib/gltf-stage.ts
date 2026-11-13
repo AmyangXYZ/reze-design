@@ -107,9 +107,23 @@ type RezeMaterial = { layers?: number; tinted?: boolean; specular?: number; shad
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
 export type EffectLayer = { png?: string; scale: [number, number]; offset: [number, number]; rotation: number; tiling: boolean; speed: [number, number] }
+/** An effect sheet's dissolve (DISSOLVE_SIMPLE): its picture, placed as a layer
+ *  is, and the edge numbers — see tools/stages/unity_effect_bake.py. */
+export type EffectDissolve = EffectLayer & {
+  srgb?: boolean
+  redAlpha: boolean
+  opposite: boolean
+  soft: number
+  softW2: number
+  strength: number
+  strengthZ2: number
+  bound?: object
+}
 /** The game's effect shader (Effect_Common) for a sheet whose layers scroll. */
 export type EffectSpec = {
   layers: { main?: EffectLayer; plus?: EffectLayer; mask?: EffectLayer }
+  /** The dissolve that gates the alpha, in the first texture slot the sheet leaves free (dissolveSlot). */
+  dissolve?: EffectDissolve
   /** The noise that bends the flagged layers' UVs (_UseNoise), in slot 3. */
   noise?: { png?: string; scale: [number, number]; offset: [number, number]; speed: [number, number]; strength: [number, number]; main: boolean; plus: boolean; mask: boolean }
   mainPow: number[]
@@ -710,6 +724,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
             ...ex.effect,
             layers: Object.fromEntries(Object.entries(ex.effect.layers ?? {}).map(([k, l]) => [k, { ...l, png: undefined }])),
             ...(ex.effect.noise ? { noise: { ...ex.effect.noise, png: undefined } } : {}),
+            ...(ex.effect.dissolve ? { dissolve: { ...ex.effect.dissolve, png: undefined } } : {}),
           }
         : null,
       ripple: ex.ripple ? { ...ex.ripple, ...(ex.ripple.env ? { env: { ...ex.ripple.env, png: undefined } } : {}) } : null,
@@ -755,10 +770,19 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     if (ex.effect?.noise?.png) {
       files.push({ path: `${dir}maps/${fileSafe(name)}_X.png`, bytes: Uint8Array.from(atob(ex.effect.noise.png), (c) => c.charCodeAt(0)) })
     }
+    // and its dissolve picture in the first slot it leaves free
+    const dslot = ex.effect?.dissolve?.png ? dissolveSlot(ex.effect) : null
+    if (ex.effect?.dissolve?.png && dslot === null) notes.push(`${name}: its dissolve has no free texture slot (a mask and a noise) and was left out`)
+    if (ex.effect?.dissolve?.bound) notes.push(`${name}: its dissolve's bound colours are not drawn`)
+    if (dslot === 3) files.push({ path: `${dir}maps/${fileSafe(name)}_X.png`, bytes: Uint8Array.from(atob(ex.effect!.dissolve!.png!), (c) => c.charCodeAt(0)) })
     maps.set(
       name,
       ex.effect
-        ? { normal: layerFile(ex.effect.layers?.main, "N"), orm: layerFile(ex.effect.layers?.plus, "ORM"), emissive: layerFile(ex.effect.layers?.mask, "E") }
+        ? {
+            normal: layerFile(ex.effect.layers?.main, "N"),
+            orm: layerFile(ex.effect.layers?.plus, "ORM"),
+            emissive: layerFile(dslot === 2 ? ex.effect.dissolve : ex.effect.layers?.mask, "E"),
+          }
         : {
             normal: mapFile(m.normalTexture, "N"),
             orm: mapFile(pbr.metallicRoughnessTexture ?? m.occlusionTexture, "ORM"),
@@ -1264,9 +1288,18 @@ export function stageHazeSheetGraph(strength: number, factor: [number, number, n
  * as the game's One/OneMinusSrcAlpha does — `a·rgb` added, and what it covers
  * dimmed by `a·(_DstBlend − 1)/9` — so a _DstBlend of 1 is pure light (the
  * group blends additively) and 10 an ordinary layer. The noise bends the
- * layers it is flagged for; dissolve is not drawn, and the vertex colour the
- * game multiplies in is not carried.
+ * layers it is flagged for. The dissolve gates the alpha as DISSOLVE_SIMPLE's
+ * fragment does with a still sheet's Custom2 of zero (its edge _DissovleStrength:
+ * X206's floor wave, scrolling light cut into dashes by a standing picture),
+ * from the first slot the sheet leaves free. The vertex colour the game
+ * multiplies in is not carried.
  */
+/** The texture slot an effect sheet's dissolve takes: the mask's when it has none,
+ *  else the noise's, else none. */
+function dissolveSlot(e: Pick<EffectSpec, "layers" | "noise">): 2 | 3 | null {
+  return !e.layers?.mask ? 2 : !e.noise ? 3 : null
+}
+
 export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
   type Ref = { node: string; socket: string }
   type In = Ref | number | [number, number, number]
@@ -1316,7 +1349,7 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
     const pull = node("vector_math/multiply_add", { a: node("combine_xyz", { x: nred, y: nred, z: 0 }, "vector"), b: [kx, -ky, 0], c: [0, ky, 0] }, "vector")
     return node("vector_math/multiply_add", { a: uv, b: [1 - kx, 1 - ky, 1], c: pull }, "vector")
   }
-  const sample = (slot: 0 | 1 | 2, l: EffectLayer) => {
+  const sample = (slot: 0 | 1 | 2 | 3, l: EffectLayer, srgb?: boolean) => {
     const th = 2 * Math.PI * ((((l.rotation / 360) % 1) + 1) % 1)
     const c = Math.cos(th)
     const s = Math.sin(th)
@@ -1326,20 +1359,23 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
     const su = node("vector_math/dot", { a: q, b: [sx * c, sx * s, 0] }, "value")
     const sv = node("vector_math/dot", { a: q, b: [-sy * s, sy * c, 0] }, "value")
     let uv: In = node("vector_math/multiply_add", { a: node("combine_xyz", { x: su, y: sv, z: 0 }, "vector"), b: [1, -1, 0], c: [bu, 1 - bv, 0] }, "vector")
-    // THE SCROLL IS ADDED BEFORE THE ROTATION, AND CROSSED: the vertex shader adds
-    // time · speed to (v, u) — speed.x moves v, speed.y moves u — then rotates and
-    // scales. Rotation and scale are linear, so the scroll arrives as a constant
-    // velocity through them: X348's falls roll their mask down the fall (the
-    // mesh's u) instead of across it.
-    const du0 = l.speed[1]
-    const dv0 = l.speed[0]
+    // THE SCROLL IS ADDED BEFORE THE ROTATION: the vertex shader (Effect_Common,
+    // the default UV mode) adds time · _UVOffset to the mesh UV — x to u, y to v;
+    // the swizzles cancel: (v, u) + t·offset.yx, read back as .yx — then rotates
+    // and scales. Rotation and scale are linear, so the scroll arrives as a
+    // constant velocity through them. Taken crossed, X206's floor wave slid
+    // across its grooves as slivers where the game sweeps dashes along them.
+    const du0 = l.speed[0]
+    const dv0 = l.speed[1]
     const rate = [sx * (c * du0 + s * dv0), -sy * (-s * du0 + c * dv0)]
     if (rate[0] || rate[1]) uv = node("vector_math/multiply_add", { a: [rate[0], rate[1], 0], b: node("combine_xyz", { x: time, y: time, z: 0 }, "vector"), c: uv }, "vector")
-    uv = bend(uv, slot === 0 ? !!nz?.main : slot === 1 ? !!nz?.plus : !!nz?.mask)
+    uv = bend(uv, slot === 0 ? !!nz?.main : slot === 1 ? !!nz?.plus : slot === 2 ? !!nz?.mask : false)
     if (!l.tiling) uv = node("vector_math/minimum", { a: node("vector_math/maximum", { a: uv, b: [0, 0, 0] }, "vector"), b: [1, 1, 1] }, "vector")
     const tex = node(`tex_image/${slot}`, { uv }, "color")
-    // slots 0 and 1 are data maps: decode here what the mask's slot decodes on upload
-    const rgb: In = slot === 2 ? tex : node("gamma", { color: tex, gamma: 2.2 }, "color")
+    // slots 0, 1 and 3 are data maps: decode here what slot 2 decodes on upload — or,
+    // for a picture that is data (srgb false), keep it raw in any slot
+    const rgb: In =
+      srgb === false ? (slot === 2 ? node("gamma", { color: tex, gamma: 1 / 2.2 }, "color") : tex) : slot === 2 ? tex : node("gamma", { color: tex, gamma: 2.2 }, "color")
     return { rgb, a: at(tex, "alpha") as In }
   }
   // lerp(P.x·t, P.y·t^P.z, P.w)
@@ -1378,6 +1414,22 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
     const m = sample(2, e.layers.mask)
     const mv: In = e.redAlphaMask ? red(m.rgb) : m.a
     a = mul(a, e.maskStrength ? node("math/add", { a: mv, b: -e.maskStrength }, "value") : mv)
+  }
+  const dslot = e.dissolve ? dissolveSlot(e) : null
+  if (e.dissolve && dslot !== null) {
+    // DISSOLVE_SIMPLE at Custom2 = 0: soft = W2·(0 − strength) + soft, edge =
+    // (1 + soft)·(Z2·(0 − soft) + strength); kept where the value clears
+    // edge − soft, by a smoothstep soft wide (lib/unity-particles.ts)
+    const d = e.dissolve
+    const soft = d.softW2 * -d.strength + d.soft
+    const edge = (soft + 1) * (d.strengthZ2 * -d.soft + d.strength)
+    const k = 1 / Math.max(soft, 1e-5)
+    const t = sample(dslot, d, d.srgb)
+    const dv: In = d.redAlpha ? red(t.rgb) : t.a
+    const clamp01 = (x: In) => node("math/minimum", { a: node("math/maximum", { a: x, b: 0 }, "value"), b: 1 }, "value")
+    const dd = d.opposite ? node("math/multiply_add", { a: dv, b: -1, c: 1 }, "value") : dv
+    const x = clamp01(node("math/multiply_add", { a: clamp01(dd), b: k, c: -(edge - soft) * k }, "value"))
+    a = mul(a, mul(mul(x, x), node("math/multiply_add", { a: x, b: -2, c: 3 }, "value")))
   }
   a = node("math/minimum", { a: node("math/maximum", { a, b: 0 }, "value"), b: 1 }, "value")
 
