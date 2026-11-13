@@ -203,7 +203,7 @@ export function EffectParams({
         <div className="flex items-center gap-1.5">
           <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
           <Select value={String(at)} onValueChange={(v) => change(d, Number(v))}>
-            <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+            <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] min-w-0 text-2xs data-[size=sm]:h-5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -253,7 +253,7 @@ export function EffectParams({
           <div className="flex items-center gap-1.5">
             <span className="w-[4.75rem] shrink-0 truncate text-2xs">{labelOf(d)}</span>
             <Select value={v.model ?? FIRST} onValueChange={(m) => change(d, { ...v, model: m === FIRST ? null : m })}>
-              <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] min-w-0 text-2xs data-[size=sm]:h-5">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -269,7 +269,7 @@ export function EffectParams({
           <div className="flex items-center gap-1.5">
             <span className="w-[4.75rem] shrink-0" />
             <Select value={v.bone} onValueChange={(b) => change(d, { ...v, bone: b })}>
-              <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] min-w-0 text-2xs data-[size=sm]:h-5">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="max-h-72">
@@ -317,7 +317,7 @@ export function EffectParams({
                 value={v.model ?? NOBODY}
                 onValueChange={(m) => change(d, { x: v.x, y: v.y, z: v.z, ...(m === NOBODY ? {} : { model: m }) })}
               >
-                <SelectTrigger size="sm" className="ml-auto min-w-0 flex-1 text-2xs data-[size=sm]:h-5">
+                <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] min-w-0 text-2xs data-[size=sm]:h-5">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

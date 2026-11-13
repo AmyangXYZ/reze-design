@@ -4,7 +4,7 @@
 // in the library until this dialog says so, which is what makes the library a
 // collection of things you chose to keep rather than every fork ever touched.
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Notice } from "@/components/ui/notice"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -35,11 +35,17 @@ export function SaveCloseDialog({
   const [name, setName] = useState(defaultName)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const nameRef = useRef<HTMLInputElement>(null)
 
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        // Straight into the name, selected: type to rename, Enter to save.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          nameRef.current?.focus()
+          nameRef.current?.select()
+        }}
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-[22rem] border-line-strong bg-surface-raised p-5 sm:max-w-[22rem]"
       >
@@ -58,6 +64,7 @@ export function SaveCloseDialog({
         >
           {askName && (
             <Input
+              ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
