@@ -672,8 +672,20 @@ fn rzEmitterStart(e: u32) -> f32 {
   // a flat mesh's card sits where its bounds are: off the particle by their
   // centre, which scales with the particle as the pivot does
   const centre = mesh ? mesh.center : [0, 0]
-  const pivotFn =
-    !stretched && (pivot[0] || pivot[1] || centre[0] || centre[1])
+  // A STRETCHED card, as Unity builds it (ParticleSystemRenderer.BakeMesh, Stretch,
+  // no freeform stretching): it starts AT the particle and runs back against its
+  // travel, size X wide and size Y x lengthScale (+ speed x velocityScale) long,
+  // U 0 at the particle and 1 at the tail. Centred on the particle, X206's beams
+  // reached half above their lamps and half below; the length and width below
+  // (p.size, p.stretch) are the card's own, so the shade draws it whole.
+  const stretchedSize = `0.5 * ${sizeX} * (${solX})`
+  const stretchedLength = `${sizeY} * (${solY})`
+  const pivotFn = stretched
+    ? `
+fn particlePivot(p: Particle, id: u32) -> vec2f {
+  return vec2f(0.0, -1.0);
+}`
+    : (pivot[0] || pivot[1] || centre[0] || centre[1])
       ? `
 fn particlePivot(p: Particle, id: u32) -> vec2f {
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
@@ -765,13 +777,13 @@ ${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Parti
     : "// staggered on the first spawn, so a scene does not open on every particle born at once\n  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);"}
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let t = 0.0;
-  p.size = 0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY}) * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
+  p.size = ${stretched ? stretchedSize : `0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY})`} * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
   ${stretched && s.renderer.pivot[1] ? `p.pos = p.pos + vec3f(0.0, ${f(-s.renderer.pivot[1])} * max(${sizeX}, ${sizeY}) * e.unit, 0.0);` : ""}
   // THE EMITTER'S SCALE rides in a field the engine ignores for this particle:
   // a square card's stretch (anything at or below 1 is square), a stretched
   // card's rotation (the velocity is its orientation)
   ${stretched ? `p.rot = e.unit;
-  p.stretch = ${f(Math.max(s.renderer.lengthScale, 1.0001))};` : `p.rot = ${rot};
+  p.stretch = max((${stretchedLength} * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""} * ${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(p.vel)) / max(2.0 * p.size, 1e-4), 1.0001);` : `p.rot = ${rot};
   p.stretch = -e.unit;`}${emitted ? `
   // born between two frames, or before a seek: brought forward to its age
   if (catchUp > 0.0) {
@@ -804,8 +816,8 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   q.pos = q.pos + q.vel * dt;${driftCode}
   ${stretched ? "" : `q.rot = q.rot + (${rol}) * dt;`}
   // size over life, against the start size this particle drew
-  q.size = 0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY}) * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
-  ${stretched ? `q.stretch = max(${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
+  q.size = ${stretched ? stretchedSize : `0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY})`} * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
+  ${stretched ? `q.stretch = max((${stretchedLength} * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""} * ${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel)) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
   return q;
 }
 ${tong
@@ -824,10 +836,12 @@ fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   // it (a streak texture points sideways): the engine's card runs V along the
   // velocity, and taken as it came the beams showed their thin cross-section
   // drawn long — flat slabs with hard ends, a fan of rectangles
-  let card = vec2f(1.0 - quv.y, quv.x);` : "let card = quv;"}
+  let card = vec2f(1.0 - quv.y, quv.x);
+  // its quad is the card itself (p.size, p.stretch), drawn whole
+  var uv = card;` : `let card = quv;
   // a card wider or taller than square is drawn inside the square quad
   let wh = vec2f(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY});
-  var uv = (card - vec2f(0.5)) * (max(wh.x, wh.y) / max(wh, vec2f(1e-5))) + vec2f(0.5);
+  var uv = (card - vec2f(0.5)) * (max(wh.x, wh.y) / max(wh, vec2f(1e-5))) + vec2f(0.5);`}
   // outside the card, masked rather than returned from: the pictures must be
   // sampled in uniform control flow, which an early return breaks
   ${mesh ? "var" : "let"} inside = select(0.0, 1.0, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)));${mesh ? `
