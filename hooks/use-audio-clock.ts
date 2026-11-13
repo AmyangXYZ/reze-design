@@ -208,11 +208,35 @@ export function useAudioClock({
     }
     document.addEventListener("visibilitychange", onReturn)
     window.addEventListener("focus", onReturn)
+    /**
+     * THE SOUND IS HEARD LATE. Everything on screen — the dance, an effect on
+     * the music — is drawn at the clock, while the element's sound reaches the
+     * ear only after the output device's own delay: little on wired speakers,
+     * 0.15–0.25 s over Bluetooth, where a music wall's bars jumped visibly before
+     * the beat. So the element is stamped that much AHEAD of the clock, and what
+     * is heard lines up with what is shown. The delay is the device's as the
+     * browser reports it (AudioContext.outputLatency, the default output the
+     * element plays to too), read again at every stamp so a headset connected
+     * mid-session is followed; where it is not reported (Safari) it is 0, the
+     * old behaviour.
+     */
+    let latencyCtx: AudioContext | null = null
+    const outputDelay = () => {
+      try {
+        latencyCtx ??= new AudioContext()
+        if (latencyCtx.state === "suspended") void latencyCtx.resume().catch(() => {})
+        const d = latencyCtx.outputLatency
+        return Number.isFinite(d) && d > 0 && d < 1 ? d : 0
+      } catch {
+        return 0
+      }
+    }
+    const heard = (t: number) => t + outputDelay()
     const onPlaying = () => {
       if (!stampArmed) return
       stampArmed = false
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
-      if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
+      if (p?.playing && Math.abs(audio.currentTime - heard(p.current)) > 0.05) audio.currentTime = heard(p.current)
     }
     audio.addEventListener("playing", onPlaying)
     // preload="auto" is a hint iOS Safari ignores until a user gesture — warm
@@ -276,14 +300,14 @@ export function useAudioClock({
           // are more than 0.05s apart, and a resume is already well inside that,
           // so it still does not flush the decoder or clip the first beat.
           if (!wasPlaying) stampArmed = true
-          if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
-            audio.currentTime = p.current
+          if ((!wasPlaying && Math.abs(audio.currentTime - heard(p.current)) > 0.15) || (!audio.seeking && jumped)) {
+            audio.currentTime = heard(p.current)
             stampArmed = true
           }
           if (resyncFrames > 0) {
             resyncFrames--
-            if (resyncTries > 0 && !audio.seeking && !audio.paused && Math.abs(audio.currentTime - p.current) > 0.06) {
-              audio.currentTime = p.current
+            if (resyncTries > 0 && !audio.seeking && !audio.paused && Math.abs(audio.currentTime - heard(p.current)) > 0.06) {
+              audio.currentTime = heard(p.current)
               resyncTries--
             }
           }
@@ -364,6 +388,7 @@ export function useAudioClock({
       window.removeEventListener("focus", onReturn)
       window.removeEventListener("pointerdown", warm)
       window.removeEventListener("keydown", warm)
+      void latencyCtx?.close().catch(() => {})
     }
     // The refs are stable; listing them costs nothing and keeps the rule on.
   }, [masterId, engineRef, disabled, autoplay, audioRef, drawBackdrop, videoRef, syncLyricsTo, tickPlanes])
