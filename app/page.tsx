@@ -196,6 +196,7 @@ import {
   type SceneState,
 } from "@/lib/scene"
 import { collectSceneSlots as collectSlots, type CollectedAnim, type SceneSlots } from "@/lib/scene-collect"
+import { setStageTint } from "@/lib/timeline/stage-tint"
 import { isScenePatch, mergePatchFiles, mergeScenePatch, patchRoots } from "@/lib/scene-patch"
 import { upgradeSceneDoc, type V1SceneDoc } from "@/lib/scene-upgrade"
 import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
@@ -291,7 +292,7 @@ import { LampMarkers } from "@/components/scene/lamp-markers"
 import { MarksPreview } from "@/components/scene/marks-preview"
 import { aimAt, aimOf, blendOf, coneSegments, innerOf, pitchYawOf, rotate, SPOT_ANGLE } from "@/lib/spot"
 import { accessoryFiles, carryXFile, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
-import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
+import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stageMaterialRig, stagePbrGraph } from "@/lib/gltf-stage"
 import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
@@ -5525,6 +5526,20 @@ function Lab() {
         // each renderer's own lamps, as the converter grouped them
         const layers = Object.fromEntries(glb.materials.filter((m) => m.layers !== null).map((m) => [m.name, m.layers!]))
         if (Object.keys(layers).length) engineRef.current?.setMaterialLayers(id, layers)
+        // and its show's scene tint plays on the materials that carry it (the rig's
+        // own reading of it, the one a reload takes: lib/timeline/stage-tint.ts)
+        const rigFile = files.find((f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".lights.json")
+        const eng = engineRef.current
+        const own = eng?.getModel(id)?.getMaterials() ?? []
+        if (rigFile && eng) {
+          const mats = stageMaterialRig(await rigFile.text())
+          setStageTint(
+            eng,
+            id,
+            mats.tint,
+            mats.tinted.filter((name) => own.some((x) => x.name === name)),
+          )
+        }
         return id
       }
       if (!ray) {

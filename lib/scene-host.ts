@@ -22,6 +22,7 @@ import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, engineGroups } from "@/lib/material-maps"
 import { loadParticleTextures } from "@/lib/effect-textures"
 import { stageMaterialRig } from "@/lib/gltf-stage"
+import { setStageTint } from "@/lib/timeline/stage-tint"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { castRotationToEngine, pushTimeline, seedLane, seedMaterialLanes, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
@@ -542,6 +543,14 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
           const mats = stageMaterialRig(await rigFile.text())
           if (Object.keys(mats.layers).length) engine.setMaterialLayers(entry.model.id, mats.layers)
           for (const name of mats.outOfProbe) engine.setMaterialInProbe(entry.model.id, name, false)
+          // and its show's scene tint plays on the materials that carry it
+          const own = model.getMaterials()
+          setStageTint(
+            engine,
+            entry.model.id,
+            mats.tint,
+            mats.tinted.filter((name) => own.some((x) => x.name === name)),
+          )
         }
       }
       // The same line the upload path prints, because a stage that came back

@@ -306,8 +306,9 @@ def game_show(project_root, scene_path, notes):
 
 def scene_tint_of(globals_, show, notes):
     """SimSceneTint as one colour. A stage whose show moves it (X206_band: five volumes
-    the director fades in and out with the music) is drawn at its mean over the loop —
-    the light the room averages; the app has no keyed material value to play it with."""
+    the director fades in and out with the music) is baked at its mean over the loop —
+    the light the room averages — and scene_tint_track gives the app the loop to play
+    over it."""
     if show and show.get("SimSceneTint"):
         keys = show["SimSceneTint"]
         mean = [sum(k[i] for k in keys) / len(keys) for i in range(3)]
@@ -315,9 +316,31 @@ def scene_tint_of(globals_, show, notes):
         hi = [max(k[i] for k in keys) for i in range(3)]
         if max(h - l for h, l in zip(hi, lo)) > 1e-3:
             notes.append(f"scene tint: its show moves it from {max(lo):.3f} to {max(hi):.3f} over {show['loop']:.1f} s; "
-                         f"drawn at its mean ({', '.join(f'{c:.3f}' for c in mean)}), still")
+                         f"baked at its mean ({', '.join(f'{c:.3f}' for c in mean)}) and played by the app over the loop")
         return mean
     return [float(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
+
+
+def scene_tint_track(show, mean):
+    """The show's SimSceneTint over one loop, for the app to play over the baked mean:
+    {mean, fps, frames (the loop's length), keys [[frame, r, g, b], ...]}, the keys
+    thinned to where linear interpolation between them stays within 1/1000; None for
+    a stage whose tint stands still."""
+    keys = (show or {}).get("SimSceneTint")
+    if not keys or max(max(k[i] for k in keys) - min(k[i] for k in keys) for i in range(3)) <= 1e-3:
+        return None
+    v = [[float(c) for c in k[:3]] for k in keys]
+    kept = [0]
+    for f in range(1, len(v) - 1):
+        a = kept[-1]
+        # the run a..f+1 as one line: every frame between within tolerance
+        ok = all(abs(v[a][i] + (v[f + 1][i] - v[a][i]) * (g - a) / (f + 1 - a) - v[g][i]) <= 1e-3
+                 for g in range(a + 1, f + 1) for i in range(3))
+        if not ok:
+            kept.append(f)
+    kept.append(len(v) - 1)
+    return {"mean": [float(c) for c in mean], "fps": float(show.get("fps", 30)), "frames": len(v),
+            "keys": [[f, *[round(c, 5) for c in v[f]]] for f in kept]}
 
 
 def ripple_spec(mat, proj=None, tint=(1.0, 1.0, 1.0), env_scale=1.0):
@@ -1364,6 +1387,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 # a dielectric's reflectance (the app's `specular`, 0.5 = URP's 0.04)
                 # carries it here.
                 **({"specular": round(0.5 * (0.2126 * st[0] + 0.7152 * st[1] + 0.0722 * st[2]), 4)} if st else {}),
+                # its colour carries the scene tint, so the show's tint plays on it (scene "tint")
+                **({"tinted": True} if st else {}),
                 "geometry": f"geo/{index}.npz",
                 "shader": shader or "",
                 "baseColor": {"image": f"tex/{base}" if base else None, "factor": [min(1.0, tint[0]), min(1.0, tint[1]), min(1.0, tint[2]), alpha if alpha_mode != "OPAQUE" else 1.0]},
@@ -1572,6 +1597,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         "groundShadow": ground_shadow,
         "particles": particles,
         "notes": notes,
+        # the show's scene tint over its loop, played by the app on the tinted materials
+        "tint": scene_tint_track(show, scene_tint),
     }
     with open(os.path.join(build, "scene.json"), "w", encoding="utf-8") as f:
         json.dump(scene_json, f, indent=1)

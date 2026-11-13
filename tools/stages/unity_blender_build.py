@@ -203,6 +203,8 @@ def make_material(spec):
             **({"layers": spec["layers"]} if "layers" in spec else {}),
             # its reflectance, the scene tint on its highlights
             **({"specular": spec["specular"]} if "specular" in spec else {}),
+            # its colour carries the scene tint the show plays (scene "tint")
+            **({"tinted": True} if spec.get("tinted") else {}),
     }
     return mat
 
@@ -344,6 +346,8 @@ scene["reze"] = {
         **({"groundShadow": scene_json["groundShadow"]} if scene_json.get("groundShadow") else {}),
         # The key the game lights its cast by, turning with the camera (unity_to_glb).
         **({"castKey": scene_json["castKey"]} if scene_json.get("castKey") else {}),
+        # The show's scene tint over its loop, on the tinted materials (unity_to_glb).
+        **({"tint": scene_json["tint"]} if scene_json.get("tint") else {}),
 }
 
 # The .blend is viewed under Filmic at +0.6 stops, the nearest Blender has to

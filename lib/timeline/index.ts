@@ -39,6 +39,7 @@ import type { EffectParamKey, ModelParentKey, EffectWindow as EngineWindow } fro
 import { parentKeysToEngine, parentTrackOf, type PropTrackSource } from "./parents"
 import { visibilityAt, type VisibilityWindow } from "./visibility"
 import { applyLampFrame } from "./lights"
+import { applyStageTintFrame } from "./stage-tint"
 import { applyUniformFrame } from "./uniforms"
 import { applyPlaneFrame } from "./planes"
 import type { SceneStageTransform } from "@/lib/scene"
@@ -233,6 +234,8 @@ export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline,
   // The lamps a game animated, at this frame (lights.ts). Nothing when none is
   // keyed or the frame has not moved.
   applyLampFrame(engine, frame)
+  // A game stage's scene tint, as its show plays it (stage-tint.ts).
+  applyStageTintFrame(engine, frame)
   // The game props' keyed material values, at this frame (uniforms.ts).
   // Nothing when no look keys any or the frame has not moved.
   applyUniformFrame(engine, frame)

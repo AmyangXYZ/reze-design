@@ -19,6 +19,7 @@
 // triangle's winding turned back. A lamp's brightness is stated one metre away
 // and the app's per-PMX-unit intensity is that x 12.5², by the inverse square.
 
+import { stageTintFrom, type StageTint } from "@/lib/timeline/stage-tint"
 import { particleEffectWgsl, type ParticleClass } from "@/lib/unity-particles"
 import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH, VIEW_LUT_LOG2 } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
@@ -101,7 +102,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { layers?: number; specular?: number; shader?: string; unlit?: boolean; additive?: boolean; cover?: boolean; fogged?: boolean; lightmap?: boolean; inProbe?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
+type RezeMaterial = { layers?: number; tinted?: boolean; specular?: number; shader?: string; unlit?: boolean; additive?: boolean; cover?: boolean; fogged?: boolean; lightmap?: boolean; inProbe?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -409,6 +410,9 @@ export type GlbMaterial = {
    *  stage's: a game stage lights each renderer by its own few lamps, and the
    *  converter groups them by those lamps, a layer bit a group. */
   layers: number | null
+  /** Its colour carries the game's scene tint, which the stage's show plays
+   *  (the rig's `tint`, lib/timeline/stage-tint.ts). */
+  tinted: boolean
   /** A dielectric's reflectance (Lit's specular, 0.5 = URP's 0.04), where the
    *  file states one: a game stage's scene tint on its highlights. */
   specular: number | null
@@ -668,7 +672,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       specular: [pbr.metallicFactor ?? 1, pbr.roughnessFactor ?? 1, 1],
       // The normal map's strength, where the stage looks read it (material_shininess).
       specularPower: m.normalTexture ? (m.normalTexture.scale ?? 1) : 0,
-      ambient: unlit ? [1, 1, 1] : [0.5, 0.5, 0.5],
+      // the scene tint the stage's show plays on top of the baked one (Stage PBR
+      // multiplies its result by it, lib/timeline/stage-tint.ts): 1 is as built
+      ambient: [1, 1, 1],
       drawFlags: (m.doubleSided ? 0x01 : 0) | (castShadow ? 0x02 | 0x04 | 0x08 : 0),
       edgeColor: [0, 0, 0, 1],
       edgeSize: 0,
@@ -691,6 +697,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       principled: sceneExtras.shading === "principled",
       inProbe: ex.inProbe !== false,
       layers: typeof ex.layers === "number" && Number.isInteger(ex.layers) && ex.layers > 0 ? ex.layers >>> 0 : null,
+      tinted: ex.tinted === true,
       specular: typeof ex.specular === "number" && Number.isFinite(ex.specular) && ex.specular >= 0 ? ex.specular : null,
       sky,
       look: ex.look ?? null,
@@ -948,10 +955,19 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   // after a refresh.
   const matRig = Object.fromEntries(
     materials
-      .filter((m) => m.layers !== null || !m.inProbe)
-      .map((m) => [m.name, { ...(m.layers !== null ? { layers: m.layers } : {}), ...(m.inProbe ? {} : { inProbe: false }) }]),
+      .filter((m) => m.layers !== null || !m.inProbe || m.tinted)
+      .map((m) => [
+        m.name,
+        { ...(m.layers !== null ? { layers: m.layers } : {}), ...(m.inProbe ? {} : { inProbe: false }), ...(m.tinted ? { tinted: true } : {}) },
+      ]),
   )
   if (Object.keys(matRig).length) rig.materials = matRig
+  // AND THE SHOW'S SCENE TINT over its loop, played on the tinted materials
+  const tint = stageTintFrom((sceneExtras as { tint?: unknown }).tint)
+  if (tint) {
+    rig.tint = tint
+    notes.push(`the show's scene tint plays over ${materials.filter((m) => m.tinted).length} materials, ${tint.keys.length} keys a ${(tint.frames / tint.fps).toFixed(1)} s loop`)
+  }
   files.push({ path: `${dir}${stem}.lights.json`, bytes: new TextEncoder().encode(JSON.stringify(rig, null, 1)) })
 
   // ── The PMX ──
@@ -1048,6 +1064,11 @@ export function stagePbrGraph(strength: number, principled = false, specular: nu
       // a Blender export's highlights rise toward white at grazing, as its
       // Principled's do; a Unity stage's keep URP's fixed reflectance
       principled ? { id: "lit", type: "lit", inputs: { fresnel: 1, ...reflect } } : { id: "lit", type: "lit", inputs: { ...reflect } },
+      // THE GAME'S LAST MULTIPLY, live: SimSceneTint scales a stage shader's whole
+      // result, lamps, reflections and glow alike, before the fog (Lit's tint). The
+      // tint the stage was built at is baked into its colours; what its show moves
+      // on top arrives as the material's ambient (1 = as built, lib/timeline/stage-tint.ts)
+      { id: "tint", type: "material_ambient" },
     ],
     links: [
       { from: { node: "tex", socket: "color" }, to: { node: "base", socket: "a" } },
@@ -1063,6 +1084,7 @@ export function stagePbrGraph(strength: number, principled = false, specular: nu
       { from: { node: "normal", socket: "normal" }, to: { node: "lit", socket: "normal" } },
       { from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "a" } },
       { from: { node: "emit", socket: "vector" }, to: { node: "lit", socket: "emission" } },
+      { from: { node: "tint", socket: "color" }, to: { node: "lit", socket: "tint" } },
     ],
     output: { node: "lit", socket: "color" },
   }
@@ -1880,9 +1902,9 @@ export const glbStageOf = (pmx: File) => converted.get(pmx)
  * reflection probe — what the upload sets from the .glb itself, for a stage
  * that comes back from a bundle as its PMX.
  */
-export function stageMaterialRig(text: string): { layers: Record<string, number>; outOfProbe: string[] } {
-  const out = { layers: {} as Record<string, number>, outOfProbe: [] as string[] }
-  let rig: { materials?: Record<string, { layers?: unknown; inProbe?: unknown }> }
+export function stageMaterialRig(text: string): { layers: Record<string, number>; outOfProbe: string[]; tinted: string[]; tint: StageTint | null } {
+  const out = { layers: {} as Record<string, number>, outOfProbe: [] as string[], tinted: [] as string[], tint: null as StageTint | null }
+  let rig: { materials?: Record<string, { layers?: unknown; inProbe?: unknown; tinted?: unknown }>; tint?: unknown }
   try {
     rig = JSON.parse(text)
   } catch {
@@ -1891,7 +1913,9 @@ export function stageMaterialRig(text: string): { layers: Record<string, number>
   for (const [name, m] of Object.entries(rig.materials ?? {})) {
     if (typeof m?.layers === "number" && Number.isInteger(m.layers) && m.layers > 0) out.layers[name] = m.layers >>> 0
     if (m?.inProbe === false) out.outOfProbe.push(name)
+    if (m?.tinted === true) out.tinted.push(name)
   }
+  out.tint = stageTintFrom(rig.tint)
   return out
 }
 

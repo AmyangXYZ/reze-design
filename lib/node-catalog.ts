@@ -19,6 +19,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "material_alpha", label: "Material Alpha" },
       { type: "material_specular", label: "Material Specular" },
       { type: "material_shininess", label: "Material Shininess" },
+      { type: "material_ambient", label: "Material Ambient" },
       { type: "sphere_map", label: "Sphere Map" },
       { type: "light", label: "Light" },
       { type: "time", label: "Time" },
