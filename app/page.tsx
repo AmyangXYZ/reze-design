@@ -10784,7 +10784,7 @@ function Lab() {
                             return (
                               <fieldset
                                 disabled={!picked}
-                                className={cn("mt-2 min-w-0 border-t border-line pt-2.5", !picked && "pointer-events-none opacity-40")}
+                                className={cn("mt-2.5 min-w-0 border-t border-line pt-2.5", !picked && "pointer-events-none opacity-40")}
                               >
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs">{t.lab.lamp.on}</span>
