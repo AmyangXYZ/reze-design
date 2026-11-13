@@ -42,7 +42,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unity_grading import grading as stage_grading, resolve as resolve_volumes, volume_stack  # noqa: E402
-from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_rhythm, bake_detailed, live_effect, repeats_across, tong_add_effect, bake_fresnel  # noqa: E402
+from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across, tong_add_effect, bake_fresnel  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
@@ -860,7 +860,7 @@ def build_dir_for(out_glb, name):
     return os.path.join(os.path.dirname(os.path.abspath(out_glb)), "build", name.lower())
 
 
-# the game's music spectrum wall shader (baked with every bar full: bake_rhythm)
+# the game's music spectrum wall shader (agtools/scene_rhythm.py in ag-rip draws it)
 RHYTHM_SHADER = "SimPipeline/Scene/SceneRhythm"
 
 # --include-off: what the scene file switches off is kept anyway
@@ -985,10 +985,14 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
             continue
         if kept:
             kept_show.append(r["name"])
-        # A MUSIC WALL (SimPipeline/Scene/SceneRhythm: X206_band's spectrum bars) is
-        # kept, its bars baked below (bake_rhythm) as its material draws them.
+        # A MUSIC WALL (SimPipeline/Scene/SceneRhythm: X206_band's spectrum bars) draws
+        # nothing but the bars the game's music raises, over the wall behind it - a
+        # still surface of it is a white sheet hiding that wall. Left out; ag-rip's
+        # scene patch for the stage plays it on the scene's music, a particle card a
+        # bar so its HDR border glows (agtools/scene_rhythm.py).
         if r["materials"] and all(shader_of(materials_by_guid[g]) == RHYTHM_SHADER for g in r["materials"] if g in materials_by_guid):
             rhythm_walls.append(r["name"])
+            continue
         # A SKY THE GAME SWITCHES OFF is off too: X338's moon disc (Common_sky_moon)
         # is off, and its moon is the billboard particle at the same spot, the
         # moon's own picture with its halo. Kept, the disc turned to the stage
@@ -1220,7 +1224,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 coats_dropped.append(key)
                 continue
         basic_effect = bool(mat) and family in BASIC_EFFECT_SHADERS
-        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "Effect_Common_VertexOffset", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "Tong_jichu_Fresnel_Add", "SceneRhythm", "", *BASIC_EFFECT_SHADERS):
+        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "Effect_Common_VertexOffset", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "Tong_jichu_Fresnel_Add", "", *BASIC_EFFECT_SHADERS):
             unknown.setdefault(shader, []).append(key)
 
         np.savez(
@@ -1233,15 +1237,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
 
         base = None
         baked = None
-        rhythm = shader == RHYTHM_SHADER
-        if rhythm:
-            # THE MUSIC WALL'S BARS, as its material draws them with no music: its
-            # _NoiseTex is the shader's default white, every bar full - the game's
-            # regular wall. Their HDR border carries the game's bloom.
-            written = bake_rhythm(mat, os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)))
-            baked = os.path.basename(written)
-            gain = int(re.search(r"_x(\d+)\.png$", baked).group(1))
-        elif mat and is_effect_decal(shader) and (sky_material or bake_decal):
+        if mat and is_effect_decal(shader) and (sky_material or bake_decal):
             # The layer at time 0 — its textures, colours, mask and rotations
             # composed — stored at 1/gain and named for it; the material emits
             # it at gain, over black, with the picture's own coverage.
@@ -1256,7 +1252,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
                 continue
         # AND WHEN IT MOVES, the layers themselves ride along (unity_effect_bake,
         # live_effect): the baked picture stays as the frame any other viewer shows.
-        effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or "")) if baked and not sky_material and not rhythm else None
+        effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or "")) if baked and not sky_material else None
         # the renderers' own tint (a property block's colour) - its own name: it is
         # not the material's tint above, which the albedo factor below still needs
         # (named `tint` too, it replaced that with white on every material: X206_band's
@@ -1349,7 +1345,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         # its horizon to navy. Drawn unlit it took no fog and stayed pale azure
         # down to the sea.
         lit_dome = sky_material and shader in ("SimPipeline/PBR/Standard", "SimPipeline/PBR/Standard_PBR_2") and not is_effect_decal(shader)
-        unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet) or rhythm)
+        unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet))
         additive = bool(mat) and (float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader) or bool(fresnel)
                                   or (family == "Tong_jichu_Add" and bool(sheet)))
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
@@ -1557,7 +1553,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None)
         notes.append(f"{len(kept_show)} renderers of the show kept in the stage, always on (--keep-show {' '.join(KEEP_SHOW)}): "
                      f"{', '.join(sorted(set(kept_show)))}")
     if rhythm_walls:
-        notes.append(f"{len(rhythm_walls)} music walls (SceneRhythm) baked with every bar full, as their material draws them: "
+        notes.append(f"{len(rhythm_walls)} music walls (SceneRhythm: spectrum bars on the game's music) left to the stage's scene patch: "
                      f"{', '.join(sorted(set(rhythm_walls)))}")
     if to_show:
         notes.append(f"{len(to_show)} renderers the stage's looping show switches or moves, left to the show's scene patch: "
