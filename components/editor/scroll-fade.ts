@@ -14,6 +14,19 @@ export const SCROLL_FADE_TOP = "[mask-image:linear-gradient(to_top,black_calc(10
 export const SCROLL_FADE_BOTH =
   "[mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]"
 
+/** A softer fade for a box cut through a line of short rows (a tab line):
+ *  the cut half dims to a fifth rather than vanishing, so it still reads as
+ *  the next line. */
+const SOFT_FADE = "[mask-image:linear-gradient(to_bottom,black_calc(100%-0.625rem),rgb(0_0_0/0.2))]"
+const SOFT_FADE_TOP = "[mask-image:linear-gradient(to_top,black_calc(100%-0.625rem),rgb(0_0_0/0.2))]"
+const SOFT_FADE_BOTH =
+  "[mask-image:linear-gradient(to_bottom,rgb(0_0_0/0.2),black_0.625rem,black_calc(100%-0.625rem),rgb(0_0_0/0.2))]"
+
+/** The soft fade for a box with `less` above and `more` below. */
+export function softScrollFade(less: boolean, more: boolean) {
+  return less && more ? SOFT_FADE_BOTH : less ? SOFT_FADE_TOP : more ? SOFT_FADE : undefined
+}
+
 /** The fade for a box with `less` above and `more` below. */
 export function scrollFade(less: boolean, more: boolean) {
   return less && more ? SCROLL_FADE_BOTH : less ? SCROLL_FADE_TOP : more ? SCROLL_FADE : undefined

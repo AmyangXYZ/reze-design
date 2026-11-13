@@ -26,6 +26,7 @@ import { stockName, localGroupLabel } from "@/lib/stock-text"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { useCover } from "@/components/ui/cover"
+import { softScrollFade, useScrollFade } from "@/components/editor/scroll-fade"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 /** The console's action look: a line of type, muted, ink on hover. */
@@ -111,6 +112,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // materials, and mounting a row for each made the pane slow to open.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeGroupId ? [activeGroupId] : []))
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [listRef, listMore, listLess] = useScrollFade<HTMLDivElement>()
   // Focus + select the rename input once it mounts.
   const renameRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -373,6 +375,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
+            ref={listRef}
             className={cn(
               "px-4 pt-2",
               // The list scrolls under the model tabs and the toolbar. Off the
@@ -380,6 +383,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto",
               !cover && "overscroll-contain",
               dense ? "pb-2" : "pb-3.5",
+              softScrollFade(listLess, listMore),
             )}
             onMouseLeave={() => onHover(null)}
             onContextMenuCapture={(e) => {

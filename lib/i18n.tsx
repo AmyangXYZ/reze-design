@@ -984,6 +984,8 @@ const en = {
        *  rain falls on the scene, and offering it there would be a control that
        *  does nothing. */
       onModels: "On models",
+      allModels: "All models",
+      nModels: (n: number) => `${n} models`,
       blend: "Blend",
       pos: (axis: string) => `Pos ${axis}`,
       rot: (axis: string) => `Rot ${axis}`,
@@ -2111,6 +2113,8 @@ const zh: Dictionary = {
       size: "尺寸",
       influence: "影响",
       onModels: "作用于",
+      allModels: "全部模型",
+      nModels: (n: number) => `${n} 个模型`,
       blend: "过渡",
       pos: (axis: string) => `位置 ${axis}`,
       rot: (axis: string) => `旋转 ${axis}`,

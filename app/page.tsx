@@ -102,7 +102,7 @@ import { WORDMARK } from "@/components/wordmark"
 import { FpsReadout } from "@/components/scene/fps-readout"
 import { MobileStudio } from "@/components/mobile/mobile-studio"
 import { MenuMark } from "@/components/mobile/menu-mark"
-import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
+import { SCROLL_FADE, scrollFade, softScrollFade, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
@@ -4406,6 +4406,16 @@ function Lab() {
   }, [])
   // The stack's body, faded at its bottom edge while it scrolls further.
   const [dockBodyRef, dockMore] = useScrollFade<HTMLDivElement>()
+  const [lampListRef, lampMore, lampLess] = useScrollFade<HTMLDivElement>()
+  const [effectTabsRef, effectTabsMore, effectTabsLess] = useScrollFade<HTMLDivElement>()
+  const [overlayListRef, overlayListMore, overlayListLess] = useScrollFade<HTMLDivElement>()
+  const [planeListRef, planeListMore, planeListLess] = useScrollFade<HTMLDivElement>()
+  const [propListRef, propListMore, propListLess] = useScrollFade<HTMLDivElement>()
+  // A lamp opened from its marker on the canvas comes into view in the list.
+  useEffect(() => {
+    if (!lampOpen) return
+    document.querySelector(`[data-lamp-row="${CSS.escape(lampOpen)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [lampOpen])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost
@@ -8044,6 +8054,12 @@ function Lab() {
   // Who it plays to, only for an effect that reads the cast: a rain effect is
   // handed nothing to aim.
   const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
+  // An effect chosen from the canvas or the timeline comes into view in the
+  // pane's tab line.
+  useEffect(() => {
+    if (!effectFxUid) return
+    document.querySelector(`[data-effect-tab="${CSS.escape(effectFxUid)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [effectFxUid])
 
   // The render panel's body, set as a column of type on the cover.
   const exportBody = (
@@ -9271,7 +9287,9 @@ function Lab() {
                   className={cn(
                     // Each pane scrolls its own body under its tab line; pt-2
                     // sets the pane's first line on the index's first row.
-                    "pointer-events-auto no-scrollbar ml-2 flex max-h-full min-w-0 flex-1 flex-col overflow-hidden overscroll-contain pt-2",
+                    // Stretched to the row, whose height the column clamps:
+                    // that height is what the panes scroll inside.
+                    "pointer-events-auto no-scrollbar ml-2 flex min-w-0 flex-1 flex-col self-stretch overflow-hidden overscroll-contain pt-2",
                     pane === null && "hidden",
                     dockMore && SCROLL_FADE,
                   )}
@@ -10130,13 +10148,26 @@ function Lab() {
                           setEffectReveal(bgEffects.find((e) => e.uid === uid)?.id ?? null)
                         }}
                       >
-                        <TabsList className="-mt-1 mb-2 w-full">
-                          {effectsTopFirst.map((e) => (
-                            <TabsTrigger key={e.uid ?? e.id} value={e.uid ?? ""} className="min-w-0">
-                              <span className="truncate">{effectLabel(e.name)}</span>
-                            </TabsTrigger>
-                          ))}
-                        </TabsList>
+                        {/* A scene wearing many effects wraps its tab line:
+                            it scrolls in a box six and a half lines tall, the
+                            cut line, dimmed, saying there is more. */}
+                        <div className="-mt-1 mb-2 shrink-0 border-b border-line">
+                          <div
+                            ref={effectTabsRef}
+                            className={cn(
+                              "no-scrollbar max-h-[10.375rem] overflow-y-auto overscroll-contain",
+                              softScrollFade(effectTabsLess, effectTabsMore),
+                            )}
+                          >
+                            <TabsList className="w-full border-b-0">
+                              {effectsTopFirst.map((e) => (
+                                <TabsTrigger key={e.uid ?? e.id} value={e.uid ?? ""} data-effect-tab={e.uid} className="min-w-0">
+                                  <span className="truncate">{effectLabel(e.name)}</span>
+                                </TabsTrigger>
+                              ))}
+                            </TabsList>
+                          </div>
+                        </div>
                         <TabsContent value={effectFxUid}>
                           {(effectFxDecls.length > 0 || effectFxAimable) && (
                             <div className="mt-2.5">
@@ -10231,44 +10262,49 @@ function Lab() {
                               picked one's dials under them. */}
                           {overlays.length > 0 && (
                             <>
-                              <FileDropArea onFiles={dropOverlays} className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4">
-                                {overlays.map((o) => {
-                                  const shown = overlays.some((x) => x.id === selectedOverlay) ? selectedOverlay : overlays[0]?.id
-                                  const on = o.id === shown
-                                  return (
-                                    <span
-                                      key={o.id}
-                                      className={cn(
-                                        "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
-                                        on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                                      )}
-                                    >
-                                      {/* The underline on the words themselves: a span's
-                                          does not reach into the button's own box. */}
-                                      <Button variant="bare"
-                                        onClick={() => pickLayer(o.id)}
+                              <div
+                                ref={overlayListRef}
+                                className={cn("no-scrollbar -mx-4 max-h-[7.75rem] overflow-y-auto overscroll-contain px-4 pb-1", softScrollFade(overlayListLess, overlayListMore))}
+                              >
+                                <FileDropArea onFiles={dropOverlays} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  {overlays.map((o) => {
+                                    const shown = overlays.some((x) => x.id === selectedOverlay) ? selectedOverlay : overlays[0]?.id
+                                    const on = o.id === shown
+                                    return (
+                                      <span
+                                        key={o.id}
                                         className={cn(
-                                          // The chip's own type, not a button's; the picked one's rule drawn
-                                          // under the box, where truncating the words cannot clip it.
-                                          "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
-                                          on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                          "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                          on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                                         )}
                                       >
-                                        <span className="block min-w-0 truncate">
-                                          {o.name}
-                                        </span>
-                                      </Button>
-                                      <CastAction
-                                        icon={X}
-                                        danger
-                                        compact
-                                        label={t.lab.aria.remove(t.lab.kinds.overlay)}
-                                        onClick={() => removeOverlay(o.id)}
-                                      />
-                                    </span>
-                                  )
-                                })}
-                              </FileDropArea>
+                                        {/* The underline on the words themselves: a span's
+                                            does not reach into the button's own box. */}
+                                        <Button variant="bare"
+                                          onClick={() => pickLayer(o.id)}
+                                          className={cn(
+                                            // The chip's own type, not a button's; the picked one's rule drawn
+                                            // under the box, where truncating the words cannot clip it.
+                                            "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                            on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                          )}
+                                        >
+                                          <span className="block min-w-0 truncate">
+                                            {o.name}
+                                          </span>
+                                        </Button>
+                                        <CastAction
+                                          icon={X}
+                                          danger
+                                          compact
+                                          label={t.lab.aria.remove(t.lab.kinds.overlay)}
+                                          onClick={() => removeOverlay(o.id)}
+                                        />
+                                      </span>
+                                    )
+                                  })}
+                                </FileDropArea>
+                              </div>
                               {(() => {
                                 const o = overlays.find((x) => x.id === selectedOverlay) ?? overlays[0]
                                 return (
@@ -10316,53 +10352,58 @@ function Lab() {
                               scroll. The chip is the file it was made from,
                               truncated — a name is what tells two cards apart,
                               and the full one is in the title. */}
-                          <FileDropArea onFiles={dropPlanes} className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4">
-                            {planes.map((plane) => {
-                              // `?? planes[0]` decides which card the controls
-                              // below show, so the chip has to agree: an
-                              // unselected row with a panel under it reads as
-                              // controls belonging to nothing.
-                              const shown = planes.some((p) => p.id === selectedPlane) ? selectedPlane : planes[0]?.id
-                              const on = plane.id === shown
-                              return (
-                                <span
-                                  key={plane.id}
-                                  className={cn(
-                                    "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
-                                    on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                                  )}
-                                >
-                                  <Button variant="bare"
-                                    onClick={() => pickLayer(`plane:${plane.id}`)}
+                          <div
+                            ref={planeListRef}
+                            className={cn("no-scrollbar -mx-4 max-h-[7.75rem] overflow-y-auto overscroll-contain px-4 pb-1", softScrollFade(planeListLess, planeListMore))}
+                          >
+                            <FileDropArea onFiles={dropPlanes} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              {planes.map((plane) => {
+                                // `?? planes[0]` decides which card the controls
+                                // below show, so the chip has to agree: an
+                                // unselected row with a panel under it reads as
+                                // controls belonging to nothing.
+                                const shown = planes.some((p) => p.id === selectedPlane) ? selectedPlane : planes[0]?.id
+                                const on = plane.id === shown
+                                return (
+                                  <span
+                                    key={plane.id}
                                     className={cn(
-                                      // The chip's own type, not a button's; the picked one's rule drawn
-                                      // under the box, where truncating the words cannot clip it.
-                                      "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
-                                      on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                      "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                      on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                                     )}
                                   >
-                                    <span className="block min-w-0 truncate">
-                                      {plane.file}
-                                    </span>
-                                  </Button>
-                                  {/* On every chip, not only the selected one:
-                                      removing a card you are not editing should
-                                      not require selecting it first. */}
-                                  <CastAction
-                                    icon={X}
-                                    danger
-                                    compact
-                                    label={t.lab.aria.remove(t.lab.kinds.plane)}
-                                    onClick={() => removePlane(plane.id)}
-                                  />
-                                </span>
-                              )
-                            })}
-                            {/* ml-1.5 on top of the row gap: the + is not one
-                                of the cards, and sitting at the same distance
-                                as they sit from each other read as one. Dashed
-                                like the empty-state invite it replaces. */}
-                          </FileDropArea>
+                                    <Button variant="bare"
+                                      onClick={() => pickLayer(`plane:${plane.id}`)}
+                                      className={cn(
+                                        // The chip's own type, not a button's; the picked one's rule drawn
+                                        // under the box, where truncating the words cannot clip it.
+                                        "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                        on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                      )}
+                                    >
+                                      <span className="block min-w-0 truncate">
+                                        {plane.file}
+                                      </span>
+                                    </Button>
+                                    {/* On every chip, not only the selected one:
+                                        removing a card you are not editing should
+                                        not require selecting it first. */}
+                                    <CastAction
+                                      icon={X}
+                                      danger
+                                      compact
+                                      label={t.lab.aria.remove(t.lab.kinds.plane)}
+                                      onClick={() => removePlane(plane.id)}
+                                    />
+                                  </span>
+                                )
+                              })}
+                              {/* ml-1.5 on top of the row gap: the + is not one
+                                  of the cards, and sitting at the same distance
+                                  as they sit from each other read as one. Dashed
+                                  like the empty-state invite it replaces. */}
+                            </FileDropArea>
+                          </div>
                           {/* The selected card's own controls. `?? planes[0]`
                               so the section is never a row of chips with
                               nothing under them — the first upload is selected
@@ -10397,44 +10438,49 @@ function Lab() {
                               kind of thing. */}
                           {shownProp && (
                             <>
-                              <FileDropArea
-                                onFiles={(files) => dropModel({ mode: "prop" }, files)}
-                                className="-mx-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-4"
+                              <div
+                                ref={propListRef}
+                                className={cn("no-scrollbar -mx-4 max-h-[7.75rem] overflow-y-auto overscroll-contain px-4 pb-1", softScrollFade(propListLess, propListMore))}
                               >
-                                {props.map((prop) => {
-                                  const on = prop.id === shownProp.id
-                                  return (
-                                    <span
-                                      key={prop.id}
-                                      className={cn(
-                                        "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
-                                        on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                                      )}
-                                    >
-                                      <Button variant="bare"
-                                        onClick={() => setSelectedProp(prop.id)}
+                                <FileDropArea
+                                  onFiles={(files) => dropModel({ mode: "prop" }, files)}
+                                  className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
+                                >
+                                  {props.map((prop) => {
+                                    const on = prop.id === shownProp.id
+                                    return (
+                                      <span
+                                        key={prop.id}
                                         className={cn(
-                                          // The chip's own type, not a button's; the picked one's rule drawn
-                                          // under the box, where truncating the words cannot clip it.
-                                          "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
-                                          on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                          "flex max-w-[10rem] items-center gap-1 py-[3px] pr-1 text-xs transition-colors",
+                                          on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                                         )}
                                       >
-                                        <span className="block min-w-0 truncate">
-                                          {displayName(prop.file)}
-                                        </span>
-                                      </Button>
-                                      <CastAction
-                                        icon={X}
-                                        danger
-                                        compact
-                                        label={t.lab.aria.remove(t.lab.kinds.prop)}
-                                        onClick={() => removeModelById(prop.id)}
-                                      />
-                                    </span>
-                                  )
-                                })}
-                              </FileDropArea>
+                                        <Button variant="bare"
+                                          onClick={() => setSelectedProp(prop.id)}
+                                          className={cn(
+                                            // The chip's own type, not a button's; the picked one's rule drawn
+                                            // under the box, where truncating the words cannot clip it.
+                                            "relative min-w-0 flex-1 shrink cursor-pointer justify-start text-left text-xs font-normal",
+                                            on && "after:absolute after:inset-x-0 after:-bottom-1 after:h-[1.5px] after:bg-blue-400",
+                                          )}
+                                        >
+                                          <span className="block min-w-0 truncate">
+                                            {displayName(prop.file)}
+                                          </span>
+                                        </Button>
+                                        <CastAction
+                                          icon={X}
+                                          danger
+                                          compact
+                                          label={t.lab.aria.remove(t.lab.kinds.prop)}
+                                          onClick={() => removeModelById(prop.id)}
+                                        />
+                                      </span>
+                                    )
+                                  })}
+                                </FileDropArea>
+                              </div>
                               {(() => {
                                 const prop = shownProp
                                 const att = prop.attach
@@ -10664,281 +10710,260 @@ function Lab() {
                           />
                         </TabsContent>
                         <TabsContent value="lamps">
-                          {/* A LAMP'S DIALS ARE A PANEL, not a strip under the
-                              row — the Effects list's gear, to the pixel. A
-                              stage brings a room's worth of these, and dials
-                              that push the list down move the next lamp out
-                              from under the cursor while you are reading the
-                              list. Add stays last, so the one control that is
-                              always there is always in the same place. */}
-                          <div className="flex flex-col">
+                          {/* A stage brings dozens: the list scrolls in a
+                              box of its own, faded where there is more. A row
+                              picks its lamp; the picked lamp's dials are the
+                              rows under Add. */}
+                          <div
+                            ref={lampListRef}
+                            className={cn(
+                              "no-scrollbar flex max-h-40 flex-col overflow-y-auto overscroll-contain",
+                              scrollFade(lampLess, lampMore),
+                            )}
+                          >
                             {lights.map((l) => {
                               const open = lampOpen === l.id
                               const off = l.on === false
                               return (
-                                <Popover
-                                  key={l.id}
-                                  open={open}
-                                  onOpenChange={(o) => setLampOpen(o ? l.id : null)}
-                                >
-                                  <PopoverAnchor asChild>
-                                    <div>
-                                      <CastLine
-                                        text={
-                                          <Button variant="bare"
-                                            onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
-                                            className={cn(
-                                              "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
-                                              open ? "text-blue-400" : "hover:text-foreground",
-                                              // An off lamp still reads as a
-                                              // lamp, and still opens: a switch
-                                              // you cannot find the way back
-                                              // from is a delete.
-                                              off && !open && "text-muted-foreground",
-                                            )}
-                                          >
-                                            {/* Its own colour, which is what
-                                                tells two lamps apart before
-                                                either is opened. */}
-                                            <span
-                                              aria-hidden
-                                              className="size-2 shrink-0 rounded-full"
-                                              style={{ background: l.color, opacity: off ? 0.3 : 1 }}
-                                            />
-                                            <span className="min-w-0 truncate">{l.name}</span>
-                                          </Button>
-                                        }
-                                        actions={
-                                          <>
-                                            <CastAction
-                                              icon={Settings}
-                                              label={t.lab.aria.edit(t.lab.tabs.lamps, l.name)}
-                                              onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
-                                            />
-                                            <CastAction
-                                              icon={X}
-                                              danger
-                                              label={t.lab.aria.delete(t.lab.tabs.lamps, l.name)}
-                                              onClick={() => {
-                                                setLightsState((list) => list.filter((x) => x.id !== l.id))
-                                                setLampOpen((cur) => (cur === l.id ? null : cur))
-                                              }}
-                                            />
-                                          </>
-                                        }
-                                      />
-                                    </div>
-                                  </PopoverAnchor>
-                                  <PopoverContent
-                                    align="end"
-                                    side="bottom"
-                                    sideOffset={2}
-                                    // The effect row's own panel, to the pixel.
-                                    className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
-                                    onOpenAutoFocus={(ev) => ev.preventDefault()}
-                                  >
-                                    <Cover>
-                                    {/* The effect panel's own metrics: dense
-                                        rows and a 4.75rem label column. Two
-                                        gears on two rows opening two rhythms is
-                                        two idioms. */}
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-2xs">{t.lab.lamp.on}</span>
-                                      <Switch
-                                        size="sm"
-                                        checked={!off}
-                                        onCheckedChange={(v) => patchLight(l.id, { on: v })}
-                                      />
-                                    </div>
-                                    <fieldset
-                                      disabled={off}
-                                      className={cn("mt-1.5", off && "pointer-events-none opacity-40")}
-                                    >
-                                      <ColorRow
-                                        label={t.lab.ctl.color}
-                                        value={l.color}
-                                        onChange={(hex) => patchLight(l.id, { color: hex })}
-                                        dense
-                                        labelClass="w-[4.75rem]"
-                                      />
-                                      {/* Blender's two types. A spot is a
-                                          lamp with an aim: turning one on
-                                          points it at the character, which is
-                                          what lighting a dance usually wants,
-                                          or at the view's centre with nobody
-                                          on stage. */}
-                                      <div className="mt-2.5 flex items-center gap-2">
-                                        <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.lamp.type}</span>
-                                        <Select
-                                          value={l.aim ? "spot" : "point"}
-                                          onValueChange={(v) => {
-                                            if (v === "point") return patchLight(l.id, { aim: undefined, cookie: undefined })
-                                            const to = castHips() ?? camera.target
-                                            patchLight(l.id, { aim: aimAt(l.position, to), angle: l.angle ?? SPOT_ANGLE })
-                                          }}
-                                        >
-                                          <SelectTrigger size="sm" className={DOCK_SELECT}>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="point">{t.lab.lamp.point}</SelectItem>
-                                            <SelectItem value="spot">{t.lab.lamp.spot}</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      {l.aim && (() => {
-                                        const aim = l.aim
-                                        const angle = l.angle ?? SPOT_ANGLE
-                                        const blend = blendOf(angle, l.innerAngle)
-                                        const { pitch, yaw } = pitchYawOf(aim)
-                                        return (
-                                          <>
-                                            {/* A gobo: the picture the cone throws. */}
-                                            <div className="mt-2.5 flex items-center gap-2">
-                                              <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.pattern}</span>
-                                              <Select
-                                                value={l.cookie ?? NO_COOKIE}
-                                                onValueChange={(v) =>
-                                                  patchLight(l.id, { cookie: v === NO_COOKIE ? undefined : (v as LightCookie) })
-                                                }
-                                              >
-                                                <SelectTrigger size="sm" className={DOCK_SELECT}>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value={NO_COOKIE}>{t.lab.ctl.none}</SelectItem>
-                                                  {LIGHT_COOKIES.map((c) => (
-                                                    <SelectItem key={c} value={c}>
-                                                      {t.lab.ctl.cookie[c]}
-                                                    </SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            {/* Spot Size: the whole cone. The
-                                                inner angle keeps its share of
-                                                it, so Blend holds while it moves. */}
-                                            <SliderRow
-                                              label={t.lab.ctl.cone}
-                                              value={angle}
-                                              min={1}
-                                              max={180}
-                                              step={1}
-                                              onChange={(v) => patchLight(l.id, { angle: v, innerAngle: innerOf(v, blend) })}
-                                              fmt={(v) => `${v.toFixed(0)}°`}
-                                              dense
-                                              labelClass="w-[4.75rem]"
-                                            />
-                                            <SliderRow
-                                              label={t.lab.lamp.blend}
-                                              value={blend}
-                                              min={0}
-                                              max={1}
-                                              step={0.01}
-                                              onChange={(v) => patchLight(l.id, { innerAngle: innerOf(angle, v) })}
-                                              fmt={(v) => v.toFixed(2)}
-                                              dense
-                                              labelClass="w-[4.75rem]"
-                                            />
-                                            <SliderRow
-                                              label={t.lab.lamp.pitch}
-                                              value={pitch}
-                                              min={-90}
-                                              max={90}
-                                              step={1}
-                                              onChange={(v) => patchLight(l.id, { aim: aimOf(v, yaw) })}
-                                              fmt={(v) => `${v.toFixed(0)}°`}
-                                              dense
-                                              labelClass="w-[4.75rem]"
-                                            />
-                                            <SliderRow
-                                              label={t.lab.lamp.yaw}
-                                              value={yaw}
-                                              min={-180}
-                                              max={180}
-                                              step={1}
-                                              onChange={(v) => patchLight(l.id, { aim: aimOf(pitch, v) })}
-                                              fmt={(v) => `${v.toFixed(0)}°`}
-                                              dense
-                                              labelClass="w-[4.75rem]"
-                                            />
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              disabled={cast.length === 0}
-                                              onClick={() => {
-                                                const to = castHips()
-                                                if (to) patchLight(l.id, { aim: aimAt(l.position, to) })
-                                              }}
-                                              className="mt-2.5 h-6 w-full justify-start gap-1.5 px-1.5 text-2xs"
-                                            >
-                                              <Crosshair className="size-3" />
-                                              {t.lab.lamp.aimAtCast}
-                                            </Button>
-                                          </>
-                                        )
-                                      })()}
-                                      {/* The brightness one unit from the lamp: it
-                                          falls off as the inverse square, so the
-                                          numbers that light a figure run to the
-                                          hundreds. */}
-                                      <SliderRow
-                                        label={t.lab.ctl.intensity}
-                                        value={l.intensity}
-                                        min={0}
-                                        max={1000}
-                                        step={0.5}
-                                        inputMax={100000}
-                                        onChange={(v) => patchLight(l.id, { intensity: v })}
-                                        fmt={(v) => v.toFixed(1)}
-                                        dense
-                                        labelClass="w-[4.75rem]"
-                                      />
-                                      {/* The falloff is exactly zero AT the
-                                          radius, so this is where the light
-                                          stops rather than where it fades. */}
-                                      <SliderRow
-                                        label={t.lab.ctl.radius}
-                                        value={l.radius}
-                                        min={1}
-                                        max={200}
-                                        step={0.5}
-                                        inputMax={10000}
-                                        onChange={(v) => patchLight(l.id, { radius: v })}
-                                        fmt={(v) => v.toFixed(1)}
-                                        dense
-                                        labelClass="w-[4.75rem]"
-                                      />
-                                      {(["X", "Y", "Z"] as const).map((axis, i) => (
-                                        <SliderRow
-                                          key={axis}
-                                          label={axis}
-                                          value={l.position[i]}
-                                          min={-100}
-                                          max={100}
-                                          step={0.1}
-                                          inputMin={-10000}
-                                          inputMax={10000}
-                                          onChange={(v) => {
-                                            const next: [number, number, number] = [...l.position]
-                                            next[i] = v
-                                            patchLight(l.id, { position: next })
-                                          }}
-                                          fmt={(v) => v.toFixed(1)}
-                                          dense
-                                          labelClass="w-[4.75rem]"
+                                <div key={l.id} data-lamp-row={l.id}>
+                                  <CastLine
+                                    text={
+                                      <Button variant="bare"
+                                        aria-pressed={open}
+                                        onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
+                                        className={cn(
+                                          "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
+                                          open ? "text-blue-400" : "hover:text-foreground",
+                                          // An off lamp still reads as a
+                                          // lamp, and still opens: a switch
+                                          // you cannot find the way back
+                                          // from is a delete.
+                                          off && !open && "text-muted-foreground",
+                                        )}
+                                      >
+                                        {/* Its own colour, which is what
+                                            tells two lamps apart before
+                                            either is opened. */}
+                                        <span
+                                          aria-hidden
+                                          className="size-2 shrink-0 rounded-full"
+                                          style={{ background: l.color, opacity: off ? 0.3 : 1 }}
                                         />
-                                      ))}
-                                    </fieldset>
-                                    </Cover>
-                                  </PopoverContent>
-                                </Popover>
+                                        <span className="min-w-0 truncate">{l.name}</span>
+                                      </Button>
+                                    }
+                                    actions={
+                                      <CastAction
+                                        icon={X}
+                                        danger
+                                        label={t.lab.aria.delete(t.lab.tabs.lamps, l.name)}
+                                        onClick={() => {
+                                          setLightsState((list) => list.filter((x) => x.id !== l.id))
+                                          setLampOpen((cur) => (cur === l.id ? null : cur))
+                                        }}
+                                      />
+                                    }
+                                  />
+                                </div>
                               )
                             })}
                           </div>
+                          {(() => {
+                            // Always standing, so the list keeps its place:
+                            // with no lamp picked, a new lamp's values, disabled.
+                            const picked = lights.find((x) => x.id === lampOpen)
+                            const l: SceneLight = picked ?? {
+                              id: "",
+                              name: "",
+                              position: [0, 0, 0],
+                              color: "#ffd9a0",
+                              intensity: 20,
+                              radius: 20,
+                            }
+                            const off = l.on === false
+                            return (
+                              <fieldset
+                                disabled={!picked}
+                                className={cn("mt-2 min-w-0 border-t border-line pt-2.5", !picked && "pointer-events-none opacity-40")}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs">{t.lab.lamp.on}</span>
+                                  <Switch
+                                    size="sm"
+                                    checked={!off}
+                                    onCheckedChange={(v) => patchLight(l.id, { on: v })}
+                                  />
+                                </div>
+                                <fieldset
+                                  disabled={off}
+                                  className={cn("mt-2.5 min-w-0", off && "pointer-events-none opacity-40")}
+                                >
+                                  <ColorRow
+                                    label={t.lab.ctl.color}
+                                    value={l.color}
+                                    onChange={(hex) => patchLight(l.id, { color: hex })}
+                                  />
+                                  {/* Blender's two types. A spot is a
+                                      lamp with an aim: turning one on
+                                      points it at the character, which is
+                                      what lighting a dance usually wants,
+                                      or at the view's centre with nobody
+                                      on stage. */}
+                                  <div className="mt-2.5 flex items-center gap-2">
+                                    <span className="w-16 shrink-0 truncate text-xs">{t.lab.lamp.type}</span>
+                                    <Select
+                                      value={l.aim ? "spot" : "point"}
+                                      onValueChange={(v) => {
+                                        if (v === "point") return patchLight(l.id, { aim: undefined, cookie: undefined })
+                                        const to = castHips() ?? camera.target
+                                        patchLight(l.id, { aim: aimAt(l.position, to), angle: l.angle ?? SPOT_ANGLE })
+                                      }}
+                                    >
+                                      <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="point">{t.lab.lamp.point}</SelectItem>
+                                        <SelectItem value="spot">{t.lab.lamp.spot}</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {l.aim && (() => {
+                                    const aim = l.aim
+                                    const angle = l.angle ?? SPOT_ANGLE
+                                    const blend = blendOf(angle, l.innerAngle)
+                                    const { pitch, yaw } = pitchYawOf(aim)
+                                    return (
+                                      <>
+                                        {/* A gobo: the picture the cone throws. */}
+                                        <div className="mt-2.5 flex items-center gap-2">
+                                          <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.pattern}</span>
+                                          <Select
+                                            value={l.cookie ?? NO_COOKIE}
+                                            onValueChange={(v) =>
+                                              patchLight(l.id, { cookie: v === NO_COOKIE ? undefined : (v as LightCookie) })
+                                            }
+                                          >
+                                            <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value={NO_COOKIE}>{t.lab.ctl.none}</SelectItem>
+                                              {LIGHT_COOKIES.map((c) => (
+                                                <SelectItem key={c} value={c}>
+                                                  {t.lab.ctl.cookie[c]}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        {/* Spot Size: the whole cone. The
+                                            inner angle keeps its share of
+                                            it, so Blend holds while it moves. */}
+                                        <SliderRow
+                                          label={t.lab.ctl.cone}
+                                          value={angle}
+                                          min={1}
+                                          max={180}
+                                          step={1}
+                                          onChange={(v) => patchLight(l.id, { angle: v, innerAngle: innerOf(v, blend) })}
+                                          fmt={(v) => `${v.toFixed(0)}°`}
+                                        />
+                                        <SliderRow
+                                          label={t.lab.lamp.blend}
+                                          value={blend}
+                                          min={0}
+                                          max={1}
+                                          step={0.01}
+                                          onChange={(v) => patchLight(l.id, { innerAngle: innerOf(angle, v) })}
+                                          fmt={(v) => v.toFixed(2)}
+                                        />
+                                        <SliderRow
+                                          label={t.lab.lamp.pitch}
+                                          value={pitch}
+                                          min={-90}
+                                          max={90}
+                                          step={1}
+                                          onChange={(v) => patchLight(l.id, { aim: aimOf(v, yaw) })}
+                                          fmt={(v) => `${v.toFixed(0)}°`}
+                                        />
+                                        <SliderRow
+                                          label={t.lab.lamp.yaw}
+                                          value={yaw}
+                                          min={-180}
+                                          max={180}
+                                          step={1}
+                                          onChange={(v) => patchLight(l.id, { aim: aimOf(pitch, v) })}
+                                          fmt={(v) => `${v.toFixed(0)}°`}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          disabled={cast.length === 0}
+                                          onClick={() => {
+                                            const to = castHips()
+                                            if (to) patchLight(l.id, { aim: aimAt(l.position, to) })
+                                          }}
+                                          className="mt-2.5 h-6 w-full justify-start gap-1.5 px-1.5 text-2xs"
+                                        >
+                                          <Crosshair className="size-3" />
+                                          {t.lab.lamp.aimAtCast}
+                                        </Button>
+                                      </>
+                                    )
+                                  })()}
+                                  {/* The brightness one unit from the lamp: it
+                                      falls off as the inverse square, so the
+                                      numbers that light a figure run to the
+                                      hundreds. */}
+                                  <SliderRow
+                                    label={t.lab.ctl.intensity}
+                                    value={l.intensity}
+                                    min={0}
+                                    max={1000}
+                                    step={0.5}
+                                    inputMax={100000}
+                                    onChange={(v) => patchLight(l.id, { intensity: v })}
+                                    fmt={(v) => v.toFixed(1)}
+                                  />
+                                  {/* The falloff is exactly zero AT the
+                                      radius, so this is where the light
+                                      stops rather than where it fades. */}
+                                  <SliderRow
+                                    label={t.lab.ctl.radius}
+                                    value={l.radius}
+                                    min={1}
+                                    max={200}
+                                    step={0.5}
+                                    inputMax={10000}
+                                    onChange={(v) => patchLight(l.id, { radius: v })}
+                                    fmt={(v) => v.toFixed(1)}
+                                  />
+                                  {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                    <SliderRow
+                                      key={axis}
+                                      label={axis}
+                                      value={l.position[i]}
+                                      min={-100}
+                                      max={100}
+                                      step={0.1}
+                                      inputMin={-10000}
+                                      inputMax={10000}
+                                      onChange={(v) => {
+                                        const next: [number, number, number] = [...l.position]
+                                        next[i] = v
+                                        patchLight(l.id, { position: next })
+                                      }}
+                                      fmt={(v) => v.toFixed(1)}
+                                    />
+                                  ))}
+                                </fieldset>
+                              </fieldset>
+                            )
+                          })()}
                           <Button
                             variant="bare"
-                            className={cn(LINE_ACTION, "mt-1.5")}
+                            className={cn(LINE_ACTION, "mt-2.5")}
                             onClick={() => {
                               // PLACED WHERE YOU ARE LOOKING, at the orbit
                               // centre — a lamp that arrives at the world origin

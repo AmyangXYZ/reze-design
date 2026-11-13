@@ -35,11 +35,13 @@
 // decides whether the list is here: rain falls on the scene.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { Check, RotateCcw } from "lucide-react"
+import { Check, ChevronDown, RotateCcw } from "lucide-react"
 import type { EffectBoneValue, EffectParamDecl, EffectParamValue, EffectPointValue } from "reze-engine"
 import { dialAt, HOLDING_KINDS, type DialKey } from "@/lib/effects"
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
 import { Button } from "@/components/ui/button"
+import { Cover } from "@/components/ui/cover"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -169,6 +171,13 @@ export function EffectParams({
   // a model added to the scene later joins an unaimed effect and not an aimed one,
   // which is what having aimed it means.
   const on = (id: string) => models === undefined || models.includes(id)
+  const onCount = cast.filter((m) => on(m.id)).length
+  const onSummary =
+    onCount === cast.length
+      ? t.lab.ctl.allModels
+      : onCount === 1
+        ? (cast.find((m) => on(m.id))?.name ?? "")
+        : t.lab.ctl.nModels(onCount)
   const toggle = (id: string) => {
     const next = on(id) ? (models ?? cast.map((m) => m.id)).filter((x) => x !== id) : [...(models ?? []), id]
     // Nobody left, or everybody again — both are the default, and the default is
@@ -353,41 +362,58 @@ export function EffectParams({
   return (
     <>
       {aimable && (
-        <>
-          {/* pl-1.5, the row's own padding: the heading and the names share one
-              left edge, so the section reads as a list with a label rather than
-              as a label with a list indented under it. */}
-          <div className="mb-1 truncate pl-1.5 text-2xs text-muted-foreground">{t.lab.ctl.onModels}</div>
-          <div className="flex flex-col">
-            {cast.map((m) => (
+        // One row like a dial's: who it is on, summed up, and a list of ticks
+        // behind it that stays open while you pick.
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.onModels}</span>
+          <Popover>
+            <PopoverTrigger asChild>
               <Button
-                key={m.id}
-                variant="ghost"
-                onClick={() => toggle(m.id)}
-                // The library picker's row: a tick on the right, the accent on the
-                // text, muted when it is off. One way to say "these are the ones"
-                // in this chrome.
-                className={cn(
-                  "h-6 w-full justify-start gap-2 rounded-interior px-1.5 text-xs font-normal hover:bg-white/10",
-                  on(m.id) ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground",
-                )}
+                variant="bare"
+                className="ml-auto flex h-5 max-w-[9.5rem] min-w-0 items-center gap-1 text-2xs"
               >
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {m.name}
-                </span>
-                {/* ALWAYS RENDERED, hidden when off. Dropping the mark hands its
-                    width back to the name, so ticking a row re-truncated it and
-                    every name in the list moved — a list you are clicking down
-                    must not shift under the pointer. */}
-                <Check className={cn("size-3.5 shrink-0", on(m.id) ? "opacity-100" : "opacity-0")} />
+                <span className="min-w-0 truncate">{onSummary}</span>
+                <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
               </Button>
-            ))}
-          </div>
-        </>
+            </PopoverTrigger>
+            <Cover on={false}>
+              <PopoverContent
+                align="end"
+                side="bottom"
+                sideOffset={4}
+                className="max-h-[var(--radix-popover-content-available-height,32rem)] w-48 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-1 shadow-float"
+                onOpenAutoFocus={(e) => e.preventDefault()}
+              >
+                <div className="flex flex-col">
+                {cast.map((m) => (
+                  <Button
+                    key={m.id}
+                    variant="ghost"
+                    onClick={() => toggle(m.id)}
+                    // The library picker's row: a tick on the right, the accent on the
+                    // text, muted when it is off. One way to say "these are the ones"
+                    // in this chrome.
+                    className={cn(
+                      "h-6 w-full justify-start gap-2 rounded-interior px-1.5 text-xs font-normal hover:bg-white/10",
+                      on(m.id) ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-left">
+                      {m.name}
+                    </span>
+                    {/* ALWAYS RENDERED, hidden when off. Dropping the mark hands its
+                        width back to the name, so ticking a row re-truncated it and
+                        every name in the list moved — a list you are clicking down
+                        must not shift under the pointer. */}
+                    <Check className={cn("size-3.5 shrink-0", on(m.id) ? "opacity-100" : "opacity-0")} />
+                  </Button>
+                ))}
+                </div>
+              </PopoverContent>
+            </Cover>
+          </Popover>
+        </div>
       )}
-      {/* Between who it is on and what it is set to, when the panel holds both —
-          two lists of rows with nothing between them read as one list. */}
-      {aimable && rows.length > 0 && <div className="my-2 border-t border-line" />}
       {onReset && rows.length > 0 && (
         // A header line: what the panel is on the left, its one action on the
         // right — the reading order every other header in the chrome uses, and
