@@ -62,6 +62,8 @@ export type ParticleSpec = {
   duration?: number
   prewarm?: boolean
   scalingMode: number
+  /** Unity's simulation space: 0 Local (particles ride their emitter), 1 World, 2 Custom. */
+  simulationSpace?: number
   lifetime: Curve
   speed: Curve
   size3D: boolean
@@ -632,6 +634,12 @@ fn particleOrient(p: Particle, id: u32) -> mat3x3f {
   const tilesX = uvs ? uvs.tiles[0] : 1
   const tilesY = uvs ? uvs.tiles[1] : 1
   const stretched = s.renderer.mode === 1
+  // LOCAL SIMULATION (simulationSpace 0, Unity's default): a particle lives in its
+  // emitter's frame and rides it — X206's beams turn with their moving heads for
+  // the whole of their life, where kept in the world each stayed where it was born
+  // while its head swept on (up to 60 degrees over a beam's 0.6 s). Only an
+  // emitter that can move needs it: the baked ones stand still.
+  const local = !baked && (s.simulationSpace ?? 0) === 0
   // The renderer's pivot, in the particle's size per axis, in the card's own
   // plane: the card turns about it. A billboard's (a lighthouse beam whose card
   // starts at the lamp: X309's guangshu1, pivot x -0.23 of a 149-unit card, 34
@@ -784,22 +792,36 @@ ${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Parti
   // card's rotation (the velocity is its orientation)
   ${stretched ? `p.rot = e.unit;
   p.stretch = max((${stretchedLength} * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""} * ${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(p.vel)) / max(2.0 * p.size, 1e-4), 1.0001);` : `p.rot = ${rot};
-  p.stretch = -e.unit;`}${emitted ? `
+  p.stretch = -e.unit;`}${local ? `
+  // kept in the emitter's frame from here on (particleWorld places it)
+  p.pos = rzToLocal(e, p.pos - e.o);
+  p.vel = rzToLocal(e, p.vel);` : ""}${emitted ? `
   // born between two frames, or before a seek: brought forward to its age
   if (catchUp > 0.0) {
     let steps = min(u32(ceil(catchUp * 30.0)), 8u);
     let h = catchUp / f32(steps);
     for (var si = 0u; si < steps; si = si + 1u) {
-      p = particleStep(p, h);
+      p = particleStep(p, h${local ? ", id" : ""});
       p.age = p.age + h;
     }
   }` : ""}
   return p;
 }
 
-${orientFn}${pivotFn}
-fn particleStep(p: Particle, dt: f32) -> Particle {
+${orientFn}${pivotFn}${local ? `
+fn rzToLocal(e: Emitter, v: vec3f) -> vec3f { return vec3f(dot(v, e.x), dot(v, e.y), dot(v, e.z)); }
+// a Local particle in the world, as its emitter stands now
+fn particleWorld(p: Particle, id: u32) -> Particle {
   var q = p;
+  let e = emitter(id);
+  q.pos = e.o + e.x * p.pos.x + e.y * p.pos.y + e.z * p.pos.z;
+  q.vel = e.x * p.vel.x + e.y * p.vel.y + e.z * p.vel.z;
+  return q;
+}
+` : ""}
+fn particleStep(p: Particle, dt: f32${local ? ", id: u32" : ""}) -> Particle {
+  // ${local ? "stepped in the world as its emitter stands now, and kept in that frame after" : "stepped in the world"}
+  var q = ${local ? "particleWorld(p, id)" : "p"};
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let rs = rzHash13(p.seed * 5.3 + 0.21);
@@ -817,7 +839,10 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   ${stretched ? "" : `q.rot = q.rot + (${rol}) * dt;`}
   // size over life, against the start size this particle drew
   q.size = ${stretched ? stretchedSize : `0.5 * max(${sizeX} * (${solX})${cardX}, ${sizeY} * (${solY})${cardY})`} * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
-  ${stretched ? `q.stretch = max((${stretchedLength} * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""} * ${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel)) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
+  ${stretched ? `q.stretch = max((${stretchedLength} * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""} * ${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel)) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}${local ? `
+  let eL = emitter(id);
+  q.pos = rzToLocal(eL, q.pos - eL.o);
+  q.vel = rzToLocal(eL, q.vel);` : ""}
   return q;
 }
 ${tong
