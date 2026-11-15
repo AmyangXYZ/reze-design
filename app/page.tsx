@@ -118,6 +118,7 @@ import { Cover, useCover } from "@/components/ui/cover"
 import {
   ColorRow,
   SliderRow,
+  DockSection,
 } from "@/components/scene/scene-sidebar"
 import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
@@ -3505,6 +3506,7 @@ function Lab() {
   // is UI state, so it comes back from the same store the stack's own shape does.
   const [stageTab, setStageTab] = useState<"stage" | "ground">("ground")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
+  const [cameraTab, setCameraTab] = useState<"orbit" | "body" | "focus">("orbit")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
   const [objectTab, setObjectTab] = useState<"plane" | "prop" | "overlay">("overlay")
 
@@ -11481,327 +11483,356 @@ function Lab() {
                             its angle, or what it follows, sit disabled in
                             place. Disabled per row, not by a fieldset: a
                             SliderRow first in a fieldset drops its top margin. */}
-                        <div>
-                          {/* Follow first — it decides what the three numbers at
-                              the bottom MEAN (offset from a bone vs a point in
-                              the world), so each direction re-seeds its own
-                              default rather than reinterpreting the other's. */}
-                          <div
-                            className={cn(
-                              "flex items-center justify-between",
-                              cameraClip && "pointer-events-none opacity-40",
-                            )}
-                          >
-                            <span className="text-xs">{t.lab.ctl.follow}</span>
-                            <Switch
-                              size="sm"
-                              disabled={!!cameraClip}
-                              checked={!!camera.follow}
-                              onCheckedChange={(on) =>
-                                changeCamera({
-                                  ...camera,
-                                  follow: on ? FOLLOW_BONE : null,
-                                  target: [...(on ? FOLLOW_OFFSET_DEFAULT : TARGET_DEFAULT)] as [
-                                    number,
-                                    number,
-                                    number,
-                                  ],
-                                })
-                              }
-                            />
-                          </div>
-                          {/* The bone the orbit rides. Always here and inert
-                              until follow is on, so turning it on does not grow
-                              the pane. Changing the bone keeps the offset: it
-                              is the user's framing, and a re-seed here would
-                              throw it away for a bone a few units off. */}
-                          <div
-                            className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
-                          >
-                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.bone}</span>
-                            <Select
-                              value={camera.follow ?? ""}
-                              disabled={!camera.follow || !!cameraClip}
-                              onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
-                            >
-                              <SelectTrigger size="sm" className={DOCK_SELECT}>
-                                <SelectValue placeholder={t.lab.ctl.none} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {followBones.map((b) => (
-                                  <SelectItem key={b} value={b}>
-                                    {b}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          {/* Turning with her face: inert until follow is on,
-                              like the bone above, so the pane never grows. */}
-                          <div
-                            className={cn(
-                              "mt-2.5 flex items-center justify-between",
-                              cameraClip && "pointer-events-none opacity-40",
-                            )}
-                          >
-                            <span className="text-xs">{t.lab.ctl.followTurn}</span>
-                            <Switch
-                              size="sm"
-                              disabled={!camera.follow || !!cameraClip}
-                              checked={!!camera.follow && !!camera.followTurn}
-                              onCheckedChange={(on) => changeCamera({ ...camera, followTurn: on || undefined })}
-                            />
-                          </div>
-                          {/* The camera on her body, past a hairline: what holds
-                              it, then its three dials, always here and inert
-                              unless they apply, so picking one never grows the
-                              pane. A camera motion outranks it, as it does the
-                              follow above. */}
-                          <div
-                            className={cn(
-                              "mt-2.5 flex items-center gap-2 border-t border-line pt-2.5",
-                              cameraClip && "pointer-events-none opacity-40",
-                            )}
-                          >
-                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mount}</span>
-                            <Select
-                              value={camera.mount?.mode ?? "none"}
-                              disabled={!!cameraClip}
-                              onValueChange={(v) =>
-                                changeCamera({
-                                  ...camera,
-                                  mount: v === "pov" || v === "selfie" ? { ...camera.mount, mode: v } : null,
-                                })
-                              }
-                            >
-                              <SelectTrigger size="sm" className={DOCK_SELECT}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">{t.lab.ctl.none}</SelectItem>
-                                <SelectItem value="pov">{t.lab.ctl.mountPov}</SelectItem>
-                                <SelectItem value="selfie">{t.lab.ctl.mountSelfie}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div
-                            className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
-                          >
-                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mountHand}</span>
-                            <Select
-                              value={camera.mount?.bone ?? SELFIE_BONES[0]}
-                              disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
-                              onValueChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, bone: v } })}
-                            >
-                              <SelectTrigger size="sm" className={DOCK_SELECT}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={SELFIE_BONES[0]}>{t.lab.ctl.mountRight}</SelectItem>
-                                <SelectItem value={SELFIE_BONES[1]}>{t.lab.ctl.mountLeft}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className={cn(cameraClip && "pointer-events-none opacity-40")}>
-                            <SliderRow
-                              label={t.lab.ctl.mountReach}
-                              value={camera.mount?.distance ?? 7}
-                              min={3}
-                              max={14}
-                              step={0.5}
-                              inputMin={3}
-                              inputMax={14}
-                              disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
-                              onChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, distance: v } })}
-                              fmt={(v) => v.toFixed(1)}
-                            />
-                          </div>
-                          <div
-                            className={cn(
-                              "mt-2.5 flex items-center justify-between",
-                              cameraClip && "pointer-events-none opacity-40",
-                            )}
-                          >
-                            <span className="text-xs">{t.lab.ctl.mountLevel}</span>
-                            <Switch
-                              size="sm"
-                              disabled={camera.mount?.mode !== "pov" || !!cameraClip}
-                              checked={camera.mount?.mode === "pov" && (camera.mount.level ?? true)}
-                              onCheckedChange={(on) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, level: on } })}
-                            />
-                          </div>
-                          {/* Degrees on the slider, radians in the document —
-                              the same boundary conversion azimuth and elevation
-                              make two rows down. A camera VMD animates fov
-                              itself, which is what the fieldset above greys the
-                              whole pane for. */}
-                          {cameraClip ? (
-                            <>
+                        {/* Three tabs, one size: the panes stack in one grid cell and the
+                            inactive ones are hidden, not removed, so switching never moves
+                            the column. Orbit holds the follow with the shot, since follow
+                            decides what the target numbers mean; On body is the other way
+                            to hold the camera; Focus is the lens. */}
+                        <Tabs value={cameraTab} onValueChange={(v) => setCameraTab(v as typeof cameraTab)}>
+                          <TabsList className="-mt-1 mb-2 w-full">
+                            <TabsTrigger value="orbit" className="flex-1">
+                              {t.lab.tabs.orbit}
+                            </TabsTrigger>
+                            <TabsTrigger value="body" className="flex-1">
+                              {t.lab.tabs.body}
+                            </TabsTrigger>
+                            <TabsTrigger value="focus" className="flex-1">
+                              {t.lab.tabs.focus}
+                            </TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                        <div className="grid">
+                          <div className={cn("col-start-1 row-start-1", cameraTab !== "orbit" && "invisible")}>
+                            <DockSection title={t.lab.ctl.sectionFollow} first>
+                              {/* Follow first — it decides what the three numbers at
+                                  the bottom MEAN (offset from a bone vs a point in
+                                  the world), so each direction re-seeds its own
+                                  default rather than reinterpreting the other's. */}
+                              <div
+                                className={cn(
+                                  "mt-2.5 flex items-center justify-between",
+                                  cameraClip && "pointer-events-none opacity-40",
+                                )}
+                              >
+                                <span className="text-xs">{t.lab.ctl.follow}</span>
+                                <Switch
+                                  size="sm"
+                                  disabled={!!cameraClip}
+                                  checked={!!camera.follow}
+                                  onCheckedChange={(on) =>
+                                    changeCamera({
+                                      ...camera,
+                                      follow: on ? FOLLOW_BONE : null,
+                                      target: [...(on ? FOLLOW_OFFSET_DEFAULT : TARGET_DEFAULT)] as [
+                                        number,
+                                        number,
+                                        number,
+                                      ],
+                                    })
+                                  }
+                                />
+                              </div>
+                              {/* The bone the orbit rides. Always here and inert
+                                  until follow is on, so turning it on does not grow
+                                  the pane. Changing the bone keeps the offset: it
+                                  is the user's framing, and a re-seed here would
+                                  throw it away for a bone a few units off. */}
+                              <div
+                                className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
+                              >
+                                <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.bone}</span>
+                                <Select
+                                  value={camera.follow ?? ""}
+                                  disabled={!camera.follow || !!cameraClip}
+                                  onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
+                                >
+                                  <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                    <SelectValue placeholder={t.lab.ctl.none} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {followBones.map((b) => (
+                                      <SelectItem key={b} value={b}>
+                                        {b}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              {/* Turning with her face: inert until follow is on,
+                                  like the bone above, so the pane never grows. */}
+                              <div
+                                className={cn(
+                                  "mt-2.5 flex items-center justify-between",
+                                  cameraClip && "pointer-events-none opacity-40",
+                                )}
+                              >
+                                <span className="text-xs">{t.lab.ctl.followTurn}</span>
+                                <Switch
+                                  size="sm"
+                                  disabled={!camera.follow || !!cameraClip}
+                                  checked={!!camera.follow && !!camera.followTurn}
+                                  onCheckedChange={(on) => changeCamera({ ...camera, followTurn: on || undefined })}
+                                />
+                              </div>
+                            </DockSection>
+                            <DockSection title={t.lab.ctl.sectionShot}>
+                              {/* Degrees on the slider, radians in the document —
+                                  the same boundary conversion azimuth and elevation
+                                  make two rows down. A camera VMD animates fov
+                                  itself, which is what the fieldset above greys the
+                                  whole pane for. */}
+                              {cameraClip ? (
+                                <>
+                                  <SliderRow
+                                    label={t.lab.ctl.fov}
+                                    value={Math.round((trackOffset.fov * 180) / Math.PI)}
+                                    min={-60}
+                                    max={60}
+                                    step={1}
+                                    onChange={(v) => changeTrackOffset({ fov: (v * Math.PI) / 180 })}
+                                    fmt={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}°`}
+                                  />
+                                  <SliderRow
+                                    label={t.lab.ctl.distance}
+                                    value={trackOffset.distance}
+                                    min={-50}
+                                    max={50}
+                                    step={0.1}
+                                    onChange={(v) => changeTrackOffset({ distance: v })}
+                                    fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <SliderRow
+                                    label={t.lab.ctl.fov}
+                                    value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
+                                    min={10}
+                                    max={120}
+                                    step={1}
+                                    onChange={(v) =>
+                                      changeCamera({
+                                        ...camera,
+                                        fov: (v * Math.PI) / 180,
+                                      })
+                                    }
+                                    fmt={(v) => `${Math.round(v)}°`}
+                                  />
+                                  <SliderRow
+                                    label={t.lab.ctl.distance}
+                                    value={camera.distance}
+                                    min={1}
+                                    max={100}
+                                    step={0.1}
+                                    onChange={(v) => changeCamera({ ...camera, distance: v })}
+                                    fmt={(v) => v.toFixed(1)}
+                                  />
+                                </>
+                              )}
+                              {/* Azimuth and Elevation, the same pair the Sun uses —
+                                  both are a direction, so they answer to one set of
+                                  words. Alpha/beta are Babylon's internal names and
+                                  mean nothing to anyone else; degrees here, radians
+                                  in the document.
+                                  Elevation is NOT beta: beta is polar, measured from
+                                  straight overhead, so 90 is eye level and small
+                                  numbers are a bird's-eye view — the reverse of what
+                                  "elevation" says. Converted at the boundary, so the
+                                  slider reads 0 at the horizon and + from above. */}
                               <SliderRow
-                                label={t.lab.ctl.fov}
-                                value={Math.round((trackOffset.fov * 180) / Math.PI)}
-                                min={-60}
-                                max={60}
-                                step={1}
-                                onChange={(v) => changeTrackOffset({ fov: (v * Math.PI) / 180 })}
-                                fmt={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}°`}
-                              />
-                              <SliderRow
-                                label={t.lab.ctl.distance}
-                                value={trackOffset.distance}
-                                min={-50}
-                                max={50}
-                                step={0.1}
-                                onChange={(v) => changeTrackOffset({ distance: v })}
-                                fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <SliderRow
-                                label={t.lab.ctl.fov}
-                                value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
-                                min={10}
-                                max={120}
+                                label={t.lab.ctl.azimuth}
+                                disabled={!!cameraClip}
+                                value={Math.round((camera.alpha * 180) / Math.PI)}
+                                min={-180}
+                                max={180}
                                 step={1}
                                 onChange={(v) =>
                                   changeCamera({
                                     ...camera,
-                                    fov: (v * Math.PI) / 180,
+                                    alpha: (v * Math.PI) / 180,
                                   })
                                 }
-                                fmt={(v) => `${Math.round(v)}°`}
+                                fmt={(v) => `${v}°`}
                               />
                               <SliderRow
-                                label={t.lab.ctl.distance}
-                                value={camera.distance}
-                                min={1}
-                                max={100}
-                                step={0.1}
-                                onChange={(v) => changeCamera({ ...camera, distance: v })}
+                                label={t.lab.ctl.elevation}
+                                disabled={!!cameraClip}
+                                value={Math.round(90 - (camera.beta * 180) / Math.PI)}
+                                min={-85}
+                                max={85}
+                                step={1}
+                                onChange={(v) =>
+                                  changeCamera({
+                                    ...camera,
+                                    beta: ((90 - v) * Math.PI) / 180,
+                                  })
+                                }
+                                fmt={(v) => `${v}°`}
+                              />
+                              {/* The one channel the orbit cannot hold. */}
+                              <SliderRow
+                                label={t.lab.ctl.roll}
+                                disabled={!!cameraClip}
+                                value={((camera.roll ?? 0) * 180) / Math.PI}
+                                min={-45}
+                                max={45}
+                                step={0.5}
+                                onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
+                                fmt={(v) => `${v.toFixed(1)}°`}
+                              />
+                              {(["X", "Y", "Z"] as const).map((axis, i) =>
+                                cameraClip ? (
+                                  <SliderRow
+                                    key={axis}
+                                    label={t.lab.ctl.offset(axis)}
+                                    value={trackOffset.target[i]}
+                                    min={-50}
+                                    max={50}
+                                    step={0.1}
+                                    onChange={(v) => {
+                                      const target = [...trackOffset.target] as [number, number, number]
+                                      target[i] = v
+                                      changeTrackOffset({ target })
+                                    }}
+                                    fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
+                                  />
+                                ) : (
+                                  <SliderRow
+                                    key={axis}
+                                    label={camera.follow ? t.lab.ctl.offset(axis) : t.lab.ctl.target(axis)}
+                                    value={camera.target[i]}
+                                    min={i === 1 ? -10 : -50}
+                                    max={50}
+                                    step={0.1}
+                                    onChange={(v) => {
+                                      const target = [...camera.target] as [number, number, number]
+                                      target[i] = v
+                                      changeCamera({ ...camera, target })
+                                    }}
+                                    fmt={(v) => v.toFixed(1)}
+                                  />
+                                ),
+                              )}
+                            </DockSection>
+                          </div>
+                          <div className={cn("col-start-1 row-start-1", cameraTab !== "body" && "invisible")}>
+                            {/* The camera on her body: what holds it, then its
+                                three dials, always here and inert unless they
+                                apply, so picking one never grows the pane. A camera
+                                motion outranks it, as it does the follow above. */}
+                            <div>
+                              <div
+                                className={cn("flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
+                              >
+                                <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mountView}</span>
+                                <Select
+                                  value={camera.mount?.mode ?? "none"}
+                                  disabled={!!cameraClip}
+                                  onValueChange={(v) =>
+                                    changeCamera({
+                                      ...camera,
+                                      mount: v === "pov" || v === "selfie" ? { ...camera.mount, mode: v } : null,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">{t.lab.ctl.none}</SelectItem>
+                                    <SelectItem value="pov">{t.lab.ctl.mountPov}</SelectItem>
+                                    <SelectItem value="selfie">{t.lab.ctl.mountSelfie}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div
+                                className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
+                              >
+                                <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mountHand}</span>
+                                <Select
+                                  value={camera.mount?.bone ?? SELFIE_BONES[0]}
+                                  disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
+                                  onValueChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, bone: v } })}
+                                >
+                                  <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value={SELFIE_BONES[0]}>{t.lab.ctl.mountRight}</SelectItem>
+                                    <SelectItem value={SELFIE_BONES[1]}>{t.lab.ctl.mountLeft}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              {/* Not wrapped: a SliderRow alone in a div is its
+                                  first child and drops its top margin. Disabled
+                                  covers the camera motion's case too. */}
+                              <SliderRow
+                                label={t.lab.ctl.mountReach}
+                                value={camera.mount?.distance ?? 7}
+                                min={3}
+                                max={14}
+                                step={0.5}
+                                inputMin={3}
+                                inputMax={14}
+                                disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
+                                onChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, distance: v } })}
                                 fmt={(v) => v.toFixed(1)}
                               />
-                            </>
-                          )}
-                          {/* Azimuth and Elevation, the same pair the Sun uses —
-                              both are a direction, so they answer to one set of
-                              words. Alpha/beta are Babylon's internal names and
-                              mean nothing to anyone else; degrees here, radians
-                              in the document.
-                              Elevation is NOT beta: beta is polar, measured from
-                              straight overhead, so 90 is eye level and small
-                              numbers are a bird's-eye view — the reverse of what
-                              "elevation" says. Converted at the boundary, so the
-                              slider reads 0 at the horizon and + from above. */}
-                          <SliderRow
-                            label={t.lab.ctl.azimuth}
-                            disabled={!!cameraClip}
-                            value={Math.round((camera.alpha * 180) / Math.PI)}
-                            min={-180}
-                            max={180}
-                            step={1}
-                            onChange={(v) =>
-                              changeCamera({
-                                ...camera,
-                                alpha: (v * Math.PI) / 180,
-                              })
-                            }
-                            fmt={(v) => `${v}°`}
-                          />
-                          <SliderRow
-                            label={t.lab.ctl.elevation}
-                            disabled={!!cameraClip}
-                            value={Math.round(90 - (camera.beta * 180) / Math.PI)}
-                            min={-85}
-                            max={85}
-                            step={1}
-                            onChange={(v) =>
-                              changeCamera({
-                                ...camera,
-                                beta: ((90 - v) * Math.PI) / 180,
-                              })
-                            }
-                            fmt={(v) => `${v}°`}
-                          />
-                          {/* The one channel the orbit cannot hold. */}
-                          <SliderRow
-                            label={t.lab.ctl.roll}
-                            disabled={!!cameraClip}
-                            value={((camera.roll ?? 0) * 180) / Math.PI}
-                            min={-45}
-                            max={45}
-                            step={0.5}
-                            onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
-                            fmt={(v) => `${v.toFixed(1)}°`}
-                          />
-                          {(["X", "Y", "Z"] as const).map((axis, i) =>
-                            cameraClip ? (
-                              <SliderRow
-                                key={axis}
-                                label={t.lab.ctl.offset(axis)}
-                                value={trackOffset.target[i]}
-                                min={-50}
-                                max={50}
-                                step={0.1}
-                                onChange={(v) => {
-                                  const target = [...trackOffset.target] as [number, number, number]
-                                  target[i] = v
-                                  changeTrackOffset({ target })
-                                }}
-                                fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
-                              />
-                            ) : (
-                              <SliderRow
-                                key={axis}
-                                label={camera.follow ? t.lab.ctl.offset(axis) : t.lab.ctl.target(axis)}
-                                value={camera.target[i]}
-                                min={i === 1 ? -10 : -50}
-                                max={50}
-                                step={0.1}
-                                onChange={(v) => {
-                                  const target = [...camera.target] as [number, number, number]
-                                  target[i] = v
-                                  changeCamera({ ...camera, target })
-                                }}
-                                fmt={(v) => v.toFixed(1)}
-                              />
-                            ),
-                          )}
-                        </div>
-                        {/* Focus is automatic — the engine tracks the character's
-                            depth span every frame. Strength is the whole dial,
-                            and 0 is off. */}
-                        <SliderRow
-                          label={t.lab.ctl.dof}
-                          value={dof.enabled ? dof.aperture : 0}
-                          min={0}
-                          max={3}
-                          step={0.05}
-                          onChange={(v) => patch("dof", v > 0 ? { enabled: true, aperture: v } : { enabled: false })}
-                          fmt={(v) => v.toFixed(2)}
-                        />
-                        {/* Who stays sharp, the same row as follow's bone:
-                            always here, inert while the blur is off. Shows
-                            the first character when the document names no
-                            one, or someone who has left, as the engine does. */}
-                        <div className="mt-2.5 flex items-center gap-2">
-                          <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.focusOn}</span>
-                          <Select
-                            value={castTargets.find((c) => c.id === dof.model)?.id ?? castTargets[0]?.id ?? ""}
-                            disabled={!dof.enabled || castTargets.length === 0}
-                            onValueChange={(v) => patch("dof", { model: v })}
-                          >
-                            <SelectTrigger size="sm" className={DOCK_SELECT}>
-                              <SelectValue placeholder={t.lab.ctl.none} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {castTargets.map((c) => (
-                                <SelectItem key={c.id} value={c.id}>
-                                  {c.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                              <div
+                                className={cn(
+                                  "mt-2.5 flex items-center justify-between",
+                                  cameraClip && "pointer-events-none opacity-40",
+                                )}
+                              >
+                                <span className="text-xs">{t.lab.ctl.mountLevel}</span>
+                                <Switch
+                                  size="sm"
+                                  disabled={camera.mount?.mode !== "pov" || !!cameraClip}
+                                  checked={camera.mount?.mode === "pov" && (camera.mount.level ?? true)}
+                                  onCheckedChange={(on) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, level: on } })}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div className={cn("col-start-1 row-start-1", cameraTab !== "focus" && "invisible")}>
+                            <div>
+                            {/* Focus is automatic — the engine tracks the character's
+                                depth span every frame. Strength is the whole dial,
+                                and 0 is off. */}
+                            <SliderRow
+                              label={t.lab.ctl.dof}
+                              value={dof.enabled ? dof.aperture : 0}
+                              min={0}
+                              max={3}
+                              step={0.05}
+                              onChange={(v) => patch("dof", v > 0 ? { enabled: true, aperture: v } : { enabled: false })}
+                              fmt={(v) => v.toFixed(2)}
+                            />
+                            {/* Who stays sharp, the same row as follow's bone:
+                                always here, inert while the blur is off. Shows
+                                the first character when the document names no
+                                one, or someone who has left, as the engine does. */}
+                            <div className="mt-2.5 flex items-center gap-2">
+                              <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.focusOn}</span>
+                              <Select
+                                value={castTargets.find((c) => c.id === dof.model)?.id ?? castTargets[0]?.id ?? ""}
+                                disabled={!dof.enabled || castTargets.length === 0}
+                                onValueChange={(v) => patch("dof", { model: v })}
+                              >
+                                <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                  <SelectValue placeholder={t.lab.ctl.none} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {castTargets.map((c) => (
+                                    <SelectItem key={c.id} value={c.id}>
+                                      {c.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            </div>
+                          </div>
                         </div>
                     </>
                   )}

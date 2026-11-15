@@ -5,7 +5,7 @@
 // chrome — these are what the dock's rows are built from.
 
 import { Input } from "@/components/ui/input"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
 import { cn } from "@/lib/utils"
@@ -19,6 +19,21 @@ import { cn } from "@/lib/utils"
  *  and a second definition of it would drift on the first tweak. */
 export const VALUE_BOX =
   "block h-4 w-9 shrink-0 rounded-none border-0 border-b bg-transparent p-0 text-right text-2xs leading-4 tabular-nums"
+
+/**
+ * A section inside a dock pane: a hairline above (none for the pane's first),
+ * a tiny all-caps title, then its rows. The title is a row of its own, so the
+ * first control under it keeps the dock's row gap (a SliderRow drops its top
+ * margin only as a first child, and here it never is).
+ */
+export function DockSection({ title, first, children }: { title: string; first?: boolean; children: ReactNode }) {
+  return (
+    <div className={cn(!first && "mt-4 border-t border-line pt-3")}>
+      <p className="font-mono text-2xs font-semibold tracking-wide uppercase">{title}</p>
+      {children}
+    </div>
+  )
+}
 
 export function SliderRow({
   label,

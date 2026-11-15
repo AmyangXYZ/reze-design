@@ -740,6 +740,10 @@ const en = {
       export: "Export",
     },
     tabs: {
+      /** The camera pane's three. */
+      orbit: "Orbit",
+      body: "On body",
+      focus: "Focus",
       stage: "Stage",
       /** The Objects row's two: cards and props. */
       plane: "Planes",
@@ -1039,7 +1043,9 @@ const en = {
       direction: "Direction",
       follow: "Follow character",
       followTurn: "Turn with face",
-      mount: "On body",
+      mountView: "View",
+      sectionFollow: "Follow",
+      sectionShot: "Shot",
       mountPov: "First person",
       mountSelfie: "Selfie",
       mountHand: "Hand",
@@ -1946,6 +1952,9 @@ const zh: Dictionary = {
       export: "导出",
     },
     tabs: {
+      orbit: "环绕",
+      body: "机位",
+      focus: "对焦",
       stage: "舞台",
       plane: "平面",
       prop: "道具",
@@ -2180,7 +2189,9 @@ const zh: Dictionary = {
       direction: "风向",
       follow: "跟随角色",
       followTurn: "跟随面部朝向",
-      mount: "机位",
+      mountView: "视角",
+      sectionFollow: "跟随",
+      sectionShot: "镜头",
       mountPov: "第一人称",
       mountSelfie: "自拍",
       mountHand: "手",
