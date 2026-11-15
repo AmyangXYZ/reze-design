@@ -276,6 +276,36 @@ export type SceneSettings = {
     enabled: boolean
   }
   /**
+   * Auto blink. Live in the engine (Engine.setAutoBlink): she blinks every few
+   * seconds on her own, playing or paused, and owns まばたき over a morph
+   * motion's own keys, as eyes on camera owns the eye bones.
+   */
+  blink: {
+    enabled: boolean
+    /** The average gap between blinks, seconds (1–10). */
+    interval: number
+    /** How fast one blink is (0.5–2). */
+    speed: number
+    /** Now and then a second blink straight after the first. */
+    double: boolean
+  }
+  /**
+   * Motion blur. Live in the engine (Engine.setMotionBlur): per pixel, from
+   * the pose and the camera, in the editor and in an export. Palette-only.
+   */
+  motionBlur: {
+    enabled: boolean
+  }
+  /**
+   * Global playback speed. Live in the engine (Engine.setTimeScale): every
+   * clock runs at it, motions, camera, physics and effects alike; the music
+   * plays at the same rate, pitch kept; an export renders at it, the music
+   * time-stretched to match. One of PLAYBACK_SPEEDS.
+   */
+  playback: {
+    speed: number
+  }
+  /**
    * Jelly eyes (果冻眼). Live in the engine (Engine.setModelJellyEyes): the
    * irises squash on a blink and swell as she moves, then wobble back.
    */
@@ -396,6 +426,23 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
 /** What a document without an eyes block gets: off, since every scene before
  *  the toggle existed was authored with the eyes the motion gave them. */
 export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false }
+
+/** Blink is on, scenes from before it included: a character who never blinks
+ *  is the first thing anyone notices. */
+export const DEFAULT_BLINK: SceneSettings["blink"] = { enabled: true, interval: 4, speed: 1, double: true }
+
+/** Motion blur is off unless asked for, scenes from before it included. */
+export const DEFAULT_MOTION_BLUR: SceneSettings["motionBlur"] = { enabled: false }
+
+/** The speeds offered, and what a document without a playback block plays at. */
+export const PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
+export const DEFAULT_PLAYBACK: SceneSettings["playback"] = { speed: 1 }
+
+/** A stored speed as one of PLAYBACK_SPEEDS — the nearest, or 1 for nonsense. */
+export function playbackSpeedFrom(v: unknown): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return 1
+  return PLAYBACK_SPEEDS.reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 1)
+}
 
 /** Same for jelly eyes: every scene before them had still ones. */
 export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false, strength: 1, motion: true, idle: true }

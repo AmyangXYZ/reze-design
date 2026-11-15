@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   DEFAULT_BLOOM,
 } from "@/lib/scene-settings"
@@ -193,6 +193,9 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // Her eyes follow the camera: the first thing a visitor sees should look back.
     eyes: { enabled: true },
     jelly: DEFAULT_JELLY,
+    blink: DEFAULT_BLINK,
+    motionBlur: DEFAULT_MOTION_BLUR,
+    playback: DEFAULT_PLAYBACK,
   },
 }
 
@@ -234,6 +237,9 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     physics: DEFAULT_PHYSICS,
     eyes: DEFAULT_EYES,
     jelly: DEFAULT_JELLY,
+    blink: DEFAULT_BLINK,
+    motionBlur: DEFAULT_MOTION_BLUR,
+    playback: DEFAULT_PLAYBACK,
   },
 }
 

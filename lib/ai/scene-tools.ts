@@ -151,7 +151,7 @@ export type SceneToolHandles = {
 
 /** The settings sections that make up the look — what reset_to_default puts
  *  back. Not audio (the user's mix) and not the stage's own claims. */
-const LOOK_SECTIONS = ["world", "sun", "fill", "bloom", "dof", "outline", "background", "view", "grain", "grade", "ground", "eyes"] as const
+const LOOK_SECTIONS = ["world", "sun", "fill", "bloom", "dof", "outline", "background", "view", "grain", "grade", "ground", "eyes", "blink"] as const
 const RESET_PARTS = ["look", "camera", "effects", "lamps"] as const
 
 export type ToolImage = { dataUrl: string; label: string; metrics: FrameMetrics }
@@ -371,7 +371,7 @@ const CORE_TOOLS: SceneTool[] = [
       const view = frameShot(fig, args.shot as Shot, args.angle as Angle, h.camera.fov ?? Math.PI / 4, h.aspect)
       // Framing a shot means the camera stops riding a bone: the target is now
       // a point the shot was measured to.
-      const next: SceneCamera = { ...h.camera, alpha: view.alpha, beta: view.beta, distance: view.distance, target: view.target, follow: undefined }
+      const next: SceneCamera = { ...h.camera, alpha: view.alpha, beta: view.beta, distance: view.distance, target: view.target, follow: undefined, mount: null }
       h.setCamera(next)
       return { data: { camera: cameraOut(next) } }
     },

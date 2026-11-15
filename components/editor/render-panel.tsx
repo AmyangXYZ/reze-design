@@ -718,7 +718,9 @@ export const RenderPanel = memo(function RenderPanel({
     const base = baseName()
     const ext = target === "webm" ? "webm" : "mp4"
     const filename = `${base}.${ext}`
-    const totalFrames = Math.max(1, Math.round(segDuration * fps))
+    // At the playback speed the file is segDuration / speed long — the same
+    // count exportVideo renders.
+    const totalFrames = Math.max(1, Math.round((segDuration / engine.getTimeScale()) * fps))
 
     // File System Access path (Chromium desktop): ask WHERE first
     let fileStream: FileSystemWritableFileStream | undefined

@@ -85,6 +85,7 @@ import {
   Search,
   CircleHelp,
   Crosshair,
+  Gauge,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -189,6 +190,7 @@ import {
   saveSceneState,
   stageLightsFromFile,
   serializeSceneDoc,
+  SELFIE_BONES,
   type Scene,
   type SceneCamera,
   type SceneDoc,
@@ -303,7 +305,7 @@ import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, PLAYBACK_SPEEDS, playbackSpeedFrom, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -1374,6 +1376,57 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       altLabels: [alt.cmd.hideUi],
       keywords: ["hide ui", "clean", "zen", "focus", "record", "screenshot", "chrome", "隐藏", "界面", "纯净", "录屏"],
     },
+    // Auto blink: palette-only, like eyes on camera above.
+    {
+      id: "blink",
+      repeatable: true,
+      section: "command",
+      icon: Eye,
+      label: l.cmd.blinkOn,
+      altLabels: [alt.cmd.blinkOn, l.cmd.blinkOff, alt.cmd.blinkOff],
+      keywords: ["blink", "auto blink", "eyes", "wink", "眨眼", "自动眨眼", "眼睛", "まばたき"],
+    },
+    // The camera on a bone: her eyes, or a phone in her hand. Also in the
+    // camera pane; here so it can be reached by name.
+    {
+      id: "pov",
+      repeatable: true,
+      section: "command",
+      icon: Video,
+      label: l.cmd.povOn,
+      altLabels: [alt.cmd.povOn, l.cmd.povOff, alt.cmd.povOff],
+      keywords: ["first person", "pov", "fpv", "eyes", "head cam", "camera", "第一人称", "主观视角", "视角", "一人称"],
+    },
+    {
+      id: "selfie",
+      repeatable: true,
+      section: "command",
+      icon: Video,
+      label: l.cmd.selfieOn,
+      altLabels: [alt.cmd.selfieOn, l.cmd.selfieOff, alt.cmd.selfieOff],
+      keywords: ["selfie", "handheld", "hand cam", "phone", "vlog", "camera", "自拍", "手持", "自撮り"],
+    },
+    // Motion blur: palette-only, off by default.
+    {
+      id: "motionBlur",
+      repeatable: true,
+      section: "command",
+      icon: Camera,
+      label: l.cmd.motionBlurOn,
+      altLabels: [alt.cmd.motionBlurOn, l.cmd.motionBlurOff, alt.cmd.motionBlurOff],
+      keywords: ["motion blur", "blur", "shutter", "streak", "运动模糊", "动态模糊", "模糊", "モーションブラー"],
+    },
+    // Playback speed, one entry per speed so "speed 0.5" lands on it. The
+    // transport's word steps through the same list.
+    ...PLAYBACK_SPEEDS.map((s) => ({
+      id: `speed:${s}`,
+      repeatable: true,
+      section: "command" as const,
+      icon: Gauge,
+      label: l.cmd.speed(`${s}×`),
+      altLabels: [alt.cmd.speed(`${s}×`)],
+      keywords: ["speed", "playback speed", "slow motion", "slow", "fast", "rate", `${s}`, `${s}x`, "速度", "倍速", "慢动作", "播放速度"],
+    })),
     // Jelly eyes: palette-only, like eyes on camera above.
     {
       id: "jelly",
@@ -3435,6 +3488,11 @@ function Lab() {
   // group last chosen in its index.
   const [dockGroup, setDockGroup] = useState<"cast" | "clips" | "music" | "materials" | null>("cast")
   const pane = openRow ?? dockGroup
+  // The transport's speed word. Stable, since AnimPlayer is memoized.
+  const setPlaybackSpeed = useCallback(
+    (speed: number) => setSettings((s2) => ({ ...s2, playback: { speed: playbackSpeedFrom(speed) } })),
+    [],
+  )
 
   // The stages of their own (a part stands and leaves with its stage), and the
   // one the pane shows. The first holds the scene's lighting.
@@ -6121,9 +6179,9 @@ function Lab() {
       // Bones come from the ENGINE rather than from `cast`: this runs in the
       // handler that performed the swap, and the models state has not
       // re-rendered yet.
-      if (camera.follow && cast[0]?.id === oldId) {
+      if ((camera.follow || camera.mount) && cast[0]?.id === oldId) {
         const bones = engineRef.current?.getModel(newId)?.getSkeleton().bones.map((b) => b.name) ?? []
-        const next = bones.includes(camera.follow)
+        const next = !camera.follow || bones.includes(camera.follow)
           ? camera
           : { ...camera, follow: FOLLOW_BONES.find((b) => bones.includes(b)) ?? null }
         // Only a CHANGED bone is a document edit; the same bone on a new model
@@ -6734,6 +6792,20 @@ function Lab() {
             return {
               ...c,
               label: valuesShown.settings.eyes.enabled ? t.lab.cmd.eyesOff : t.lab.cmd.eyesOn,
+            }
+          if (c.id === "blink")
+            return {
+              ...c,
+              label: valuesShown.settings.blink.enabled ? t.lab.cmd.blinkOff : t.lab.cmd.blinkOn,
+            }
+          if (c.id === "pov")
+            return { ...c, label: valuesShown.camera.mount?.mode === "pov" ? t.lab.cmd.povOff : t.lab.cmd.povOn }
+          if (c.id === "selfie")
+            return { ...c, label: valuesShown.camera.mount?.mode === "selfie" ? t.lab.cmd.selfieOff : t.lab.cmd.selfieOn }
+          if (c.id === "motionBlur")
+            return {
+              ...c,
+              label: valuesShown.settings.motionBlur.enabled ? t.lab.cmd.motionBlurOff : t.lab.cmd.motionBlurOn,
             }
           if (c.id === "jelly")
             return {
@@ -7981,8 +8053,18 @@ function Lab() {
       else if (item.id === "grade-lib") gotoSection("post", { post: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "hideUi") setUiHidden(true)
-      else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
+      else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { ...s2.eyes, enabled: !s2.eyes.enabled } }))
+      else if (item.id === "blink") setSettings((s2) => ({ ...s2, blink: { ...s2.blink, enabled: !s2.blink.enabled } }))
+      // The same mount again takes it off; the other one swaps to it.
+      else if (item.id === "pov" || item.id === "selfie")
+        changeCamera({ ...camera, mount: camera.mount?.mode === item.id ? null : { ...camera.mount, mode: item.id } })
+      else if (item.id === "motionBlur")
+        setSettings((s2) => ({ ...s2, motionBlur: { ...s2.motionBlur, enabled: !s2.motionBlur.enabled } }))
       else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { ...s2.jelly, enabled: !s2.jelly.enabled } }))
+      else if (item.id.startsWith("speed:")) {
+        const speed = playbackSpeedFrom(Number(item.id.slice("speed:".length)))
+        setSettings((s2) => ({ ...s2, playback: { speed } }))
+      }
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
       // pose they are already in, and the next frame simulates forward from
       // there. Running it when nothing is wrong costs one settle and changes
@@ -8037,6 +8119,8 @@ function Lab() {
       openGallery,
       openEffectEditor,
       setUiHidden,
+      camera,
+      changeCamera,
       // A ref object, so it never changes and costs this memo nothing — listed
       // because reset-physics reaches through it and the rule here is that
       // everything read is named.
@@ -11192,6 +11276,45 @@ function Lab() {
                         <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
                         <Switch size="sm" checked={settings.eyes.enabled} onCheckedChange={(v) => patch("eyes", { enabled: v })} />
                       </div>
+                      {/* Auto blink, past a hairline: its switch, then its
+                          dials, always there and inert while off. */}
+                      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
+                        <span className="text-xs">{t.lab.ctl.autoBlink}</span>
+                        <Switch size="sm" checked={settings.blink.enabled} onCheckedChange={(v) => patch("blink", { enabled: v })} />
+                      </div>
+                      <SliderRow
+                        label={t.lab.ctl.blinkInterval}
+                        value={settings.blink.interval}
+                        min={1}
+                        max={10}
+                        step={0.5}
+                        inputMin={1}
+                        inputMax={10}
+                        disabled={!settings.blink.enabled}
+                        onChange={(v) => patch("blink", { interval: v })}
+                        fmt={(v) => `${v.toFixed(1)} s`}
+                      />
+                      <SliderRow
+                        label={t.lab.ctl.blinkSpeed}
+                        value={settings.blink.speed}
+                        min={0.5}
+                        max={2}
+                        step={0.05}
+                        inputMin={0.5}
+                        inputMax={2}
+                        disabled={!settings.blink.enabled}
+                        onChange={(v) => patch("blink", { speed: v })}
+                        fmt={(v) => v.toFixed(2)}
+                      />
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.blinkDouble}</span>
+                        <Switch
+                          size="sm"
+                          checked={settings.blink.double}
+                          disabled={!settings.blink.enabled}
+                          onCheckedChange={(v) => patch("blink", { double: v })}
+                        />
+                      </div>
                       {/* Jelly eyes, past a hairline: its switch, then its two
                           dials, always there and inert while off. */}
                       <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
@@ -11427,6 +11550,84 @@ function Lab() {
                               disabled={!camera.follow || !!cameraClip}
                               checked={!!camera.follow && !!camera.followTurn}
                               onCheckedChange={(on) => changeCamera({ ...camera, followTurn: on || undefined })}
+                            />
+                          </div>
+                          {/* The camera on her body, past a hairline: what holds
+                              it, then its three dials, always here and inert
+                              unless they apply, so picking one never grows the
+                              pane. A camera motion outranks it, as it does the
+                              follow above. */}
+                          <div
+                            className={cn(
+                              "mt-2.5 flex items-center gap-2 border-t border-line pt-2.5",
+                              cameraClip && "pointer-events-none opacity-40",
+                            )}
+                          >
+                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mount}</span>
+                            <Select
+                              value={camera.mount?.mode ?? "none"}
+                              disabled={!!cameraClip}
+                              onValueChange={(v) =>
+                                changeCamera({
+                                  ...camera,
+                                  mount: v === "pov" || v === "selfie" ? { ...camera.mount, mode: v } : null,
+                                })
+                              }
+                            >
+                              <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">{t.lab.ctl.none}</SelectItem>
+                                <SelectItem value="pov">{t.lab.ctl.mountPov}</SelectItem>
+                                <SelectItem value="selfie">{t.lab.ctl.mountSelfie}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div
+                            className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
+                          >
+                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.mountHand}</span>
+                            <Select
+                              value={camera.mount?.bone ?? SELFIE_BONES[0]}
+                              disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
+                              onValueChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, bone: v } })}
+                            >
+                              <SelectTrigger size="sm" className={DOCK_SELECT}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SELFIE_BONES[0]}>{t.lab.ctl.mountRight}</SelectItem>
+                                <SelectItem value={SELFIE_BONES[1]}>{t.lab.ctl.mountLeft}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className={cn(cameraClip && "pointer-events-none opacity-40")}>
+                            <SliderRow
+                              label={t.lab.ctl.mountReach}
+                              value={camera.mount?.distance ?? 7}
+                              min={3}
+                              max={14}
+                              step={0.5}
+                              inputMin={3}
+                              inputMax={14}
+                              disabled={camera.mount?.mode !== "selfie" || !!cameraClip}
+                              onChange={(v) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, distance: v } })}
+                              fmt={(v) => v.toFixed(1)}
+                            />
+                          </div>
+                          <div
+                            className={cn(
+                              "mt-2.5 flex items-center justify-between",
+                              cameraClip && "pointer-events-none opacity-40",
+                            )}
+                          >
+                            <span className="text-xs">{t.lab.ctl.mountLevel}</span>
+                            <Switch
+                              size="sm"
+                              disabled={camera.mount?.mode !== "pov" || !!cameraClip}
+                              checked={camera.mount?.mode === "pov" && (camera.mount.level ?? true)}
+                              onCheckedChange={(on) => camera.mount && changeCamera({ ...camera, mount: { ...camera.mount, level: on } })}
                             />
                           </div>
                           {/* Degrees on the slider, radians in the document —
@@ -12027,6 +12228,8 @@ function Lab() {
                 modelNames={modelNames}
                 timeline={timeline}
                 hasCamera={cameraClip !== null}
+                speed={settings.playback.speed}
+                onSpeed={setPlaybackSpeed}
                 fold={
                   TIMELINE_EDITOR && timelineRoom && !phone ? (
                     <Button

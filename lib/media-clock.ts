@@ -25,7 +25,10 @@ const WRAP_EPS = 1e-4
 /** Past this the two are not describing the same moment — stamp, do not drift. */
 const JUMP = 0.35
 
-export type MediaFollower = (video: HTMLVideoElement, time: number, playing: boolean) => void
+/** `speed` is the clip's playback speed (Engine.getTimeScale): the element plays
+ *  at that rate, set when it changes — a setting, not the continuous bending the
+ *  note above rules out — and the jump threshold widens with it. */
+export type MediaFollower = (video: HTMLVideoElement, time: number, playing: boolean, speed?: number) => void
 
 /** One follower per element: the state is per-element and sharing it would make
  *  two cards each think the other's seek was their own. */
@@ -34,12 +37,16 @@ export function createMediaFollower(): MediaFollower {
   let lastWant: number | null = null
   let lastTime = -1
 
-  return (video, time, playing) => {
+  return (video, time, playing, speed = 1) => {
     // Metadata decides the wrap and the seek target; before it, duration is NaN
     // and every number below is nonsense.
     if (!video.src || video.readyState < 1) return
+    if (video.playbackRate !== speed) {
+      video.preservesPitch = true
+      video.playbackRate = speed
+    }
 
-    const jumped = lastTime >= 0 && Math.abs(time - lastTime) > JUMP
+    const jumped = lastTime >= 0 && Math.abs(time - lastTime) > JUMP * Math.max(1, speed)
     lastTime = time
     const span = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
     // Wrapped into the media's own length, so a clip longer than the video

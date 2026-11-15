@@ -131,6 +131,21 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
     about: "Eyes follow the camera.",
     fields: { enabled: { kind: "boolean", about: "Characters look at the camera." } },
   },
+  blink: {
+    about: "Characters blink on their own, over any blinks their morph motion keys.",
+    fields: {
+      enabled: { kind: "boolean", about: "Auto blink on." },
+      interval: { kind: "number", min: 1, max: 10, about: "Average seconds between blinks; each gap varies from half to 1.5 times it." },
+      speed: { kind: "number", min: 0.5, max: 2, about: "How fast one blink is; 2 is twice as quick." },
+      double: { kind: "boolean", about: "Now and then a second blink straight after the first." },
+    },
+  },
+  playback: {
+    about: "Global playback speed: motions, camera, physics, effects and music together, in the editor and in export.",
+    fields: {
+      speed: { kind: "number", min: 0.25, max: 2, about: "1 is normal; use one of 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2." },
+    },
+  },
 }
 
 export type SettingsPatch = Partial<Record<keyof SceneSettings, Record<string, unknown>>>

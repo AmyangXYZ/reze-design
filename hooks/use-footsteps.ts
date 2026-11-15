@@ -178,9 +178,13 @@ export function useFootsteps({
         playing = true
         if (ctx.state === "suspended") void ctx.resume()
         const now = ctx.currentTime
-        const offset = p.current - now
+        // The clip runs at the playback speed (Engine.getTimeScale): clip time
+        // = speed × context time + offset. A change of speed changes the offset,
+        // which re-enters the list below like a jump.
+        const speed = engine.getTimeScale()
+        const offset = p.current - speed * now
         const held = v.offsets.length ? Math.max(...v.offsets) : null
-        if (held === null || Math.abs(offset - held) > Math.max(JUMP, 1.5 * slow)) {
+        if (held === null || Math.abs(offset - held) > Math.max(JUMP, 1.5 * slow) * Math.max(1, speed)) {
           // Starting, or the clip jumped: enter the list at the new time.
           cancel(v, false)
           v.offsets = [offset]
@@ -191,11 +195,12 @@ export function useFootsteps({
           if (v.offsets.length > WINDOW) v.offsets.shift()
         }
         const clipToAudio = Math.max(...v.offsets)
-        const horizon = now + clipToAudio + AHEAD + 2 * slow
+        // In CLIP time: as far ahead as AHEAD + 2·slow of context time reaches.
+        const horizon = speed * (now + AHEAD + 2 * slow) + clipToAudio
         for (; v.next < footsteps.length && footsteps[v.next].time <= horizon; v.next++) {
           const s = footsteps[v.next]
           if (lanes?.[id] && !visibilityAt(lanes[id], s.time * FPS).visible) continue
-          const when = s.time - clipToAudio
+          const when = (s.time - clipToAudio) / speed
           if (when < now - LATE) continue
           const voice = footstepVoice(s, sprite.duration, sliced)
           const src = ctx.createBufferSource()

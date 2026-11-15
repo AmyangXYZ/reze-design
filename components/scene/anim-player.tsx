@@ -5,6 +5,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { cn } from "@/lib/utils"
 import { FPS } from "@/lib/clip"
+import { PLAYBACK_SPEEDS } from "@/lib/scene-settings"
 import { applyTimelineFrame, type SceneTimeline } from "@/lib/timeline"
 import type { Engine, Model } from "reze-engine"
 import { Eye, EyeOff, Orbit, Pause, Play, Video } from "lucide-react"
@@ -70,6 +71,8 @@ export const AnimPlayer = memo(function AnimPlayer({
   hasCamera,
   eyes,
   onEyes,
+  speed = 1,
+  onSpeed,
   onFollowingChange,
   trailing,
   fold,
@@ -100,6 +103,10 @@ export const AnimPlayer = memo(function AnimPlayer({
    *  it is a property of the playback you are watching, like following is. */
   eyes?: boolean
   onEyes?: (on: boolean) => void
+  /** The scene's playback speed (settings.playback) and its control — a word
+   *  that steps through PLAYBACK_SPEEDS. Absent, no word. */
+  speed?: number
+  onSpeed?: (speed: number) => void
   /** Extra controls at the right end of the row, after Eyes. */
   trailing?: ReactNode
   /** The fold's own button: on the line, beside the duration as play stands
@@ -495,10 +502,25 @@ export const AnimPlayer = memo(function AnimPlayer({
       {label}
     </Button>
   )
+  // The speed: one press steps to the next, wrapping, so every speed is a few
+  // presses away and the palette names each directly. Underlined off 1×, as a
+  // switch is when on: a scene not at normal speed should say so.
+  const speedLabel = `${speed}×`
+  const nextSpeed = () => {
+    const i = PLAYBACK_SPEEDS.findIndex((s) => s === speed)
+    onSpeed?.(PLAYBACK_SPEEDS[(i + 1) % PLAYBACK_SPEEDS.length])
+  }
   const lineChrome = (
     <>
       {hasCamera && word(following, t.transport.follow, following ? t.transport.followCamera : t.transport.freeOrbit, toggleCamera)}
       {onEyes && word(!!eyes, t.transport.eyes, eyes ? t.transport.eyesOn : t.transport.eyesOff, () => onEyes(!eyes))}
+      {onSpeed && (
+        // Fixed width and tabular figures: stepping 1× → 1.25× must not move
+        // the words beside it.
+        <span className="inline-flex w-10 justify-center tabular-nums">
+          {word(speed !== 1, speedLabel, t.transport.speed(speedLabel), nextSpeed)}
+        </span>
+      )}
       {trailing}
     </>
   )
@@ -522,6 +544,15 @@ export const AnimPlayer = memo(function AnimPlayer({
           onClick={() => onEyes(!eyes)}
         >
           {eyes ? <Eye className={ico} strokeWidth={2.4} /> : <EyeOff className={ico} />}
+        </Button>
+      )}
+      {onSpeed && (
+        <Button aria-label={t.transport.speed(speedLabel)}
+          variant="ghost"
+          className={cn(unfolded ? "h-5 rounded-chip" : "h-7 rounded-full", "w-10 shrink-0 px-0 text-2xs tabular-nums text-foreground")}
+          onClick={nextSpeed}
+        >
+          {speedLabel}
         </Button>
       )}
       {trailing}

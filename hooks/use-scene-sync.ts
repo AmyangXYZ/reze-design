@@ -600,6 +600,37 @@ export function useSceneSync({
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes])
 
+  // ── Auto blink ──
+  //
+  // Same shape again. A model with no closing morph just doesn't blink.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    const { enabled, interval, speed, double } = settings.blink
+    const options = { interval, speed, double }
+    for (const id of castIds) engine.setAutoBlink(id, enabled ? options : null)
+  }, [engineRef, ready, castIds, settings.blink])
+
+  // ── Motion blur ──
+  //
+  // Scene-wide, not per model: the engine blurs whatever moves.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    engine.setMotionBlur(settings.motionBlur.enabled ? {} : null)
+  }, [engineRef, ready, settings.motionBlur])
+
+  // ── Playback speed ──
+  //
+  // One number for the whole engine, and the only place it is set: the audio
+  // clock, footsteps and media followers read it back from the engine every
+  // frame, so nothing can play at a speed the picture is not.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    engine.setTimeScale(settings.playback.speed)
+  }, [engineRef, ready, settings.playback.speed])
+
   // ── Jelly eyes ──
   //
   // Same shape as the eyes above: per cast model, again as models land.

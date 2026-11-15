@@ -20,6 +20,7 @@ import { openOverlayFrames, type LiveOverlay } from "./overlays"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
 import { mixFootsteps, footstepsNow, type Footstep, type FootstepSource } from "./footsteps"
+import { timeStretch } from "./time-stretch"
 import { visibilityAt } from "./timeline/visibility"
 import { aeScript, type CastSample, type ShotSample } from "./ae-script"
 import { FPS } from "./clip"
@@ -734,6 +735,15 @@ export async function captureViews(opts: {
   return out
 }
 
+/** The music at a playback speed, pitch kept: duration / speed long. */
+function stretchBuffer(buffer: AudioBuffer, speed: number): AudioBuffer {
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c))
+  const stretched = timeStretch(channels, buffer.sampleRate, speed)
+  const out = new AudioBuffer({ length: stretched[0].length, numberOfChannels: stretched.length, sampleRate: buffer.sampleRate })
+  stretched.forEach((data, c) => out.copyToChannel(data, c))
+  return out
+}
+
 /** Decode the music track and slice [startTime, startTime + exportDuration] out */
 async function buildMusicAudio(
   url: string,
@@ -928,7 +938,17 @@ export async function exportVideo(opts: {
   const startTime = Math.max(0, opts.startTime ?? 0)
   const bgColor = backgroundColor
   const { width, height, fps, background, target } = settings
-  const total = Math.max(1, Math.round(duration * fps))
+  // THE PLAYBACK SPEED (Engine.setTimeScale). `duration` is CLIP time; the
+  // file is duration / speed long, and every output frame moves the clip on by
+  // speed / fps — which renderFrame(1/fps) does by itself, the engine scaling
+  // its own delta. Everything below that names a clip time (timeline, audio
+  // and score clocks, backdrop, cards, overlays, watermark) reads `clipAt(i)`;
+  // the encoder's timestamps stay on the file's own clock.
+  const speed = engine.getTimeScale()
+  const total = Math.max(1, Math.round((duration / speed) * fps))
+  /** The clip's frame rate as the file's frames see it: one export frame is
+   *  speed/fps of clip. What the frame-indexed decoders are opened at. */
+  const clipFps = fps / speed
   const model = engine.getModel(modelName)
   if (!model) throw new Error("No model loaded")
   const extras = (opts.extraModelNames ?? [])
@@ -943,13 +963,17 @@ export async function exportVideo(opts: {
   let audioBuffer: AudioBuffer | null = null
   // A PNG sequence has no audio track to carry — the music comes out of the
   // ordinary video export beside it.
-  if (target !== "png" && settings.audioSource === "music" && musicUrl)
+  if (target !== "png" && settings.audioSource === "music" && musicUrl) {
     audioBuffer = await buildMusicAudio(musicUrl, startTime, duration, opts.musicVolume ?? 1)
+    // The preview plays the element at playbackRate with its pitch kept; the
+    // file gets the same from a time-stretch (lib/time-stretch.ts).
+    if (audioBuffer && speed !== 1) audioBuffer = stretchBuffer(audioBuffer, speed)
+  }
 
   // ── Backdrop layer (skipped entirely for a compositing handoff) ──
   const backdropFrames =
     backdrop && !isCompositingBackground(background)
-      ? await openBackdrop(backdrop, { width, height, startTime, fps, total })
+      ? await openBackdrop(backdrop, { width, height, startTime, fps: clipFps, total })
       : null
 
   /**
@@ -964,7 +988,7 @@ export async function exportVideo(opts: {
    * modes that need the speed — green screen and transparent both arrive here
    * with no backdrop, and both force the watermark off.
    */
-  const overlayFrames = opts.overlays?.length ? await openOverlayFrames(opts.overlays, { startTime, fps, total }) : null
+  const overlayFrames = opts.overlays?.length ? await openOverlayFrames(opts.overlays, { startTime, fps: clipFps, total }) : null
   const needsComposite = backdropFrames !== null || settings.watermark !== null || overlayFrames !== null
   const watermarkFont = needsComposite ? markFont() : ""
   if (settings.watermark) await loadMarkFont(watermarkFont, settings.watermark)
@@ -986,7 +1010,7 @@ export async function exportVideo(opts: {
           duration: null,
           fps: null,
         },
-        { width: p.frameWidth, height: p.frameHeight, startTime, fps, total },
+        { width: p.frameWidth, height: p.frameHeight, startTime, fps: clipFps, total },
       ),
     })),
   )
@@ -1013,10 +1037,13 @@ export async function exportVideo(opts: {
         for (const step of footstepsNow(m, engine.getIKEnabled())) {
           if (step.time >= startTime + duration) break
           if (lanes?.[id] && !visibilityAt(lanes[id], step.time * FPS).visible) continue
-          placed.push(step)
+          // Onto the FILE's clock: a step at clip time t sounds (t - start) /
+          // speed into the file. Mixed after the stretch, so each step stays a
+          // crisp hit at its own length instead of being stretched with the music.
+          placed.push({ ...step, time: startTime + (step.time - startTime) / speed })
         }
       })
-      audioBuffer = await mixFootsteps(audioBuffer, placed, startTime, duration, opts.footsteps.source, opts.footsteps.volume)
+      audioBuffer = await mixFootsteps(audioBuffer, placed, startTime, duration / speed, opts.footsteps.source, opts.footsteps.volume)
     }
     // Before the sink: a source canvas has to be at output size when the
     // encoder reads its dimensions off the first frame.
@@ -1064,7 +1091,9 @@ export async function exportVideo(opts: {
     const started = performance.now()
     for (let i = 0; i < total; i++) {
       if (opts.signal?.aborted) throw new DOMException("Export canceled", "AbortError")
+      // The file's time, for the encoder; the CLIP's, for everything drawn.
       const t = i / fps
+      const clipT = startTime + t * speed
 
       // THE BACKDROP IS FETCHED BEFORE THE RENDER, and this order is load-bearing.
       //
@@ -1083,7 +1112,7 @@ export async function exportVideo(opts: {
       // intermittent rather than structural.
       const bgFrame = backdropFrames ? await backdropFrames.next() : null
       // Overlays' animated frames, decoded before the render for the same reason.
-      await overlayFrames?.prepare(startTime + t)
+      await overlayFrames?.prepare(clipT)
       // Cards, before the render for the same reason: the texture a card samples
       // has to hold this frame's picture by the time the frame is drawn.
       for (const s of planeSources) {
@@ -1100,14 +1129,14 @@ export async function exportVideo(opts: {
       // Who is on stage on THIS frame, in clip frames rather than export frames
       // — a track is authored against the 30fps VMD clock, so a 60fps render
       // must not read it at its own rate or every swap lands twice as early.
-      if (opts.timeline) applyTimelineFrame(engine, opts.timeline, (startTime + t) * FPS)
+      if (opts.timeline) applyTimelineFrame(engine, opts.timeline, clipT * FPS)
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       // Audio time is TRACK time: the export may start mid-song.
-      engine.setAudioTime(startTime + t)
+      engine.setAudioTime(clipT)
       // The score's clock, on the same frame time. Both are per-frame state an
       // effect reads, and both freeze if this loop forgets one — a score-driven
       // effect exported a still keyboard while everything else animated.
-      engine.setMidiTime(startTime + t)
+      engine.setMidiTime(clipT)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
       gpuWait(canvas)
 
@@ -1118,8 +1147,8 @@ export async function exportVideo(opts: {
         // Already cover-fitted to the output — see BackdropFrames.
         if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
         ctx.drawImage(canvas, 0, 0, width, height)
-        overlayFrames?.draw(ctx, width, height, startTime + t)
-        if (settings.watermark) drawMark(ctx, width, height, watermarkFont, settings.watermark, startTime + t)
+        overlayFrames?.draw(ctx, width, height, clipT)
+        if (settings.watermark) drawMark(ctx, width, height, watermarkFont, settings.watermark, clipT)
       }
 
       await sink.add(i, t)
@@ -1190,7 +1219,10 @@ export async function exportAeScript(opts: {
 }): Promise<string> {
   const { engine, canvas, modelName, duration, width, height, fps } = opts
   const startTime = Math.max(0, opts.startTime ?? 0)
-  const total = Math.max(1, Math.round(duration * fps))
+  // At the playback speed, as exportVideo samples it: one sample per FILE
+  // frame, the clip moving speed/fps between them, so the comp matches the video.
+  const speed = engine.getTimeScale()
+  const total = Math.max(1, Math.round((duration / speed) * fps))
   const model = engine.getModel(modelName)
   if (!model) throw new Error("No model loaded")
   const extras = (opts.extraModelNames ?? [])
@@ -1227,9 +1259,9 @@ export async function exportAeScript(opts: {
     let painted = 0
     for (let i = 0; i < total; i++) {
       if (opts.signal?.aborted) throw new DOMException("Export canceled", "AbortError")
-      const t = i / fps
-      engine.setAudioTime(startTime + t)
-      engine.setMidiTime(startTime + t)
+      const clipT = startTime + (i / fps) * speed
+      engine.setAudioTime(clipT)
+      engine.setMidiTime(clipT)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
       const p = engine.getCameraPose()

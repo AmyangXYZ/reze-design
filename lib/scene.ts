@@ -10,7 +10,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, DEFAULT_PHYSICS,
   LEGACY_VIEW,
   audioFrom,
   bloomFrom,
@@ -267,6 +267,27 @@ export const CAMERA_DEFAULT_BETA = Math.PI / 2.5
  *  before the lens was authorable. */
 export const CAMERA_DEFAULT_FOV = Math.PI / 4
 
+/** See SceneCamera.mount. */
+export type CameraMount = {
+  mode: "pov" | "selfie"
+  /** Selfie: the hand holding the phone, 右手首 or 左手首. POV rides 頭. */
+  bone?: string
+  /** POV: keep the horizon level. Absent = level. */
+  level?: boolean
+  /** Selfie: how far from her face at full stretch, model units. Absent = 7. */
+  distance?: number
+}
+
+/** The hands a selfie can be held in. */
+export const SELFIE_BONES = ["右手首", "左手首"] as const
+
+/** What the engine takes for a scene's mount. */
+export function mountOptions(m: CameraMount): { mode: "pov" | "selfie"; bone?: string; level: boolean; distance: number } {
+  return m.mode === "selfie"
+    ? { mode: "selfie", bone: m.bone ?? SELFIE_BONES[0], level: true, distance: m.distance ?? 7 }
+    : { mode: "pov", level: m.level ?? true, distance: m.distance ?? 7 }
+}
+
 /** Orbit framing: how far the camera sits, from which angle, at what it looks. */
 export type SceneCamera = {
   distance: number
@@ -302,6 +323,15 @@ export type SceneCamera = {
    *  bone the position rides), so the shot keeps its angle to her face. Absent = off: the camera holds its own
    *  heading, as every scene before it did. */
   followTurn?: boolean
+  /**
+   * The camera on a bone (Engine.setCameraMount): "pov" through her eyes,
+   * turning with her head, her own head left out of the shot; "selfie" held
+   * in her hand (`bone`, a wrist) and aimed back at her face. Rides the first
+   * cast member, as follow does. Outranks the orbit, which stays underneath;
+   * a camera motion still outranks it. Absent or null = the orbit, as every
+   * scene before it.
+   */
+  mount?: CameraMount | null
   /**
    * The scene's adjustment to a loaded camera MOTION, added to every pose it
    * plays: `target` slides the shot (world units), `distance` pulls it back
@@ -634,11 +664,17 @@ export type SceneAssetsDoc = {
  * effect sits inside `background` exactly where the UI puts it, at the same level
  * as the grade rather than floating outside the settings.
  */
-export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes" | "jelly"> & {
+export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes" | "jelly" | "blink" | "playback" | "motionBlur"> & {
+  /** Absent before motion blur existed; read as off. */
+  motionBlur?: SceneSettings["motionBlur"]
   /** Absent in documents from before the toggle existed; read as off. */
   eyes?: SceneSettings["eyes"]
   /** Likewise. */
   jelly?: SceneSettings["jelly"]
+  /** Likewise, read as on (DEFAULT_BLINK). */
+  blink?: SceneSettings["blink"]
+  /** Absent before speed existed; read as 1×. */
+  playback?: SceneSettings["playback"]
   camera: SceneCamera
   background: SceneSettings["background"] & {
     /**
@@ -1093,6 +1129,9 @@ export function parseSceneDoc(
         physics: { ...DEFAULT_PHYSICS, ...settings.physics },
         eyes: { ...DEFAULT_EYES, ...settings.eyes },
         jelly: { ...DEFAULT_JELLY, ...settings.jelly },
+        blink: { ...DEFAULT_BLINK, ...settings.blink },
+        motionBlur: { ...DEFAULT_MOTION_BLUR, ...settings.motionBlur },
+        playback: { speed: playbackSpeedFrom(settings.playback?.speed ?? DEFAULT_PLAYBACK.speed) },
         // Same merge, same reason: a document written before the 0.4.0 chrome
         // carries neither block, and spreading an absent one is a no-op that
         // leaves the defaults — no blur, no outlines, exactly how it looked.
@@ -1886,6 +1925,9 @@ function restored(base: Scene): Scene {
         physics: { ...base.state.settings.physics, ...settingsBase.physics },
         eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
         jelly: { ...base.state.settings.jelly, ...settingsBase.jelly },
+        blink: { ...base.state.settings.blink, ...settingsBase.blink },
+        motionBlur: { ...base.state.settings.motionBlur, ...settingsBase.motionBlur },
+        playback: { speed: playbackSpeedFrom(settingsBase.playback?.speed ?? base.state.settings.playback.speed) },
         stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
         stageView: stageViewFromDoc(settingsBase.stageView ?? base.state.settings.stageView),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),

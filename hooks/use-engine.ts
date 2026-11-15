@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { stockEffects } from "@/lib/stock"
 import { Engine, parseLRC, parseMidi, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup, type LyricLine } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
-import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
+import { modelKey, mountOptions, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
 import { loadModelLooks, sweepRetiredBundles } from "@/lib/asset-store"
 import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { referencedFiles, relFilePath, sceneFiles } from "@/lib/scene-files"
@@ -791,7 +791,7 @@ export function useEngine(
           follow = createMediaFollower()
           planeFollowers.current.set(p.id, follow)
         }
-        follow(p.video, time, playing)
+        follow(p.video, time, playing, engineRef.current?.getTimeScale() ?? 1)
         // Only when the element has actually advanced. A 30fps clip on a 60Hz
         // display shows each frame twice, so half of these copies were the same
         // pixels again — and a copy of a 4K frame is not free.
@@ -1691,10 +1691,12 @@ export function useEngine(
    */
   const rebindCameraFollow = useCallback((modelId: string, c: SceneCamera) => {
     const engine = engineRef.current
-    if (!engine || !c.follow) return
+    if (!engine || (!c.follow && !c.mount)) return
     const model = engine.getModel(modelId)
     if (!model) return
-    engine.setCameraFollow(model, c.follow, new Vec3(...c.target), 0.15, !!c.followTurn)
+    if (c.follow) engine.setCameraFollow(model, c.follow, new Vec3(...c.target), 0.15, !!c.followTurn)
+    // A mount rides the rig it was put on, and that rig has just left.
+    if (c.mount) engine.setCameraMount(model, mountOptions(c.mount))
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */

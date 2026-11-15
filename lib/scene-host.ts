@@ -14,7 +14,7 @@ import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
 import { CHARACTER_GROUPS, autoStyleModel, modelIsFigure } from "@/lib/auto-style"
-import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
+import { idbBundleId, modelPmxUrl, mountOptions, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
 import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } from "@/lib/uploads"
 import { loadLocalBundle, loadModelLooks } from "@/lib/asset-store"
 import { fitLooks, modelLooksKey } from "@/lib/model-looks"
@@ -214,6 +214,8 @@ export function applyCamera(engine: Engine, camera: SceneCamera, model: Model | 
   engine.setCameraDistance(camera.distance)
   engine.setCameraAlpha(camera.alpha)
   engine.setCameraBeta(camera.beta)
+  // On a bone, over the orbit just set, which stays underneath for when it comes off.
+  engine.setCameraMount(camera.mount && model ? model : null, camera.mount ? mountOptions(camera.mount) : null)
   // Read only while a camera motion drives; harmless to hold otherwise.
   const o = camera.trackOffset
   engine.setCameraTrackOffset(

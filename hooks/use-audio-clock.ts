@@ -231,12 +231,18 @@ export function useAudioClock({
         return 0
       }
     }
-    const heard = (t: number) => t + outputDelay()
+    // THE PLAYBACK SPEED is the engine's (Engine.setTimeScale): the clip runs
+    // at `speed` clip-seconds per second, so the element plays at that rate,
+    // pitch kept. Every number below is in TRACK seconds: the output delay is
+    // wall time, so it leads by delay × speed; the thresholds widen with speed,
+    // since a frame moves the clock that much further.
+    const speedNow = () => engineRef.current?.getTimeScale() ?? 1
+    const heard = (t: number) => t + outputDelay() * speedNow()
     const onPlaying = () => {
       if (!stampArmed) return
       stampArmed = false
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
-      if (p?.playing && Math.abs(audio.currentTime - heard(p.current)) > 0.05) audio.currentTime = heard(p.current)
+      if (p?.playing && Math.abs(audio.currentTime - heard(p.current)) > 0.05 * Math.max(1, speedNow())) audio.currentTime = heard(p.current)
     }
     audio.addEventListener("playing", onPlaying)
     // preload="auto" is a hint iOS Safari ignores until a user gesture — warm
@@ -258,9 +264,18 @@ export function useAudioClock({
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
       wantAudio.current = !!p?.playing && !disabled
       if (!p) return
-      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete
-      // jump. Read before either half below, because both want it.
-      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
+      const speed = speedNow()
+      const slack = Math.max(1, speed)
+      // The element at the clip's rate. Set only on a change: bending the rate
+      // continuously is what stuttered on Safari (lib/media-clock.ts), but one
+      // write per change of speed is a setting, not a correction.
+      if (audio.playbackRate !== speed) {
+        audio.preservesPitch = true
+        audio.playbackRate = speed
+      }
+      // A frame advances the clock ≤ ~0.05s × speed — anything bigger is a
+      // discrete jump. Read before either half below, because both want it.
+      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35 * slack
       lastModelTime = p.current
 
       // Everything the EXPORT owns while it runs — see the note above.
@@ -300,13 +315,13 @@ export function useAudioClock({
           // are more than 0.05s apart, and a resume is already well inside that,
           // so it still does not flush the decoder or clip the first beat.
           if (!wasPlaying) stampArmed = true
-          if ((!wasPlaying && Math.abs(audio.currentTime - heard(p.current)) > 0.15) || (!audio.seeking && jumped)) {
+          if ((!wasPlaying && Math.abs(audio.currentTime - heard(p.current)) > 0.15 * slack) || (!audio.seeking && jumped)) {
             audio.currentTime = heard(p.current)
             stampArmed = true
           }
           if (resyncFrames > 0) {
             resyncFrames--
-            if (resyncTries > 0 && !audio.seeking && !audio.paused && Math.abs(audio.currentTime - heard(p.current)) > 0.06) {
+            if (resyncTries > 0 && !audio.seeking && !audio.paused && Math.abs(audio.currentTime - heard(p.current)) > 0.06 * slack) {
               audio.currentTime = heard(p.current)
               resyncTries--
             }
@@ -377,7 +392,7 @@ export function useAudioClock({
       // An export owns the clock but not the picture: it decodes its own
       // backdrop frames, and freezing this would leave the one thing on screen
       // that is not following the render.
-      if (video) followBackdrop.current(video, p.current, p.playing && !disabled)
+      if (video) followBackdrop.current(video, p.current, p.playing && !disabled, speed)
 
     }
     raf = requestAnimationFrame(tick)
