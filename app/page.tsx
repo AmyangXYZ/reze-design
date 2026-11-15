@@ -11308,15 +11308,6 @@ function Lab() {
                         onChange={(v) => patch("blink", { speed: v })}
                         fmt={(v) => v.toFixed(2)}
                       />
-                      <div className="mt-2.5 flex items-center justify-between">
-                        <span className="text-xs">{t.lab.ctl.blinkDouble}</span>
-                        <Switch
-                          size="sm"
-                          checked={settings.blink.double}
-                          disabled={!settings.blink.enabled}
-                          onCheckedChange={(v) => patch("blink", { double: v })}
-                        />
-                      </div>
                       {/* Jelly eyes, past a hairline: its switch, then its two
                           dials, always there and inert while off. */}
                       <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">

@@ -606,8 +606,9 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    const { enabled, interval, speed, double } = settings.blink
-    const options = { interval, speed, double }
+    // Now and then a blink comes doubled, a quick flutter: always, as people do.
+    const { enabled, interval, speed } = settings.blink
+    const options = { interval, speed }
     for (const id of castIds) engine.setAutoBlink(id, enabled ? options : null)
   }, [engineRef, ready, castIds, settings.blink])
 

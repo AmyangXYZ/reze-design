@@ -73,11 +73,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Start the demo scene's heavy assets downloading at HTML parse instead of after the JS
+  // Start the demo scene's heavy assets downloading at HTML parse instead of after the JS.
+  // The model only: its motion is fetched once the model has loaded, well past
+  // the few seconds a preload has before Chrome warns it went unused.
   for (const entry of parseAssetsDoc(DEFAULT_SCENE_DOC.assets).models) {
     const pmx = modelPmxUrl(entry.model);
     if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
-    if (entry.animation) preload(encodeURI(entry.animation.url), { as: "fetch", crossOrigin: "anonymous" });
   }
   return (
 

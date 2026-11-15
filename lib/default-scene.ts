@@ -91,7 +91,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
             {
               id: "cloth_smooth",
               label: "Smooth Cloth",
-              materials: ["shirt", "shorts", "ribbon", "choker", "bozi", "cloth01", "cloth01.001"],
+              materials: ["shirt", "shorts", "ribbon", "bozi", "cloth01", "cloth01.001"],
               graph: "AG Smooth Cloth",
             },
             { id: "cloth_rough", label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },

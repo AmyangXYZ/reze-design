@@ -137,7 +137,6 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
       enabled: { kind: "boolean", about: "Auto blink on." },
       interval: { kind: "number", min: 1, max: 10, about: "Average seconds between blinks; each gap varies from half to 1.5 times it." },
       speed: { kind: "number", min: 0.5, max: 2, about: "How fast one blink is; 2 is twice as quick." },
-      double: { kind: "boolean", about: "Now and then a second blink straight after the first." },
     },
   },
   playback: {

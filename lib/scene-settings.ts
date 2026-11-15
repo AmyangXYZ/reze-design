@@ -286,8 +286,6 @@ export type SceneSettings = {
     interval: number
     /** How fast one blink is (0.5–2). */
     speed: number
-    /** Now and then a second blink straight after the first. */
-    double: boolean
   }
   /**
    * Motion blur. Live in the engine (Engine.setMotionBlur): per pixel, from
@@ -429,7 +427,7 @@ export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false }
 
 /** Blink is on, scenes from before it included: a character who never blinks
  *  is the first thing anyone notices. */
-export const DEFAULT_BLINK: SceneSettings["blink"] = { enabled: true, interval: 4, speed: 1, double: true }
+export const DEFAULT_BLINK: SceneSettings["blink"] = { enabled: true, interval: 4, speed: 1 }
 
 /** Motion blur is off unless asked for, scenes from before it included. */
 export const DEFAULT_MOTION_BLUR: SceneSettings["motionBlur"] = { enabled: false }
