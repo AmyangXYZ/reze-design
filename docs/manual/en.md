@@ -604,7 +604,8 @@ pattern stays put when the camera moves. For something the character stands
 | `rzProject(p)` | A world point on screen: `xy` uv, `z` distance, comparable to `depth`, negative behind the camera |
 | `rzCastDistance(uv)` | Screen pixels to the cast's silhouette — 0 on her, positive outside |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | Which object and material drew this pixel (field mounts) |
-| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point — not in `background`/`foreground`, where `rzShadow` is 1, `rzWorldAmbient` is 0 and `rzLightsDiffuse` does not exist; a field effect drawing a solid lights it itself |
+| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point — in `background`/`foreground`, `rzShadow` is 1 and `rzLightsDiffuse` does not exist |
+| `rzSunDir()` · `rzSunColor()` · `rzWorldSpecular(dir, roughness)` | Toward the sun, the light it brings, and the sky seen along `dir` (the HDRI blurred for that roughness, or the world light by direction) — scene-linear, what the materials reflect |
 | `rzLightCount()` · `rzLightPos/Color/Radius/Aim/Cone(i)` | The scene's lamps |
 | `rzHash11/21/31/13` · `rzValueNoise(p)` · `rzCurlNoise(p)` · `rzFalloff(d, r)` | Hashes, noise, and a falloff that is exactly 0 at `r` |
 
@@ -624,6 +625,7 @@ The older `bg*` names (`bgWorldPos`, `bgResolution`, …) still work.
 | --- | --- |
 | `rzScene(uv)` · `rzSceneAlpha(uv)` | The scene layer in linear HDR, and how much of the pixel it covers |
 | `rzSceneDisplay(uv)` | The scene in display space — exposure, view transform and grade applied |
+| `rzDisplay(c)` | Scene-linear light turned into display colour the same way, for a field effect that shades with `rzWorldSpecular` or `rzSunColor` |
 | `rzSceneDepth(uv)` · `rzSceneHit(uv)` · `rzSceneFar()` | Depth at any pixel, whether anything was drawn, the far plane |
 | `rzBackground()` | The background colour |
 | `rzSceneFrame(uv)` | The finished frame, other effects included |

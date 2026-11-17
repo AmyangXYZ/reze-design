@@ -508,7 +508,8 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 | `rzProject(p)` | 世界点在屏幕上的位置：`xy` 为 uv，`z` 为距离，可与 `depth` 比较，在相机后方为负 |
 | `rzCastDistance(uv)` | 到角色轮廓的屏幕像素距离：角色上为 0，外部为正 |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | 此像素由哪个物体和材质绘制（场挂载点） |
-| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | 某点的太阳阴影、环境光和灯光；`background`/`foreground` 中不可用：`rzShadow` 恒为 1，`rzWorldAmbient` 恒为 0，`rzLightsDiffuse` 不存在，在其中绘制实体的特效需要自己打光 |
+| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | 某点的太阳阴影、环境光和灯光；在 `background`/`foreground` 中 `rzShadow` 恒为 1，`rzLightsDiffuse` 不存在 |
+| `rzSunDir()` · `rzSunColor()` · `rzWorldSpecular(dir, roughness)` | 指向太阳的方向、太阳带来的光，以及沿 `dir` 看到的天空（按该粗糙度模糊的 HDRI，或按方向的环境光）——场景线性，与材质反射的相同 |
 | `rzLightCount()` · `rzLightPos/Color/Radius/Aim/Cone(i)` | 场景中的灯 |
 | `rzHash11/21/31/13` · `rzValueNoise(p)` · `rzCurlNoise(p)` · `rzFalloff(d, r)` | 哈希、噪声，以及在 `r` 处恰好为 0 的衰减 |
 
@@ -526,6 +527,7 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 | --- | --- |
 | `rzScene(uv)` · `rzSceneAlpha(uv)` | 线性 HDR 的场景层，以及它对该像素的覆盖度 |
 | `rzSceneDisplay(uv)` | 显示空间的场景，已应用曝光、视图变换和调色 |
+| `rzDisplay(c)` | 以同样方式把场景线性的光转为显示颜色，供用 `rzWorldSpecular` 或 `rzSunColor` 着色的场特效使用 |
 | `rzSceneDepth(uv)` · `rzSceneHit(uv)` · `rzSceneFar()` | 任意像素的深度、是否有内容、远平面 |
 | `rzBackground()` | 背景颜色 |
 | `rzSceneFrame(uv)` | 完成的画面，包括其他特效 |

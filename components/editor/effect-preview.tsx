@@ -570,6 +570,13 @@ fn rzViewportHeight() -> f32 { return u.res.y; }
 /** Flat and dim. A card has no HDRI, and faking one would show lighting the
  *  scene will not reproduce. */
 fn rzWorldAmbient(n: vec3f) -> vec3f { return vec3f(0.06, 0.06, 0.075); }
+/** The same flat world seen in a mirror — the engine's answer with no HDRI. */
+fn rzWorldSpecular(dir: vec3f, roughness: f32) -> vec3f { return rzWorldAmbient(dir); }
+/** A key from above and to one side, in white: the stand-in's sun. */
+fn rzSunDir() -> vec3f { return normalize(vec3f(-0.4, 0.8, 0.45)); }
+fn rzSunColor() -> vec3f { return vec3f(1.0); }
+/** The card's scene is already its screen colour (see rzSceneDisplay). */
+fn rzDisplay(c: vec3f) -> vec3f { return c; }
 
 // NO LIGHTS EMITTED. The #lights directive allocates slots the effect fills
 // through lightEmit, a pass the card does not run — so the honest answer is
