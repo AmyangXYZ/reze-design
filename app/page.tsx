@@ -2420,10 +2420,10 @@ function arrowOverlay(
 /** The editor waits for the built-ins: auto-style, the look packs and the scene
  *  it opens on all name them (lib/stock). */
 export default function Page() {
-  // Asked for at HTML parse rather than after the scripts: on a first visit
-  // over a slow link this request is most of the wait, and the shelf's fetch
-  // (lib/stock) then takes the preloaded response.
-  preload("/api/library/stock", { as: "fetch", crossOrigin: "anonymous" })
+  // Asked for at HTML parse rather than after the scripts, and the shelf's
+  // fetch (lib/stock) then takes the preloaded response. Only the stamp: the
+  // shelf's own URL carries it, so it can't be named here.
+  preload("/api/library/stock/stamp", { as: "fetch", crossOrigin: "anonymous" })
   return useStockWhole() ? <Lab /> : null
 }
 

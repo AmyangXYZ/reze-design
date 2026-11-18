@@ -101,7 +101,8 @@ export function loadStock(): Promise<void> {
       resolve()
     })
     const attempt = () =>
-      fetchJson<Partial<Served>>("/api/library/stock")
+      fetchJson<{ v?: string }>("/api/library/stock/stamp")
+        .then(({ v }) => fetchJson<Partial<Served>>(`/api/library/stock?v=${encodeURIComponent(v ?? "")}`))
         .then((d) => {
           fresh = true
           retrySettled("stock")
