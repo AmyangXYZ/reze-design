@@ -1,4 +1,5 @@
 import "server-only"
+import { createHash } from "node:crypto"
 import { NextResponse } from "next/server"
 
 // Public reads, cached at Vercel's CDN, so the requests every open tab makes
@@ -33,4 +34,22 @@ export function publicJson(body: unknown): NextResponse {
       "Vercel-CDN-Cache-Control": "max-age=60, stale-while-revalidate=300",
     },
   })
+}
+
+/**
+ * A short fingerprint of a public body, for a list too big to refetch every
+ * minute (the stock, the community presets). The client asks a tiny route for
+ * the stamp, which takes the minute-long cache above, then asks for the list
+ * as `?v=<stamp>`, which `stampedJson` lets the CDN and the browser keep for a
+ * year. Content, not a timestamp: the library tag is cleared by every like,
+ * and the db scripts do not bump `updated_at`.
+ */
+export const stampOf = (body: unknown): string =>
+  createHash("sha1").update(JSON.stringify(body)).digest("base64url").slice(0, 12)
+
+/** `body` cached for good when the request named its current stamp; a stale or
+ *  missing one gets `publicJson`, so nothing old is pinned under a new stamp. */
+export function stampedJson(body: unknown, stamp: string, asked: string | null): NextResponse {
+  if (asked !== stamp) return publicJson(body)
+  return NextResponse.json(body, { headers: { "Cache-Control": "public, max-age=31536000, immutable" } })
 }

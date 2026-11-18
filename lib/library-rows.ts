@@ -1,8 +1,11 @@
 import "server-only"
+import { unstable_cache } from "next/cache"
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm"
 import { db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { STOCK_EMAIL } from "@/lib/admin"
+import { LIBRARY_TAG } from "@/lib/public-pages"
+import { stampOf } from "@/lib/cdn"
 
 /** Preset rows (scenes have the gallery) matching `where`, newest first. Shared
  *  by the public list (/api/library) and your own (/api/library/mine). */
@@ -40,3 +43,20 @@ export const STOCK_OWNED = sql`lower(${user.email}) = ${STOCK_EMAIL}`
 
 /** Everything else: anyone's rows, and rows whose owner deleted the account. */
 export const NOT_STOCK = or(isNull(user.email), sql`lower(${user.email}) <> ${STOCK_EMAIL}`)
+
+/** Every public preset that is not the stock (the stock has /api/library/stock),
+ *  as /api/library serves it. Cached until a write marks the library stale. */
+export const publicPresets = unstable_cache(
+  async () =>
+    (await presetRows(and(eq(schema.libraryItems.visibility, "public"), NOT_STOCK))).map((r) => ({
+      ...r,
+      owner: "user" as const,
+    })),
+  ["public-presets"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** Their stamp (lib/cdn stampOf), computed once per cache refresh. */
+export const presetsStamp = unstable_cache(async () => stampOf({ items: await publicPresets() }), ["public-presets-stamp"], {
+  tags: [LIBRARY_TAG],
+})

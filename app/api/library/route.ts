@@ -15,8 +15,8 @@ import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pag
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
-import { NOT_STOCK, presetRows } from "@/lib/library-rows"
-import { publicJson } from "@/lib/cdn"
+import { presetsStamp, publicPresets } from "@/lib/library-rows"
+import { publicJson, stampedJson } from "@/lib/cdn"
 import { parseVideoLink } from "@/lib/video-link"
 import { SCENE_FORMAT_VERSION } from "@/lib/scene"
 
@@ -161,9 +161,10 @@ export async function GET(request: Request) {
   // (lib/cdn) and never reading a session. Your own rows, private ones among
   // them, and what you liked come from /api/library/mine, which the client
   // merges in. Newest first: the library ranks by date, so this is a sensible
-  // default rather than the only signal.
-  const items = (await publicPresets()).map((r) => ({ ...r, owner: "user" as const }))
-  return publicJson({ items })
+  // default rather than the only signal. Asked as `?v=<stamp>` (./stamp), so
+  // the list leaves the function once per change, not once a minute (lib/cdn).
+  const [items, stamp] = await Promise.all([publicPresets(), presetsStamp()])
+  return stampedJson({ items }, stamp, url.searchParams.get("v"))
 }
 
 const PUBLISHED_SCENE = and(
@@ -322,12 +323,6 @@ async function galleryPage(
     nextCursor: scenes.length > limit && last ? cursorOf(last) : null,
   }
 }
-
-/** Every public preset, cached like the gallery. */
-// Built-ins have their own route (/api/library/stock), which the editor waits on.
-const publicPresets = unstable_cache(() => presetRows(and(eq(schema.libraryItems.visibility, "public"), NOT_STOCK)), ["public-presets"], {
-  tags: [LIBRARY_TAG],
-})
 
 export async function POST(request: Request) {
   if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })

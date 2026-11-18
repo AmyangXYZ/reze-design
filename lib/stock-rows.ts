@@ -1,10 +1,10 @@
 import "server-only"
-import { createHash } from "node:crypto"
 import { unstable_cache } from "next/cache"
 import { and, asc, eq, isNull, sql } from "drizzle-orm"
 import { db, hasDatabase, schema } from "@/lib/db"
 import { STOCK_OWNED, presetRows } from "@/lib/library-rows"
 import { LIBRARY_TAG } from "@/lib/public-pages"
+import { stampOf } from "@/lib/cdn"
 import type { LibraryItem } from "@/lib/library"
 import type { LookStyle } from "@/lib/materials"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
@@ -71,16 +71,9 @@ export async function stockShelf() {
   return { items, styles, styleGraphs }
 }
 
-/**
- * A short fingerprint of the shelf's content, so the 1.8MB shelf can be cached
- * forever under `?v=` and only the few bytes of this go stale every minute.
- * Content, not a timestamp: the library tag is cleared by every like and every
- * community publish, and the db scripts don't bump `updated_at`. Computed once
- * per cache refresh, not per request.
- */
+/** The shelf's stamp (lib/cdn stampOf), computed once per cache refresh. */
 export const stockStamp = unstable_cache(
-  async (): Promise<string> =>
-    createHash("sha1").update(JSON.stringify(await stockShelf())).digest("base64url").slice(0, 12),
+  async (): Promise<string> => stampOf(await stockShelf()),
   ["stock-stamp"],
   { tags: [LIBRARY_TAG] },
 )

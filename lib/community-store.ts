@@ -114,7 +114,8 @@ export function load(force = false): Promise<CommunityItem[]> {
     })
   }
   const gen = ++generation
-  const run = fetchJson<{ items?: PublicRow[] }>("/api/library")
+  const run = fetchJson<{ v?: string }>("/api/library/stamp")
+    .then(({ v }) => fetchJson<{ items?: PublicRow[] }>(`/api/library?v=${encodeURIComponent(v ?? "")}`))
     .then((d) => {
       if (gen !== generation) return cache ?? []
       publicRows = d.items ?? []

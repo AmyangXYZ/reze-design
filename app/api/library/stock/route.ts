@@ -8,15 +8,11 @@
 // or missing stamp gets the ordinary minute-long cache, so nothing old is ever
 // pinned under a new stamp.
 
-import { NextResponse, type NextRequest } from "next/server"
+import type { NextRequest } from "next/server"
 import { stockShelf, stockStamp } from "@/lib/stock-rows"
-import { publicJson } from "@/lib/cdn"
+import { stampedJson } from "@/lib/cdn"
 
 export async function GET(request: NextRequest) {
-  const v = request.nextUrl.searchParams.get("v")
   const [shelf, stamp] = await Promise.all([stockShelf(), stockStamp()])
-  if (v !== stamp) return publicJson(shelf)
-  return NextResponse.json(shelf, {
-    headers: { "Cache-Control": "public, max-age=31536000, immutable" },
-  })
+  return stampedJson(shelf, stamp, request.nextUrl.searchParams.get("v"))
 }
