@@ -2516,7 +2516,10 @@ function TimelineCanvas({
         const unit = getAxisConfig(n.tab).unit === "\u00b0" ? 1 : n.tab === "morph" ? 0.01 : 0.1
         const df = e.key === "ArrowLeft" ? -many : e.key === "ArrowRight" ? many : 0
         const dv = e.key === "ArrowUp" ? unit * many : e.key === "ArrowDown" ? -unit * many : 0
-        n.onMoveCurveSelection(items, df, dv, items[0].origFrame)
+        // The playhead stays where it is, so the pose being fixed stays on
+        // screen while the keys move under it.
+        const cur = Math.round(frameRef.current)
+        n.onMoveCurveSelection(items, df, dv, cur - df)
         n.onEndKeyframeDrag()
         return
       }

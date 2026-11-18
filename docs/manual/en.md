@@ -602,7 +602,7 @@ pattern stays put when the camera moves. For something the character stands
 | `rzPointCount()` · `rzPoint(i)` | Bones matched by `#points`: `{ pos, tip }` |
 | `rzWorldPos(ray, depth)` | This pixel's depth as a world point |
 | `rzProject(p)` | A world point on screen: `xy` uv, `z` distance, comparable to `depth`, negative behind the camera |
-| `rzCastDistance(uv)` | Screen pixels to the cast's silhouette — 0 on her, positive outside |
+| `rzCastDistance(uv)` | Screen pixels to the cast's silhouette — 0 on her, positive outside; in `gridStep`, as the last frame left it |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | Which object and material drew this pixel (field mounts) |
 | `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point — in `background`/`foreground`, `rzShadow` is 1 and `rzLightsDiffuse` does not exist |
 | `rzSunDir()` · `rzSunColor()` · `rzWorldSpecular(dir, roughness)` | Toward the sun, the light it brings, and the sky seen along `dir` (the HDRI blurred for that roughness, or the world light by direction) — scene-linear, what the materials reflect |

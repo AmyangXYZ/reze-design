@@ -506,7 +506,7 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 | `rzPointCount()` · `rzPoint(i)` | `#points` 匹配到的骨骼：`{ pos, tip }` |
 | `rzWorldPos(ray, depth)` | 当前像素深度对应的世界坐标 |
 | `rzProject(p)` | 世界点在屏幕上的位置：`xy` 为 uv，`z` 为距离，可与 `depth` 比较，在相机后方为负 |
-| `rzCastDistance(uv)` | 到角色轮廓的屏幕像素距离：角色上为 0，外部为正 |
+| `rzCastDistance(uv)` | 到角色轮廓的屏幕像素距离：角色上为 0，外部为正；在 `gridStep` 中读到的是上一帧的 |
 | `rzObjectAt(uv)` · `rzMaterialAt(uv)` | 此像素由哪个物体和材质绘制（场挂载点） |
 | `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | 某点的太阳阴影、环境光和灯光；在 `background`/`foreground` 中 `rzShadow` 恒为 1，`rzLightsDiffuse` 不存在 |
 | `rzSunDir()` · `rzSunColor()` · `rzWorldSpecular(dir, roughness)` | 指向太阳的方向、太阳带来的光，以及沿 `dir` 看到的天空（按该粗糙度模糊的 HDRI，或按方向的环境光）——场景线性，与材质反射的相同 |
