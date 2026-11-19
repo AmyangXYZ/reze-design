@@ -11279,6 +11279,10 @@ function Lab() {
                         <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
                         <Switch size="sm" checked={settings.eyes.enabled} onCheckedChange={(v) => patch("eyes", { enabled: v })} />
                       </div>
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.eyesThroughHair}</span>
+                        <Switch size="sm" checked={settings.eyes.throughHair} onCheckedChange={(v) => patch("eyes", { throughHair: v })} />
+                      </div>
                       {/* Auto blink, past a hairline: its switch, then its
                           dials, always there and inert while off. */}
                       <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">

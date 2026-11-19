@@ -957,6 +957,7 @@ const en = {
        *  transparent ground still catches shadow and still writes depth. */
       showGround: "Show ground",
       eyesOnCamera: "Look at camera",
+      eyesThroughHair: "Eyes through hair",
       autoBlink: "Auto blink",
       blinkInterval: "Interval",
       blinkSpeed: "Speed",
@@ -2127,6 +2128,7 @@ const zh: Dictionary = {
       color: "颜色",
       showGround: "显示地面",
       eyesOnCamera: "看镜头",
+      eyesThroughHair: "眼透",
       autoBlink: "自动眨眼",
       blinkInterval: "间隔",
       blinkSpeed: "速度",

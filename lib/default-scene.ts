@@ -191,7 +191,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     ground: { enabled: true, color: "#ed6aff", size: 160, opacity: 0.48, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
     // Her eyes follow the camera: the first thing a visitor sees should look back.
-    eyes: { enabled: true },
+    eyes: { enabled: true, throughHair: true },
     jelly: DEFAULT_JELLY,
     blink: DEFAULT_BLINK,
     motionBlur: DEFAULT_MOTION_BLUR,

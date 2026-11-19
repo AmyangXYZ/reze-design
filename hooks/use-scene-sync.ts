@@ -598,7 +598,14 @@ export function useSceneSync({
     const engine = engineRef.current
     if (!engine || !ready) return
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
-  }, [engineRef, ready, castIds, settings.eyes])
+  }, [engineRef, ready, castIds, settings.eyes.enabled])
+
+  // ── Eyes through hair ──
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const id of castIds) engine.setModelSeeThroughHair(id, settings.eyes.throughHair)
+  }, [engineRef, ready, castIds, settings.eyes.throughHair])
 
   // ── Auto blink ──
   //
