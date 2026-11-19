@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input"
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
-import { Camera, Film, Square } from "lucide-react"
+import { Camera, ChevronRight, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Notice } from "@/components/ui/notice"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
@@ -122,6 +123,8 @@ type ExportPrefs = {
   markSize: number
   markOpacity: number
   markItalic: boolean
+  /** The watermark's settings unfolded under its switch. */
+  markOpen: boolean
 }
 const EXPORT_DEFAULTS: ExportPrefs = {
   aspect: "2.39:1",
@@ -137,6 +140,7 @@ const EXPORT_DEFAULTS: ExportPrefs = {
   markSize: MARK_SIZE.default,
   markOpacity: MARK_OPACITY_DEFAULT,
   markItalic: false,
+  markOpen: false,
 }
 
 function readExportPrefs(): ExportPrefs {
@@ -159,6 +163,7 @@ function readExportPrefs(): ExportPrefs {
       markSize: typeof p.markSize === "number" ? Math.min(MARK_SIZE.max, Math.max(MARK_SIZE.min, p.markSize)) : MARK_SIZE.default,
       markOpacity: typeof p.markOpacity === "number" ? Math.min(1, Math.max(0.1, p.markOpacity)) : MARK_OPACITY_DEFAULT,
       markItalic: p.markItalic === true,
+      markOpen: p.markOpen === true,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -201,7 +206,7 @@ export function exportDims(): [number, number] {
 }
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   // Each row is an ink zone: a letterboxed frame can stand some rows on the
   // black matte and the rest on the picture.
   return (
@@ -482,6 +487,7 @@ export const RenderPanel = memo(function RenderPanel({
   const [markSize, setMarkSize] = useState(prefs.markSize)
   const [markOpacity, setMarkOpacity] = useState(prefs.markOpacity)
   const [markItalic, setMarkItalic] = useState(prefs.markItalic)
+  const [markOpen, setMarkOpen] = useState(prefs.markOpen)
   // The field starts as the account's handle, a real value to edit. Once
   // edited, what was typed is the line, empty included.
   const handle = useSession().data?.user?.username
@@ -510,8 +516,8 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic })
-  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic, markOpen })
+  }, [aspect, quality, watermark, bitrate, codec, fps, markName, markPlace, markMoving, markColor, markSize, markOpacity, markItalic, markOpen])
   // What the frame gets: none on a compositing handoff, where the picture
   // goes on to be composited and a mark would be baked into the plate.
   const markOut = useMemo<Mark | null>(
@@ -1071,10 +1077,20 @@ export const RenderPanel = memo(function RenderPanel({
             </Notice>
           )}
           {/* The watermark, past a hairline: one switch for the lockup, then its
-              author line, place, motion and colour, always there and inert
-              while off. Disabled (not hidden) for a compositing handoff. */}
-          <div className="mt-2.5 border-t border-line pt-2.5">
-            <Row label={t.render.watermark}>
+              author line, place, motion and colour, folded under its name
+              (remembered) and inert while off. Disabled (not hidden) for a
+              compositing handoff. */}
+          <Collapsible open={markOpen} onOpenChange={setMarkOpen} className="mt-2.5 border-t border-line pt-2.5">
+            <Row
+              label={
+                <CollapsibleTrigger asChild>
+                  <Button variant="bare" className="-ml-0.5 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                    <ChevronRight className={cn("size-3 transition-transform", markOpen && "rotate-90")} />
+                    {t.render.watermark}
+                  </Button>
+                </CollapsibleTrigger>
+              }
+            >
               <Switch
                 checked={compositing ? false : watermark}
                 onCheckedChange={setWatermark}
@@ -1082,7 +1098,7 @@ export const RenderPanel = memo(function RenderPanel({
                 className="scale-75"
               />
             </Row>
-            <div className={cn("mt-1.5", (!watermark || compositing || exporting) && "pointer-events-none opacity-40")}>
+            <CollapsibleContent className={cn("mt-1.5", (!watermark || compositing || exporting) && "pointer-events-none opacity-40")}>
               <Row label={t.render.markName}>
                 <Input
                   variant="bare"
@@ -1110,8 +1126,8 @@ export const RenderPanel = memo(function RenderPanel({
               <Row label={t.render.markColor}>
                 <ColorField value={markColor} onChange={setMarkColor} />
               </Row>
-            </div>
-          </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
 
         {/* No section title (the surface hosting this already says Export) and
