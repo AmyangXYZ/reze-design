@@ -34,6 +34,7 @@ import { BONE_GROUPS } from "@/lib/animation";
 import { cn } from "@/lib/utils";
 import { useTimelineView } from "@/hooks/use-timeline-view";
 import { useT } from "@/lib/i18n";
+import type { TimelineMarker } from "@/lib/scene-settings";
 
 
 /**
@@ -115,6 +116,9 @@ export function Dopesheet({
   outline = null,
   /** The right column: the picked track's properties. */
   inspector = null,
+  /** The scene's markers, and how to change them: on every track. */
+  markers,
+  onMarkers,
 }: {
   playheadDrawRef: RefObject<((frame: number) => void) | null>;
   audioPeaks: readonly number[] | null;
@@ -132,6 +136,8 @@ export function Dopesheet({
   dialCurves?: DialCurvesData | null;
   outline?: OutlineData | null;
   inspector?: ReactNode;
+  markers?: readonly TimelineMarker[];
+  onMarkers?: (list: TimelineMarker[]) => void;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
@@ -484,6 +490,8 @@ export function Dopesheet({
                 audioDuration={audioDuration}
                 trailing={trailing}
                 inspector={inspector}
+                markers={markers}
+                onMarkers={onMarkers}
                 initialView={
                   restored
                     ? {

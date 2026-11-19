@@ -304,6 +304,11 @@ export type SceneSettings = {
     speed: number
   }
   /**
+   * The timeline's markers: frames picked out to come back to, each with an
+   * optional name, sorted, one per frame. Shared by every track. Absent is none.
+   */
+  markers?: TimelineMarker[]
+  /**
    * Jelly eyes (果冻眼). Live in the engine (Engine.setModelJellyEyes): the
    * irises squash on a blink and swell as she moves, then wobble back.
    */
@@ -437,6 +442,24 @@ export const PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 export const DEFAULT_PLAYBACK: SceneSettings["playback"] = { speed: 1 }
 
 /** A stored speed as one of PLAYBACK_SPEEDS — the nearest, or 1 for nonsense. */
+export type TimelineMarker = { frame: number; name?: string }
+
+/** Markers as stored: whole frames, sorted, one per frame, a name only when
+ *  it has text; none is absent. */
+export function markersFrom(v: unknown): TimelineMarker[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const byFrame = new Map<number, TimelineMarker>()
+  for (const m of v) {
+    const f = (m as TimelineMarker | null)?.frame
+    if (typeof f !== "number" || !Number.isFinite(f) || f < 0) continue
+    const frame = Math.round(f)
+    const name = typeof m.name === "string" ? m.name.trim() : ""
+    byFrame.set(frame, name ? { frame, name } : { frame })
+  }
+  const list = [...byFrame.values()].sort((a, b) => a.frame - b.frame)
+  return list.length ? list : undefined
+}
+
 export function playbackSpeedFrom(v: unknown): number {
   if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return 1
   return PLAYBACK_SPEEDS.reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 1)

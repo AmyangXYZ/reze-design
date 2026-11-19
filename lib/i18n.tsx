@@ -896,6 +896,10 @@ const en = {
       unitFrames: "Frames",
       unitTime: "Time",
       endFrame: "Clip end frame",
+      marker: "Marker (M)",
+      markerName: "Name",
+      markerFrame: "At",
+      markerDelete: "Delete",
     },
     kinds: {
       cameraMotion: "camera motion",
@@ -2079,6 +2083,10 @@ const zh: Dictionary = {
       unitFrames: "帧",
       unitTime: "秒",
       endFrame: "片段结束帧",
+      marker: "标记 (M)",
+      markerName: "名称",
+      markerFrame: "位置",
+      markerDelete: "删除",
     },
     kinds: {
       cameraMotion: "镜头动作",

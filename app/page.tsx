@@ -306,7 +306,7 @@ import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, PLAYBACK_SPEEDS, playbackSpeedFrom, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, PLAYBACK_SPEEDS, playbackSpeedFrom, markersFrom, type SceneSettings, type TimelineMarker } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -3490,6 +3490,7 @@ function Lab() {
   const [dockGroup, setDockGroup] = useState<"cast" | "clips" | "music" | "materials" | null>("cast")
   const pane = openRow ?? dockGroup
   // The transport's speed word. Stable, since AnimPlayer is memoized.
+  const setMarkers = useCallback((list: TimelineMarker[]) => setSettings((s2) => ({ ...s2, markers: markersFrom(list) })), [])
   const setPlaybackSpeed = useCallback(
     (speed: number) => setSettings((s2) => ({ ...s2, playback: { speed: playbackSpeedFrom(speed) } })),
     [],
@@ -12322,6 +12323,8 @@ function Lab() {
                       }
                       spanFrames={Math.round(animDuration * FPS)}
                       trailing={chrome}
+                      markers={settings.markers}
+                      onMarkers={setMarkers}
                       outline={{
                         source: outlineSource,
                         section,

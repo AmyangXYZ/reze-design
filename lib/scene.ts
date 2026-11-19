@@ -10,7 +10,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, markersFrom, DEFAULT_PHYSICS,
   LEGACY_VIEW,
   audioFrom,
   bloomFrom,
@@ -1132,6 +1132,7 @@ export function parseSceneDoc(
         blink: { ...DEFAULT_BLINK, ...settings.blink },
         motionBlur: { ...DEFAULT_MOTION_BLUR, ...settings.motionBlur },
         playback: { speed: playbackSpeedFrom(settings.playback?.speed ?? DEFAULT_PLAYBACK.speed) },
+        markers: markersFrom(settings.markers),
         // Same merge, same reason: a document written before the 0.4.0 chrome
         // carries neither block, and spreading an absent one is a no-op that
         // leaves the defaults — no blur, no outlines, exactly how it looked.
@@ -1928,6 +1929,7 @@ function restored(base: Scene): Scene {
         blink: { ...base.state.settings.blink, ...settingsBase.blink },
         motionBlur: { ...base.state.settings.motionBlur, ...settingsBase.motionBlur },
         playback: { speed: playbackSpeedFrom(settingsBase.playback?.speed ?? base.state.settings.playback.speed) },
+        markers: markersFrom(settingsBase.markers ?? base.state.settings.markers),
         stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
         stageView: stageViewFromDoc(settingsBase.stageView ?? base.state.settings.stageView),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),

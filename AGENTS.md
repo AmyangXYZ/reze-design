@@ -110,6 +110,8 @@ The last two carry an `eslint-disable` with the reason.
 - the graph node card's `zinc-900` (canvas content that must stand off the
   canvas);
 - Reze's violet brand mark (`--color-reze`);
+- the timeline's marker yellow (`--color-marker`): its flags, the ticks on the
+  scrub bar and the marker button;
 - the white library-door pills with `text-zinc-950`;
 - the white handle on colour pickers;
 - white text over cover images;

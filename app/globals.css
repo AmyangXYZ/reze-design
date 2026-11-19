@@ -1023,6 +1023,8 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
      on this ground. The verified check — a brand mark, outside the three
      interaction accents. */
   --color-reze: oklch(70.2% 0.183 293.541); /* = violet-400 */
+  /* The timeline's markers: a bright yellow that holds on either sheet. */
+  --color-marker: oklch(85.2% 0.199 91.936); /* = yellow-400 */
 
   /* TYPE: four sizes — 2xs (11) captions, counters, chips · xs (12) the
      chrome's body · sm (14) titles · base (16) page headings. 2xs is the one

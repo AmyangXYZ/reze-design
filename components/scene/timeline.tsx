@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Flag,
   MoveHorizontal,
   MoveVertical,
   Pause,
@@ -57,6 +58,8 @@ import {
 } from "@/components/scene/effect-lanes"
 import { DialCurves, type DialCurvesData } from "@/components/scene/dial-curves"
 import { OUTLINER_W } from "@/components/timeline/outliner"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import type { TimelineMarker } from "@/lib/scene-settings"
 
 // ─── Timeline constants ─────────────────────────────────────────────────
 export const DOPE_H = 26
@@ -179,6 +182,10 @@ const C = {
     return ink(0.18)
   },
   playhead: "#d83838",
+  // --color-marker (globals.css): the markers, one colour on every track.
+  marker: "oklch(85.2% 0.199 91.936)",
+  // The words on a marker's tag: near-black, on either sheet.
+  markerText: "#0f0f12",
   diamondSel: "#60a5fa",
   get keyDotSel() {
     return ink(0.7)
@@ -375,19 +382,15 @@ export function defaultTabForSelection(kind: SelectionKind): string {
 }
 
 /** Scrub playhead 0…frameCount — track/thumb aligned with toolbar (Tailwind tokens). */
-/**
- * The position bar's length, set so the outliner's edge below falls midway
- * between the bar's end and the counter box. Tied to the outliner's width, so
- * the two move together; the offset is the header's content left of the bar
- * plus half the gap after it, as measured on screen.
- */
-const FRAME_BAR_W = OUTLINER_W - 108.5
+/** The position bar's length: long enough to read the markers' ticks along it. */
+const FRAME_BAR_W = OUTLINER_W + 56
 
 function TransportFrameSlider({
   thumbRef,
   frameCount,
   value,
   onChange,
+  markers,
 }: {
   /** Filled by the parent so the playback rAF can move the thumb without a
    *  render — see the draw wrapper in Timeline. */
@@ -395,6 +398,8 @@ function TransportFrameSlider({
   frameCount: number
   value: number
   onChange: (f: number) => void
+  /** Drawn as ticks along the bar; a press beside one lands on it. */
+  markers: readonly TimelineMarker[]
 }) {
   const dict = useT()
   const trackRef = useRef<HTMLDivElement>(null)
@@ -405,10 +410,12 @@ function TransportFrameSlider({
       const el = trackRef.current
       if (!el || frameCount <= 0) return
       const rect = el.getBoundingClientRect()
-      const t = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(rect.width, 1)))
-      onChange(Math.round(t * frameCount))
+      const x = clientX - rect.left
+      const t = Math.max(0, Math.min(1, x / Math.max(rect.width, 1)))
+      const near = markers.find((m) => Math.abs((m.frame / frameCount) * rect.width - x) < 4)
+      onChange(near ? Math.min(frameCount, near.frame) : Math.round(t * frameCount))
     },
-    [frameCount, onChange],
+    [frameCount, onChange, markers],
   )
 
   useEffect(() => {
@@ -467,6 +474,19 @@ function TransportFrameSlider({
             moved by playback without a render (the draw wrapper in Timeline). */}
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line-strong" />
         <div className="pointer-events-none absolute top-1/2 left-0 h-px -translate-y-1/2 bg-foreground" style={{ width: `${pct}%` }} />
+        {!disabled &&
+          markers.map((m) =>
+            m.frame <= frameCount ? (
+              <div
+                key={m.frame}
+                title={m.name || formatFrame(m.frame, "frames")}
+                className="absolute top-1/2 flex h-3 w-1.5 -translate-x-1/2 -translate-y-1/2 justify-center"
+                style={{ left: `${(m.frame / frameCount) * 100}%` }}
+              >
+                <div className="h-full w-0.5 rounded-full bg-marker" />
+              </div>
+            ) : null,
+          )}
         <div
           ref={thumbRef}
           className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
@@ -629,6 +649,10 @@ interface TimelineCanvasProps {
    *  via `ref.current(frame)`, bypassing React reconciliation for 60Hz playhead
    *  updates. Populated by TimelineCanvas on mount. */
   playheadDrawRef?: RefObject<((frame: number) => void) | null>
+  /** The scene's markers, sorted by frame. */
+  markers: readonly TimelineMarker[]
+  /** A press on a marker's flag: the playhead goes there and its editor opens. */
+  onPickMarker: (frame: number) => void
 }
 
 function TimelineCanvas({
@@ -665,6 +689,8 @@ function TimelineCanvas({
   onEndKeyframeDrag,
   playheadDrawRef,
   dragRedrawRef,
+  markers,
+  onPickMarker,
 }: TimelineCanvasProps) {
   const dict = useT()
   const ops = useClipOps()
@@ -692,6 +718,8 @@ function TimelineCanvas({
     frameRef.current = currentFrame
   })
   const sizeRef = useRef({ w: 0, h: 0, dpr: 0 })
+  /** Where each named marker's tag was last drawn, so a press on it picks it. */
+  const markerTagsRef = useRef<Array<{ frame: number; x0: number; x1: number; y0: number; y1: number }>>([])
   /** Offscreen cache: ruler + grid + curves + dopesheet. Repainted only when
    *  non-currentFrame deps change, so playback ticks just blit + draw the playhead. */
   const staticCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1581,6 +1609,51 @@ function TimelineCanvas({
         }
       }
 
+      // ── Markers: a flag on the ruler, a line down the tracks ──
+      ctx.fillStyle = C.marker
+      ctx.strokeStyle = C.marker
+      ctx.lineWidth = 1
+      markerTagsRef.current = []
+      for (const { frame: mf, name } of markers) {
+        const mx = Math.round(toX(mf)) + 0.5
+        if (mx < LABEL_W - 4 || mx > w + 4) continue
+        ctx.globalAlpha = 0.6
+        ctx.beginPath()
+        ctx.moveTo(mx, RULER_H)
+        ctx.lineTo(mx, h)
+        ctx.stroke()
+        ctx.globalAlpha = 1
+        ctx.beginPath()
+        ctx.moveTo(mx - 3.5, RULER_H - 9)
+        ctx.lineTo(mx + 3.5, RULER_H - 9)
+        ctx.lineTo(mx + 3.5, RULER_H - 3)
+        ctx.lineTo(mx, RULER_H)
+        ctx.lineTo(mx - 3.5, RULER_H - 3)
+        ctx.closePath()
+        ctx.fill()
+        // Its name on a tag flown from the line, just under the ruler: the
+        // marker's yellow, the words dark on it.
+        if (name) {
+          ctx.save()
+          ctx.font = `500 10px ${FONT}`
+          ctx.textAlign = "left"
+          ctx.textBaseline = "middle"
+          const tw = Math.ceil(ctx.measureText(name).width)
+          const tagX = mx - 0.5
+          const tagY = RULER_H + 1
+          const tagH = 14
+          ctx.fillStyle = C.marker
+          ctx.beginPath()
+          ctx.roundRect(tagX, tagY, tw + 10, tagH, [0, 3, 3, 0])
+          ctx.fill()
+          ctx.fillStyle = C.markerText
+          ctx.fillText(name, tagX + 5, tagY + tagH / 2 + 0.5)
+          markerTagsRef.current.push({ frame: mf, x0: tagX, x1: tagX + tw + 10, y0: tagY, y1: tagY + tagH })
+          ctx.restore()
+          ctx.fillStyle = C.marker
+        }
+      }
+
       // ── Playhead ──
       const px = toX(frame)
       if (px >= LABEL_W && px <= w) {
@@ -1626,7 +1699,7 @@ function TimelineCanvas({
     }
     // dict.lab.timeline, because the canvas PAINTS its own empty states — a
     // language change has to repaint them, and nothing else here would.
-  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, unit, blank, parentHolds, getDopeFrames, dict.lab.timeline])
+  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, unit, blank, parentHolds, getDopeFrames, dict.lab.timeline, markers])
   useLayoutEffect(() => {
     drawRef2.current = draw
   }, [draw])
@@ -1727,6 +1800,8 @@ function TimelineCanvas({
       if (my < RULER_H || blank || parentHolds) {
         let f = Math.round((mx - ox) / pxPerFrame)
         if (parentHolds) for (const hold of parentHolds) if (hold.frame > 0 && Math.abs(toX(hold.frame) - mx) < 6) f = hold.frame
+        // A press on the ruler beside a marker lands on it.
+        if (my < RULER_H) for (const m of markers) if (Math.abs(toX(m.frame) - mx) < 6) f = m.frame
         return { zone: "ruler" as const, frame: Math.max(0, Math.min(frameCount, f)) }
       }
 
@@ -1784,7 +1859,7 @@ function TimelineCanvas({
       const f = Math.round((mx - ox) / pxPerFrame)
       return { zone: "curve-empty" as const, frame: Math.max(0, Math.min(frameCount, f)) }
     },
-    [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, tab, getDopeFrames],
+    [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, tab, getDopeFrames, markers],
   )
 
   // Same for a set of curve-handle selection entries: resolve each to its
@@ -2092,6 +2167,29 @@ function TimelineCanvas({
     ],
   )
 
+  /** The marker under the pointer: its flag on the ruler, or its line below
+   *  where no keyframe is in the way. */
+  const markerAtPoint = useCallback(
+    (e: React.MouseEvent): TimelineMarker | null => {
+      const el = canvasRef.current
+      if (!el || markers.length === 0) return null
+      const rect = el.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      if (mx < LABEL_W) return null
+      const tag = markerTagsRef.current.find((t) => mx >= t.x0 && mx <= t.x1 && my >= t.y0 && my <= t.y1)
+      if (tag) return markers.find((m) => m.frame === tag.frame) ?? null
+      const onRuler = my < RULER_H
+      if (!onRuler) {
+        const zone = hitTest(e)?.zone
+        if (zone !== "ruler" && zone !== "dope-empty" && zone !== "curve-empty") return null
+      }
+      const reach = onRuler ? 6 : 3
+      return markers.find((m) => Math.abs(LABEL_W - scrollX + m.frame * pxPerFrame - mx) < reach) ?? null
+    },
+    [markers, hitTest, scrollX, pxPerFrame],
+  )
+
   const onMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const el = canvasRef.current
@@ -2339,6 +2437,8 @@ function TimelineCanvas({
       }
       el.style.cursor = overStickyBox
         ? "move"
+        : !drag.current && markerAtPoint(e)
+          ? "pointer"
         : hit?.zone === "dope"
           ? "ew-resize"
           : hit?.zone === "curve" || hit?.zone === "morph-curve" || hit?.zone === "camera-curve"
@@ -2351,7 +2451,7 @@ function TimelineCanvas({
                 ? "crosshair"
                 : "default"
     },
-    [hitTest, pxPerFrame, yZoom, scrollX, frameCount, audioPeaks, tab, clip, cameraTrack, selectedBone, selectedMorph, onSetCurrentFrame, onMoveDopeKeyframe, onMoveDopeColumns, onMarqueeSelect, onMarqueeSelectCurve, onMoveCurveSelection, getDopeFrames, onMoveCurveKeyframe, onMoveMorphKeyframe, onMoveCameraKeyframe],
+    [hitTest, pxPerFrame, yZoom, scrollX, frameCount, audioPeaks, tab, clip, cameraTrack, selectedBone, selectedMorph, onSetCurrentFrame, onMoveDopeKeyframe, onMoveDopeColumns, onMarqueeSelect, onMarqueeSelectCurve, onMoveCurveSelection, getDopeFrames, onMoveCurveKeyframe, onMoveMorphKeyframe, onMoveCameraKeyframe, markerAtPoint],
   )
 
   const endDrag = useCallback(() => {
@@ -2556,6 +2656,13 @@ function TimelineCanvas({
       style={{ width: "100%", height: "100%", display: "block", outline: "none" }}
       onMouseDown={(e) => {
         e.currentTarget.focus()
+        // A marker's flag or line: pick it rather than scrub or box.
+        const picked = e.button === 0 ? markerAtPoint(e) : null
+        if (picked) {
+          e.preventDefault()
+          onPickMarker(picked.frame)
+          return
+        }
         onMouseDown(e)
       }}
       onMouseMove={onMouseMove}
@@ -2563,6 +2670,88 @@ function TimelineCanvas({
       onMouseLeave={endDrag}
       onKeyDown={onKeyDown}
     />
+  )
+}
+
+/** The popover's fields: the chrome's hairline field, as an effect's dials. */
+const FIELD =
+  "block h-4 min-w-0 rounded-none border-0 border-b border-line bg-transparent p-0 text-2xs leading-4 outline-none focus:border-foreground"
+
+/** One marker's name and frame, and its deletion: what a press on its flag or line opens. */
+function MarkerEditor({
+  marker,
+  frameCount,
+  unit,
+  taken,
+  onChange,
+  onDelete,
+  onDone,
+}: {
+  marker: TimelineMarker
+  frameCount: number
+  unit: TimeUnit
+  taken: (frame: number) => boolean
+  onChange: (next: TimelineMarker) => void
+  onDelete: () => void
+  onDone: () => void
+}) {
+  const dict = useT()
+  const [name, setName] = useState(marker.name ?? "")
+  const [frameDraft, setFrameDraft] = useState<string | null>(null)
+  const commitName = () => {
+    const n = name.trim()
+    if (n !== (marker.name ?? "")) onChange(n ? { ...marker, name: n } : { frame: marker.frame })
+  }
+  const commitFrame = () => {
+    const v = frameDraft === null ? null : parseFrame(frameDraft)
+    setFrameDraft(null)
+    if (v === null) return
+    const f = Math.max(0, Math.min(frameCount, v))
+    if (f !== marker.frame && !taken(f)) onChange({ ...marker, frame: f })
+  }
+  return (
+    <>
+      <Input
+        variant="bare"
+        autoFocus
+        value={name}
+        placeholder={dict.lab.timeline.markerName}
+        aria-label={dict.lab.timeline.markerName}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commitName}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            commitName()
+            onDone()
+          }
+        }}
+        className={FIELD}
+      />
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 text-2xs">{dict.lab.timeline.markerFrame}</span>
+        <Input
+          variant="bare"
+          inputMode="numeric"
+          aria-label={dict.lab.timeline.markerFrame}
+          value={frameDraft ?? formatFrame(marker.frame, unit)}
+          onFocus={() => setFrameDraft(formatFrame(marker.frame, unit))}
+          onChange={(e) => setFrameDraft(e.target.value)}
+          onBlur={commitFrame}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+          }}
+          className={cn(FIELD, "w-14 tabular-nums")}
+        />
+        <Button
+          type="button"
+          variant="bare"
+          onClick={onDelete}
+          className="ml-auto text-2xs text-foreground hover:text-red-400"
+        >
+          {dict.lab.timeline.markerDelete}
+        </Button>
+      </div>
+    </>
   )
 }
 
@@ -2614,7 +2803,13 @@ interface TimelineProps {
   dialCurves?: DialCurvesData | null
   /** Beside the tracks, under the toolbar: the outliner. */
   aside?: ReactNode
+  /** The scene's markers, sorted by frame: drawn on every track. */
+  markers?: readonly TimelineMarker[]
+  /** The whole list, changed: a marker added, renamed, moved or deleted. */
+  onMarkers?: (list: TimelineMarker[]) => void
 }
+
+const NO_MARKERS: readonly TimelineMarker[] = []
 
 export function Timeline({
   visibleBones,
@@ -2636,6 +2831,8 @@ export function Timeline({
   visibilityLanes = null,
   dialCurves = null,
   aside = null,
+  markers = NO_MARKERS,
+  onMarkers,
 }: TimelineProps) {
   const dict = useT()
   const clip = useClipSelector((s) => s.clip)
@@ -3401,6 +3598,50 @@ export function Timeline({
     setSelectedKeyframes((prev) => [...prev])
   }, [commit, commitCamera, tab, setSelectedKeyframes])
 
+  // ── Markers ──
+  // M marks the frame under the playhead, or unmarks it, from anywhere while
+  // the timeline is open; the flag in the header does the same.
+  const markerAt = Math.round(currentFrame)
+  const onMarker = markers.some((m) => m.frame === markerAt)
+  const [editingMarker, setEditingMarker] = useState<number | null>(null)
+  const editing = editingMarker === null ? null : (markers.find((m) => m.frame === editingMarker) ?? null)
+  const toggleMarker = (frame: number) => {
+    if (!onMarkers) return
+    onMarkers(markers.some((m) => m.frame === frame) ? markers.filter((m) => m.frame !== frame) : [...markers, { frame }])
+  }
+  const toggleMarkerRef = useRef(onMarkers ? toggleMarker : undefined)
+  useEffect(() => {
+    toggleMarkerRef.current = onMarkers ? toggleMarker : undefined
+  })
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return
+      if (e.key !== "m" && e.key !== "M") return
+      const t = e.target as HTMLElement | null
+      if (t && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable)) return
+      if (!toggleMarkerRef.current) return
+      e.preventDefault()
+      toggleMarkerRef.current(Math.round(frameRef.current))
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open, frameRef])
+  const markerButton = onMarkers ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={dict.lab.timeline.marker}
+      title={dict.lab.timeline.marker}
+      aria-pressed={onMarker}
+      onClick={() => toggleMarker(markerAt)}
+      className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+    >
+      <Flag className={cn("size-3.5", onMarker && "fill-marker text-foreground")} strokeWidth={1.75} />
+    </Button>
+  ) : null
+
   return (
     <div className="flex h-full w-full select-none flex-col" style={{ fontFamily: FONT }}>
       {/* Toolbar — compact controls + channel tabs; axis hues stay exact via inline `t.color` when set */}
@@ -3483,6 +3724,7 @@ export function Timeline({
           frameCount={fc}
           value={currentFrame}
           thumbRef={thumbElRef}
+          markers={markers}
           onChange={(f) => {
             setPlaying(false)
             setCurrentFrame(f)
@@ -3634,10 +3876,14 @@ export function Timeline({
             time and the fold — sits over the column it shares the width of. */}
         {inspector ? (
           <div className="-mr-1.5 ml-1.5 flex w-58 shrink-0 items-center justify-end gap-0.5 self-stretch px-1.5">
+            {markerButton}
             {trailing}
           </div>
         ) : (
-          trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>
+          <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">
+            {markerButton}
+            {trailing}
+          </div>
         )}
       </div>
       {/* Canvas, with the outliner beside it */}
@@ -3690,7 +3936,50 @@ export function Timeline({
             onEndKeyframeDrag={onEndKeyframeDrag}
             playheadDrawRef={innerDrawRef}
             dragRedrawRef={dragRedrawRef}
+            markers={markers}
+            onPickMarker={(f) => {
+              setPlaying(false)
+              setCurrentFrame(f)
+              setEditingMarker(f)
+            }}
           />
+          {editing && (
+            <Popover open onOpenChange={(o) => !o && setEditingMarker(null)}>
+              <PopoverAnchor asChild>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute size-0"
+                  style={{ left: LABEL_W - scrollX + editing.frame * pxPerFrame, top: RULER_H }}
+                />
+              </PopoverAnchor>
+              <PopoverContent
+                side="bottom"
+                align="start"
+                className="flex w-48 flex-col gap-2 rounded-surface border-line-strong bg-surface-raised p-2.5 shadow-float"
+              >
+                <MarkerEditor
+                  key={editing.frame}
+                  marker={editing}
+                  frameCount={fc}
+                  unit={unit}
+                  taken={(f) => markers.some((m) => m.frame === f)}
+                  onChange={(next) => {
+                    onMarkers?.(markers.map((m) => (m.frame === editing.frame ? next : m)))
+                    if (next.frame !== editing.frame) {
+                      setEditingMarker(next.frame)
+                      setPlaying(false)
+                      setCurrentFrame(next.frame)
+                    }
+                  }}
+                  onDelete={() => {
+                    onMarkers?.(markers.filter((m) => m.frame !== editing.frame))
+                    setEditingMarker(null)
+                  }}
+                  onDone={() => setEditingMarker(null)}
+                />
+              </PopoverContent>
+            </Popover>
+          )}
           {dialCurves && (
             <DialCurves
               data={dialCurves}
