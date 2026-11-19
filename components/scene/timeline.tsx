@@ -151,6 +151,11 @@ function bezierY(cp0: { x: number; y: number }, cp1: { x: number; y: number }, t
 // sheet and white on a dark one. As "r,g,b".
 let INK = "255,255,255"
 const ink = (a: number) => `rgba(${INK},${a})`
+/** The markers' yellow for the sheet: yellow-400 on dark, yellow-600 on light
+ *  (--marker in globals.css), set beside INK. */
+const MARKER_ON_DARK = "oklch(85.2% 0.199 91.936)"
+const MARKER_ON_LIGHT = "oklch(68.1% 0.162 75.834)"
+let MARKER = MARKER_ON_DARK
 
 const C = {
   bg: "rgba(0,0,0,0)",
@@ -182,8 +187,10 @@ const C = {
     return ink(0.18)
   },
   playhead: "#d83838",
-  // --color-marker (globals.css): the markers, one colour on every track.
-  marker: "oklch(85.2% 0.199 91.936)",
+  // --marker (globals.css): the markers, one colour on every track.
+  get marker() {
+    return MARKER
+  },
   // The words on a marker's tag: near-black, on either sheet.
   markerText: "#0f0f12",
   diamondSel: "#60a5fa",
@@ -857,6 +864,7 @@ function TimelineCanvas({
       const rgb = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
       if (rgb) INK = rgb.slice(0, 3).join(",")
     }
+    MARKER = INK === "0,0,0" ? MARKER_ON_LIGHT : MARKER_ON_DARK
     const size = sizeRef.current
     let mainResized = false
     if (size.w !== backingW || size.h !== backingH || size.dpr !== dpr) {
@@ -1617,7 +1625,7 @@ function TimelineCanvas({
       for (const { frame: mf, name } of markers) {
         const mx = Math.round(toX(mf)) + 0.5
         if (mx < LABEL_W - 4 || mx > w + 4) continue
-        ctx.globalAlpha = 0.6
+        ctx.globalAlpha = 0.85
         ctx.beginPath()
         ctx.moveTo(mx, RULER_H)
         ctx.lineTo(mx, h)

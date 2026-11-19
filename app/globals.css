@@ -95,6 +95,8 @@
 
 :root {
   --radius: 0.45rem;
+  /* The timeline's markers: yellow-400, and yellow-600 on light paper. */
+  --marker: oklch(85.2% 0.199 91.936);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -458,6 +460,7 @@
   --input: oklch(0 0 0 / 0.18);
   --chrome-line: oklch(0 0 0 / 0.16);
   --chrome-line-strong: oklch(0 0 0 / 0.16);
+  --marker: oklch(68.1% 0.162 75.834);
 }
 [data-paper="dark"],
 .cover[data-ink="light"] [data-paper="auto"] {
@@ -1023,8 +1026,8 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
      on this ground. The verified check — a brand mark, outside the three
      interaction accents. */
   --color-reze: oklch(70.2% 0.183 293.541); /* = violet-400 */
-  /* The timeline's markers: a bright yellow that holds on either sheet. */
-  --color-marker: oklch(85.2% 0.199 91.936); /* = yellow-400 */
+  /* The timeline's markers: yellow, deepened on a light sheet (--marker). */
+  --color-marker: var(--marker);
 
   /* TYPE: four sizes — 2xs (11) captions, counters, chips · xs (12) the
      chrome's body · sm (14) titles · base (16) page headings. 2xs is the one
