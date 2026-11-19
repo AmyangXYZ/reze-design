@@ -52,11 +52,18 @@ const sceneRow = (id: string) =>
     { tags: [itemTag(id), ITEMS_TAG] },
   )()
 
+/** A scene's short id: six base58 characters, or ten after a collision
+ *  (shortId in app/api/library/route.ts). */
+const SCENE_ID = /^[1-9A-HJ-NP-Za-km-z]{6}$|^[1-9A-HJ-NP-Za-km-z]{10}$/
+
 /** One read for the page and its metadata. */
 const load = cache(async (id: string) => {
   // Nothing is published where nothing is stored. See lib/db — a clone with no
   // database still runs the editor; scene links simply resolve to not-found.
-  if (!hasDatabase) return null
+  // A path that could never be a scene id (a scanner's /wp-admin/install.php,
+  // /api/config) is answered without asking the database: each new one would
+  // miss the row cache and wake it.
+  if (!hasDatabase || !SCENE_ID.test(id)) return null
   const row = await sceneRow(id)
   if (!row || row.kind !== "scene") return null
   // Private is the author's, and an admin's to inspect. A stranger holding the
