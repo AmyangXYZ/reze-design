@@ -366,7 +366,7 @@ command palette. The canvas stays in view while it works.
 
 ## 1.14 Export
 
-**Render** sets the output, aspect (16:9, 9:16, 2.39:1, 1:1, 4:3), quality (up to
+**Render** sets the output, aspect (16:9, 9:16, 2.39:1, 1:1, 4:3, 3:2), quality (up to
 4K) and an optional range. While it is open, the viewport shows the frame that
 will be recorded.
 
@@ -985,7 +985,7 @@ Grades, effects and graphs share one lifecycle.
 | Control | Options |
 | --- | --- |
 | Output | Scene · MP4, Green screen · MP4, Alpha · PNG sequence, Alpha · WebM |
-| Aspect | 16:9, 9:16, 2.39:1, 1:1, 4:3 |
+| Aspect | 16:9, 9:16, 2.39:1, 1:1, 4:3, 3:2 |
 | Quality | 1080p, 1440p, 4K |
 | Bitrate | standard, double |
 | Codec | H.264, HEVC (MP4) |

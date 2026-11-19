@@ -85,8 +85,8 @@ const MODE_TARGET: Record<OutputMode, ExportTarget> = {
   "alpha-png": "png",
   "alpha-webm": "webm",
 }
-type Aspect = "16:9" | "9:16" | "9:20" | "2.39:1" | "1:1" | "4:5" | "4:3"
-const ASPECTS: Aspect[] = ["16:9", "9:16", "9:20", "2.39:1", "1:1", "4:5", "4:3"]
+type Aspect = "16:9" | "9:16" | "9:20" | "2.39:1" | "1:1" | "4:5" | "4:3" | "3:2"
+const ASPECTS: Aspect[] = ["16:9", "9:16", "9:20", "2.39:1", "1:1", "4:5", "4:3", "3:2"]
 type Quality = "1080p" | "1440p" | "4k"
 // 1080p is the floor: below it a dance reads as a compression artefact, and
 // every platform these get shared to upscales anyway.
@@ -189,6 +189,8 @@ const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
   // 3:4 limit, so one file fits both uncropped.
   "4:5": { "1080p": [1080, 1350], "1440p": [1440, 1800], "4k": [2160, 2700] },
   "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+  // The 35mm still frame: a photo's shape, for stills and prints.
+  "3:2": { "1080p": [1620, 1080], "1440p": [2160, 1440], "4k": [3240, 2160] },
 }
 
 /** The export's frame in pixels, as last chosen: what an overlay's exact size
