@@ -128,9 +128,10 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
     },
   },
   eyes: {
-    about: "Eyes follow the camera, and show through hair.",
+    about: "Eyes (and optionally the head) follow the camera, and eyes show through hair.",
     fields: {
       enabled: { kind: "boolean", about: "Characters look at the camera." },
+      head: { kind: "boolean", about: "The head and neck turn toward the camera too, eased and within a natural reach, over the motion." },
       throughHair: { kind: "boolean", about: "Eyes show faintly through the hair over them, the anime look; off, hair covers them." },
     },
   },

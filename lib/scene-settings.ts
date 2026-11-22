@@ -277,6 +277,9 @@ export type SceneSettings = {
     /** Eyes show through the hair over them (Engine.setModelSeeThroughHair);
      *  off, the hair covers them. */
     throughHair: boolean
+    /** The head and neck turn toward the camera too, over the motion, eased
+     *  and within a person's reach (Engine.setHeadTracking). */
+    head: boolean
   }
   /**
    * Auto blink. Live in the engine (Engine.setAutoBlink): she blinks every few
@@ -431,8 +434,9 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
 
 /** What a document without an eyes block gets: off, since every scene before
  *  the toggle existed was authored with the eyes the motion gave them. Eyes
- *  through hair is on, as every scene before its switch drew them. */
-export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false, throughHair: true }
+ *  through hair is on, as every scene before its switch drew them. The head
+ *  turn is off, as every scene before it was authored. */
+export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false, throughHair: true, head: false }
 
 /** Blink is on, scenes from before it included: a character who never blinks
  *  is the first thing anyone notices. */

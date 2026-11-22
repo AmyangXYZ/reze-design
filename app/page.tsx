@@ -11570,6 +11570,18 @@ function Lab() {
                                   onCheckedChange={(on) => changeCamera({ ...camera, followTurn: on || undefined })}
                                 />
                               </div>
+                              {/* Her head turning to the camera: the other way round
+                                  from the camera turning with her face. Works under
+                                  any camera, a camera motion included, so it is
+                                  never greyed with the rows above. */}
+                              <div className="mt-2.5 flex items-center justify-between">
+                                <span className="text-xs">{t.lab.ctl.headOnCamera}</span>
+                                <Switch
+                                  size="sm"
+                                  checked={settings.eyes.head}
+                                  onCheckedChange={(v) => patch("eyes", { head: v })}
+                                />
+                              </div>
                             </DockSection>
                             <DockSection title={t.lab.ctl.sectionShot}>
                               {/* Degrees on the slider, radians in the document —

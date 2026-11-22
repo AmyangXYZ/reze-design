@@ -600,6 +600,13 @@ export function useSceneSync({
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes.enabled])
 
+  // ── Head on the camera ──
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const id of castIds) engine.setHeadTracking(id, settings.eyes.head ? {} : null)
+  }, [engineRef, ready, castIds, settings.eyes.head])
+
   // ── Eyes through hair ──
   useEffect(() => {
     const engine = engineRef.current
