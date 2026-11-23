@@ -3006,10 +3006,17 @@ function Lab() {
   // Export states its own frame a render after it opens; until it does (coming
   // from publish, say) the frame on screen holds, so the picture eases from one
   // frame to the other and never springs back to the window between them.
+  // Closed, the editor is still framed at the export's shape (restFrame): a
+  // stale aspect in the render settings must not wait for the export to show.
   // Not on a phone: its scene stays full screen whatever is open, the render's
   // settings on its options card.
-  const shownFrame =
-    framing.activeFrame ?? (!phone && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: null } : null)
+  const shownFrame = phone
+    ? framing.activeFrame
+    : (framing.activeFrame ?? (shareOpen ? { aspect: 16 / 9, watermark: null } : framing.restFrame))
+  /** The export column and the console's pane stand beside the frame only
+   *  while a render or publish surface is open; closed, the frame takes the
+   *  width and the cover's type stands on it as it does on a bare canvas. */
+  const framePanes = !phone && (shareOpen || exportOpen)
   const framed = shownFrame !== null
   const frameRect =
     shownFrame && framing.frameVp
@@ -3021,8 +3028,8 @@ function Lab() {
           // matte and none straddles the frame's edge. The preview is only
           // drawn smaller: the export renders at its own resolution.
           const rem = 16
-          const left = 26 * rem
-          const right = framing.frameVp.w - 21.75 * rem
+          const left = framePanes ? 26 * rem : 0
+          const right = framing.frameVp.w - (framePanes ? 21.75 * rem : 0)
           const top = 4 * rem
           const bottom = framing.frameVp.h - 4 * rem
           const vw = right - left
@@ -8454,8 +8461,10 @@ function Lab() {
       // exactly what <body> carries — the two agree, and the restored scene's own
       // colour lands a tick later.
       style={{
-        // Framed for an export, what lies outside the frame is a black matte.
-        backgroundColor: frameRect ? "#000" : sceneGround,
+        // Framed for an export or a publish, what lies outside the frame is a
+        // black matte. Framed at rest, it is the scene's ground, which the
+        // cover's ink is already chosen against.
+        backgroundColor: frameRect && framePanes ? "#000" : sceneGround,
         // The cover's ink is tinted toward it (globals.css) until the frame
         // sampler takes over.
         ["--scene-bg" as string]: sceneGround,
