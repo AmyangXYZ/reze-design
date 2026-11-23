@@ -377,7 +377,7 @@ export function EffectParams({
             <PopoverTrigger asChild>
               <Button
                 variant="bare"
-                className="ml-auto flex h-5 max-w-[9.5rem] min-w-0 items-center gap-1 text-2xs"
+                className="ml-auto flex h-5 max-w-[9.5rem] min-w-0 items-center gap-1 text-xs"
               >
                 <span className="min-w-0 truncate">{onSummary}</span>
                 <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
