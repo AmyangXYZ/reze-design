@@ -2706,14 +2706,16 @@ function Lab() {
     }
     setAnimByModel(drop)
     setMorphByModel(drop)
-    // An effect aimed at them is aimed at nobody now, and an effect on nobody
-    // draws nothing with no sign of why. Dropping the name gives back the
-    // default — everyone — rather than leaving a dark effect on the list.
+    // A character effect's copy is one character's, so theirs leaves with them.
+    // Any other effect aimed at them alone is aimed at nobody now, and an
+    // effect on nobody draws nothing with no sign of why: dropping the name
+    // gives back the default, everyone, rather than a dark effect on the list.
     setBgEffects((list) =>
-      list.map((e) => {
-        if (!e.models?.includes(id)) return e
+      list.flatMap((e) => {
+        if (!e.models?.includes(id)) return [e]
         const models = e.models.filter((m) => m !== id)
-        return { ...e, models: models.length ? models : undefined }
+        if (models.length === 0 && followsCharacter(e.wgsl) && !e.stage) return []
+        return [{ ...e, models: models.length ? models : undefined }]
       }),
     )
     // The focus, for the same reason: the next model can land on this id, and
@@ -6160,6 +6162,12 @@ function Lab() {
         if (expr) next[newId] = expr
         return next
       })
+      // Her effects go to the new model with her motion: a copy aimed at the old
+      // id would be aimed at nobody.
+      if (oldId !== newId)
+        setBgEffectsState((list) =>
+          list.map((e) => (e.models?.includes(oldId) ? { ...e, models: e.models.map((m) => (m === oldId ? newId : m)) } : e)),
+        )
       // The morph dresses the motion's clip, so it goes on AFTER the motion: a
       // motion that lands later rebuilds the clip and drops the merge — the
       // boot loader's order, for the same reason. Bundle first, like the clip.
