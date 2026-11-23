@@ -133,6 +133,7 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
       enabled: { kind: "boolean", about: "Characters look at the camera." },
       head: { kind: "boolean", about: "The head and neck turn toward the camera too, eased and within a natural reach, over the motion." },
       throughHair: { kind: "boolean", about: "Eyes show faintly through the hair over them, the anime look; off, hair covers them." },
+      hairOverEyes: { kind: "number", min: 0, max: 1, about: "With throughHair on, how opaque the hair is over the eyes: 0 clear, 1 covering. 0.25 is the default." },
     },
   },
   blink: {

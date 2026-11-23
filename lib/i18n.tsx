@@ -958,6 +958,8 @@ const en = {
       showGround: "Show ground",
       eyesOnCamera: "Look at camera",
       eyesThroughHair: "Eyes through hair",
+      /** How opaque the hair is where it lies over the eyes. */
+      hairOverEyes: "Opacity",
       headOnCamera: "Turn head to camera",
       autoBlink: "Auto blink",
       blinkInterval: "Interval",
@@ -2130,6 +2132,7 @@ const zh: Dictionary = {
       showGround: "显示地面",
       eyesOnCamera: "看镜头",
       eyesThroughHair: "眼透",
+      hairOverEyes: "不透明度",
       headOnCamera: "转头看镜头",
       autoBlink: "自动眨眼",
       blinkInterval: "间隔",

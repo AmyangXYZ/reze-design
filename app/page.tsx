@@ -11335,10 +11335,24 @@ function Lab() {
                           <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
                           <Switch size="sm" checked={ownEyes.enabled} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "eyes", { enabled: v })} />
                         </div>
-                        <div className="mt-2.5 flex items-center justify-between">
+                        {/* Eyes through hair, past a hairline: its switch, then
+                            its dial, always there and inert while off. */}
+                        <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
                           <span className="text-xs">{t.lab.ctl.eyesThroughHair}</span>
                           <Switch size="sm" checked={ownEyes.throughHair} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "eyes", { throughHair: v })} />
                         </div>
+                        <SliderRow
+                          label={t.lab.ctl.hairOverEyes}
+                          value={ownEyes.hairOverEyes}
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          inputMin={0}
+                          inputMax={1}
+                          disabled={!ownEyes.throughHair}
+                          onChange={(v) => patchCastEyes([eyeModel.id], "eyes", { hairOverEyes: v })}
+                          fmt={(v) => `${Math.round(v * 100)}%`}
+                        />
                         {/* Auto blink, past a hairline: its switch, then its
                             dials, always there and inert while off. */}
                         <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">

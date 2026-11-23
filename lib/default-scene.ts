@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   DEFAULT_BLOOM,
 } from "@/lib/scene-settings"
@@ -86,7 +86,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
         animation: `${DEMO}/animations-gz/Demo.vmd`,
         morph: `${DEMO}/animations-gz/Demo_morph.vmd`,
         // Her eyes follow the camera: the first thing a visitor sees should look back.
-        eyes: { enabled: true, throughHair: true },
+        eyes: { ...DEFAULT_EYES, enabled: true },
         materials: {
           groups: [
             { id: "body", label: "Body", materials: ["skin"], graph: "AG Body" },

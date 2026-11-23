@@ -626,6 +626,7 @@ export function useSceneSync({
     for (const [id, eyes] of JSON.parse(eyesKey) as [string, CastEyes][]) {
       engine.setEyeTracking(id, eyes.enabled ? {} : null)
       engine.setModelSeeThroughHair(id, eyes.throughHair)
+      engine.setModelHairOverEyes(id, eyes.hairOverEyes)
     }
   }, [engineRef, ready, eyesKey])
 

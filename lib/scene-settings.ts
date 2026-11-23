@@ -1,6 +1,6 @@
 // Scene settings: the appearance-colors + world/sun/bloom TYPE and its sRGB↔linear
 
-import { Vec3 } from "reze-engine"
+import { HAIR_OVER_EYES_DEFAULT, Vec3 } from "reze-engine"
 import type { GradeSettings } from "@/lib/grade"
 import type { FootstepSound } from "@/lib/footsteps"
 
@@ -306,6 +306,8 @@ export type CastEyes = {
   /** Eyes show through the hair over them (Engine.setModelSeeThroughHair);
    *  off, the hair covers them. */
   throughHair: boolean
+  /** How opaque that hair is over them, 0–1 (Engine.setModelHairOverEyes). */
+  hairOverEyes: number
 }
 
 /**
@@ -443,7 +445,7 @@ export const DEFAULT_HEAD: SceneSettings["eyes"] = { head: false }
 
 /** Eyes on the camera are off, as the motion gives them; through hair is on,
  *  as every scene before its switch drew them. */
-export const DEFAULT_EYES: CastEyes = { enabled: false, throughHair: true }
+export const DEFAULT_EYES: CastEyes = { enabled: false, throughHair: true, hairOverEyes: HAIR_OVER_EYES_DEFAULT }
 
 /** Blink is on, scenes from before it included: a character who never blinks
  *  is the first thing anyone notices. */
