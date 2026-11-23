@@ -974,6 +974,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | `material_shininess` | — | `value` |
 | `material_diffuse` | — | `color` |
 | `sphere_map` | `base` `strength` | `color` |
+| `toon_map` | `fac` | `color` |
 | `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
 | `uv_map` | — | `uv` |
 | `normal_map` | `color` `strength` | `normal` |

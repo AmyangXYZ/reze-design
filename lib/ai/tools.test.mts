@@ -630,7 +630,9 @@ await test("reset_to_default puts the look, camera, effects and lamps back", asy
   const r = await runSceneTool("reset_to_default", {}, h)
   assert.ok(!("error" in (r.data as object)), JSON.stringify(r.data))
   const sections = call(calls, "patchSettings").map((c) => c.args[0])
-  assert.deepEqual(sections, ["sun", "bloom"], "only sections the default has")
+  // The default's own sections, then the cast's eyes and blink, which every
+  // reset puts back to the cast defaults.
+  assert.deepEqual(sections, ["sun", "bloom", "eyes", "blink"], "the default's sections and the cast's eyes")
   assert.equal((call(calls, "setCamera")[0].args[0] as { distance: number }).distance, 40)
   assert.deepEqual(state.effects, [])
 })

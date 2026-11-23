@@ -12,7 +12,7 @@ import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { referencedFiles, relFilePath, sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, materialMapPaths, engineGroups } from "@/lib/material-maps"
 import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
-import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
+import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, CAST_EYE_DEFAULTS, type CastEyeSections } from "@/lib/scene-settings"
 import {
   DEFAULT_STAGE_TRANSFORM,
   PLANE_PIXELS_PER_UNIT,
@@ -1047,6 +1047,17 @@ export function useEngine(
     )
   }, [])
 
+  /** Cast members' own eyes, blink or jelly: `part` over what each has, or
+   *  over the default. useSceneSync applies it. */
+  const patchCastEyes = useCallback(
+    <K extends keyof CastEyeSections>(ids: string[], section: K, part: Partial<CastEyeSections[K]>) => {
+      setModels((prev) =>
+        prev.map((m) => (ids.includes(m.id) ? { ...m, [section]: { ...CAST_EYE_DEFAULTS[section], ...m[section], ...part } } : m)),
+      )
+    },
+    [],
+  )
+
   /** Whether a cast member feeds the bloom. Off is the only state written;
    *  useSceneSync applies it. */
   const setCastBloom = useCallback((id: string, on: boolean) => {
@@ -1752,6 +1763,7 @@ export function useEngine(
     setCastShadow,
     setCastFill,
     setCastBloom,
+    patchCastEyes,
     setCastVisibility,
     setMaterialVisibility,
     planes,

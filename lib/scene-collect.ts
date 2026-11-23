@@ -12,7 +12,7 @@ import type { BundleEntry } from "@/lib/bundle"
 import type { EngineModelInfo, PropInfo, StageInfo } from "@/hooks/use-engine"
 import type { AssetRef, ModelSource, SceneBackground, SceneModel, SceneOverlay, ScenePlane, SceneStageTransform } from "@/lib/scene"
 import { sceneOverlayOf, type LiveOverlay } from "@/lib/overlays"
-import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
+import { bundleRoot, modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import { dirOf, stageFolder } from "@/lib/unity-native"
 import type { BundleFile } from "@/lib/uploads"
 
@@ -45,9 +45,11 @@ export type SceneSlotsInput = {
   /** The camera VMD's display name, and the boot document's entry for it (what a
    *  served, never-re-uploaded camera track resolves back to). */
   camera: { name: string | null; booted: AssetRef | null }
-  /** The track's name, and its live src — a blob: URL means the bytes are in
-   *  `sceneFiles.audio`, anything else is a served path that travels as a URL. */
-  audio: { name: string | null; url: string | null }
+  /** The track's name, its live src — a blob: URL means the bytes are in
+   *  `sceneFiles.audio`, anything else is a served path that travels as a URL —
+   *  and the boot document's entry, for a packed track still on its way out of
+   *  the bundle. */
+  audio: { name: string | null; url: string | null; booted?: AssetRef | null }
   /** The track's companions, each the camera slot's own shape: the display
    *  name, and the boot document's entry for one never re-uploaded this
    *  session. */
@@ -160,7 +162,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // unzipped in memory, so this scene owns its assets rather than pointing
       // at someone else's — theirs can be deleted, and the bytes should be
       // counted against whoever published them.
-      const dir = booted.path.slice(0, booted.path.lastIndexOf("/") + 1)
+      const dir = bundleRoot(booted.path)
       for (const f of input.bundleFiles) {
         if (f.name.startsWith(dir)) entries.push({ path: f.name, file: f })
       }
@@ -241,6 +243,9 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       ...(m.layers ? { layers: m.layers } : {}),
       ...(m.fill === false ? { fill: false as const } : {}),
       ...(m.bloom === false ? { bloom: false as const } : {}),
+      ...(m.eyes ? { eyes: m.eyes } : {}),
+      ...(m.blink ? { blink: m.blink } : {}),
+      ...(m.jelly ? { jelly: m.jelly } : {}),
       ...(look ? { look } : {}),
       ...(origin ? { origin } : {}),
     }
@@ -261,6 +266,11 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     audio = { name: input.audio.name, url: path }
   } else if (input.audio.name && input.audio.url && !input.audio.url.startsWith("blob:")) {
     audio = { name: input.audio.name, url: input.audio.url }
+    carry(audio.url)
+  } else if (input.audio.name && input.audio.booted?.name === input.audio.name) {
+    // Not restored yet: a save that lands first keeps the track the document
+    // had, rather than writing a scene without its music.
+    audio = input.audio.booted
     carry(audio.url)
   }
   // The track's companions, named by the DOCUMENT exactly as the camera track

@@ -126,10 +126,8 @@ function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record
     // Slot 0 the relief map, slot 1 the packed property map — the game's own
     // contract (R metal, G roughness, B occlusion, A glow), which the stage
     // looks read on property_map/1. Both data, not colour.
-    const rel = `maps/${base}_N.png`
-    const props = `maps/${base}_P.png`
-    const relief: MapRef = byPath.has(dir + rel) ? { path: rel, srgb: false } : null
-    const property: MapRef = byPath.has(dir + props) ? { path: props, srgb: false } : null
+    const relief = first(base, "N")
+    const property = first(base, "P")
     if (property) out[m.name] = [relief, property]
     else if (relief) out[m.name] = [relief]
   }

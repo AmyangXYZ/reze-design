@@ -266,32 +266,12 @@ export type SceneSettings = {
      */
     floor: boolean
   }
-  /**
-   * Eyes on the camera. Live in the engine (Engine.setEyeTracking): 左目 and
-   * 右目 are solved every frame toward wherever the camera is, orbit or
-   * motion alike, and given back to the motion when off. A toggle: the
-   * engine owns how far they turn.
-   */
+  /** The cast's heads. Each cast member's eyes, blink and jelly are its own
+   *  (SceneModel.eyes, .blink, .jelly). */
   eyes: {
-    enabled: boolean
-    /** Eyes show through the hair over them (Engine.setModelSeeThroughHair);
-     *  off, the hair covers them. */
-    throughHair: boolean
-    /** The head and neck turn toward the camera too, over the motion, eased
-     *  and within a person's reach (Engine.setHeadTracking). */
+    /** The head and neck turn toward the camera, over the motion, eased and
+     *  within a person's reach (Engine.setHeadTracking). */
     head: boolean
-  }
-  /**
-   * Auto blink. Live in the engine (Engine.setAutoBlink): she blinks every few
-   * seconds on her own, playing or paused, and owns まばたき over a morph
-   * motion's own keys, as eyes on camera owns the eye bones.
-   */
-  blink: {
-    enabled: boolean
-    /** The average gap between blinks, seconds (1–10). */
-    interval: number
-    /** How fast one blink is (0.5–2). */
-    speed: number
   }
   /**
    * Motion blur. Live in the engine (Engine.setMotionBlur): per pixel, from
@@ -314,20 +294,46 @@ export type SceneSettings = {
    * optional name, sorted, one per frame. Shared by every track. Absent is none.
    */
   markers?: TimelineMarker[]
-  /**
-   * Jelly eyes (果冻眼). Live in the engine (Engine.setModelJellyEyes): the
-   * irises squash on a blink and swell as she moves, then wobble back.
-   */
-  jelly: {
-    enabled: boolean
-    /** How much they give: 0 still, 1 the intended bounce, up to 2. */
-    strength: number
-    /** Whether her head's motion knocks them, or only her blinks do. */
-    motion: boolean
-    /** The breathing between blinks: a ripple every 4–8 s and the highlight's
-     *  tremble. */
-    idle: boolean
-  }
+}
+
+/**
+ * One cast member's eyes. Eyes on the camera live in the engine
+ * (Engine.setEyeTracking): 左目 and 右目 are solved every frame toward wherever
+ * the camera is, orbit or motion alike, and given back to the motion when off.
+ */
+export type CastEyes = {
+  enabled: boolean
+  /** Eyes show through the hair over them (Engine.setModelSeeThroughHair);
+   *  off, the hair covers them. */
+  throughHair: boolean
+}
+
+/**
+ * One cast member's auto blink (Engine.setAutoBlink): a blink every few
+ * seconds on its own, playing or paused, owning まばたき over a morph motion's
+ * own keys, as eyes on camera owns the eye bones.
+ */
+export type CastBlink = {
+  enabled: boolean
+  /** The average gap between blinks, seconds (1–10). */
+  interval: number
+  /** How fast one blink is (0.5–2). */
+  speed: number
+}
+
+/**
+ * One cast member's jelly eyes (果冻眼, Engine.setModelJellyEyes): the irises
+ * squash on a blink and swell as she moves, then wobble back.
+ */
+export type CastJelly = {
+  enabled: boolean
+  /** How much they give: 0 still, 1 the intended bounce, up to 2. */
+  strength: number
+  /** Whether her head's motion knocks them, or only her blinks do. */
+  motion: boolean
+  /** The breathing between blinks: a ripple every 4–8 s and the highlight's
+   *  tremble. */
+  idle: boolean
 }
 
 /** Same story as DEFAULT_PHYSICS, one section over: both blocks arrived with the
@@ -432,15 +438,16 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
   floor: true,
 }
 
-/** What a document without an eyes block gets: off, since every scene before
- *  the toggle existed was authored with the eyes the motion gave them. Eyes
- *  through hair is on, as every scene before its switch drew them. The head
- *  turn is off, as every scene before it was authored. */
-export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false, throughHair: true, head: false }
+/** The head turn is off, as every scene before it was authored. */
+export const DEFAULT_HEAD: SceneSettings["eyes"] = { head: false }
+
+/** Eyes on the camera are off, as the motion gives them; through hair is on,
+ *  as every scene before its switch drew them. */
+export const DEFAULT_EYES: CastEyes = { enabled: false, throughHair: true }
 
 /** Blink is on, scenes from before it included: a character who never blinks
  *  is the first thing anyone notices. */
-export const DEFAULT_BLINK: SceneSettings["blink"] = { enabled: true, interval: 4, speed: 1 }
+export const DEFAULT_BLINK: CastBlink = { enabled: true, interval: 4, speed: 1 }
 
 /** Motion blur is off unless asked for, scenes from before it included. */
 export const DEFAULT_MOTION_BLUR: SceneSettings["motionBlur"] = { enabled: false }
@@ -474,7 +481,30 @@ export function playbackSpeedFrom(v: unknown): number {
 }
 
 /** Same for jelly eyes: every scene before them had still ones. */
-export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false, strength: 1, motion: true, idle: true }
+export const DEFAULT_JELLY: CastJelly = { enabled: false, strength: 1, motion: true, idle: true }
+
+/** A cast member's three eye sections, by the name each is stored under. */
+export type CastEyeSections = { eyes: CastEyes; blink: CastBlink; jelly: CastJelly }
+export const CAST_EYE_DEFAULTS: CastEyeSections = { eyes: DEFAULT_EYES, blink: DEFAULT_BLINK, jelly: DEFAULT_JELLY }
+
+/** A stored section as the full one: each field the default's type, else the
+ *  default's. A document is a file on someone else's disk. */
+export function castSectionFrom<T extends Record<string, boolean | number>>(v: unknown, fallback: T): T {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>
+  const out = { ...fallback }
+  for (const k of Object.keys(fallback) as (keyof T & string)[]) {
+    const x = o[k]
+    if (typeof x === typeof fallback[k] && (typeof x !== "number" || Number.isFinite(x))) out[k] = x as T[typeof k]
+  }
+  return out
+}
+
+/** The section as a document writes it: absent when it is the default. */
+export function castSectionDoc<T extends Record<string, boolean | number>>(v: T | undefined, fallback: T): T | undefined {
+  if (!v) return undefined
+  const full = castSectionFrom(v, fallback)
+  return (Object.keys(fallback) as (keyof T)[]).every((k) => full[k] === fallback[k]) ? undefined : full
+}
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the
  *  variation derived from them cannot drift apart. */

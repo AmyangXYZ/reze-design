@@ -44,6 +44,13 @@ export const sceneFiles = {
  *  webkitRelativePath, zip expansion in name. The one rule, spelled once. */
 export const relFilePath = (f: File) => (f.webkitRelativePath || f.name).replace(/\\/g, "/")
 
+/** The folder a model owns in a scene bundle, `models/<id>/` or `stages/<id>/`,
+ *  whichever subfolder of it its .pmx sits in. */
+export function bundleRoot(path: string): string {
+  const parts = path.split("/")
+  return parts.length > 2 ? `${parts[0]}/${parts[1]}/` : path.slice(0, path.lastIndexOf("/") + 1)
+}
+
 /**
  * The files a loaded model actually needs, out of everything the upload held.
  *

@@ -306,7 +306,7 @@ import { toast } from "sonner"
 import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { lipSyncVmdFromLyricsAndMusic, lipSyncVmdFromMusic } from "@/lib/lipsync-audio"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, PLAYBACK_SPEEDS, playbackSpeedFrom, markersFrom, type SceneSettings, type TimelineMarker } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GRID_SIZE_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, azElToDirection, windDirection, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, PLAYBACK_SPEEDS, playbackSpeedFrom, markersFrom, DEFAULT_BLINK, DEFAULT_EYES, DEFAULT_JELLY, type CastEyeSections, type SceneSettings, type TimelineMarker } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -657,6 +657,8 @@ function pmxLabel(path: string, all: string[]): string {
 type PaletteValues = {
   t: Dictionary
   settings: SceneSettings
+  /** Whether any cast member has each on: what the palette's toggle turns off. */
+  castEyesOn: Record<keyof CastEyeSections, boolean>
   camera: SceneCamera
   locale: Locale
   /** The loaded stage's placement, or null when there is none. */
@@ -2541,6 +2543,7 @@ function Lab() {
     setCastShadow,
     setCastFill,
     setCastBloom,
+    patchCastEyes,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -2781,7 +2784,7 @@ function Lab() {
    * here would give it two homes and two delete buttons. The shipped editor
    * filters by exactly this set.
    */
-  const { stageIds, cast, castIds: castIdList, unfilledIds, unbloomedIds, stageSuns: stageSunList } = useSceneCast(models, stages, props)
+  const { stageIds, cast, castIds: castIdList, castEyes, unfilledIds, unbloomedIds, stageSuns: stageSunList } = useSceneCast(models, stages, props)
   /**
    * Cast rows still ON THE WAY — one skeleton each.
    *
@@ -2825,7 +2828,7 @@ function Lab() {
       },
       // Declared further down; only ever called from the loader's effect, by
       // which point it exists.
-      audio: (file) => setMusicFile(file),
+      audio: (file) => restoreMusicFile(file),
     },
   })
   // Pictures over the frame — restored with the scene, packed with its bundle.
@@ -3272,6 +3275,12 @@ function Lab() {
    *  selection naming a model that has since been removed never leaves the
    *  group blank — the tab is a view, not a second source of truth. */
   const clipModel = cast.find((m) => m.id === clipTab) ?? cast[0] ?? null
+  // Which cast member the Eyes pane is showing, by the same rule as the clips.
+  const [eyeTab, setEyeTab] = useState<string | null>(null)
+  const eyeModel = cast.find((m) => m.id === eyeTab) ?? cast[0] ?? null
+  const ownEyes = { ...DEFAULT_EYES, ...eyeModel?.eyes }
+  const ownBlink = { ...DEFAULT_BLINK, ...eyeModel?.blink }
+  const ownJelly = { ...DEFAULT_JELLY, ...eyeModel?.jelly }
   const cameraInput = useRef<HTMLInputElement | null>(null)
   /** A camera .vmd into the scene's camera slot. */
   const loadCameraFile = (file: File) => {
@@ -3401,6 +3410,12 @@ function Lab() {
     // and words are not this one's, so the slots empty with it.
     sceneFiles.score = null
     sceneFiles.lyrics = null
+    setMusicClip({ name: file.name, url: URL.createObjectURL(file) })
+  }, [setMusicClip])
+  // The scene's own track coming back out of its bundle. Its companions stay:
+  // the .mid and .lrc restore on their own and may already be here.
+  const restoreMusicFile = useCallback((file: File) => {
+    sceneFiles.audio = file
     setMusicClip({ name: file.name, url: URL.createObjectURL(file) })
   }, [setMusicClip])
   const removeMusic = () => {
@@ -4065,6 +4080,7 @@ function Lab() {
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
+    castEyes,
     unfilledIds,
     unbloomedIds,
     stageSuns: stageSunList,
@@ -6592,6 +6608,11 @@ function Lab() {
     t,
     locale,
     settings,
+    castEyesOn: {
+      eyes: cast.some((m) => (m.eyes ?? DEFAULT_EYES).enabled),
+      blink: cast.some((m) => (m.blink ?? DEFAULT_BLINK).enabled),
+      jelly: cast.some((m) => (m.jelly ?? DEFAULT_JELLY).enabled),
+    },
     camera,
     stage: stage ? { scale: stage.transform.scale, position: stage.transform.position, rotation: stage.transform.rotation } : null,
     effect: effectSummary,
@@ -6794,12 +6815,12 @@ function Lab() {
           if (c.id === "eyes")
             return {
               ...c,
-              label: valuesShown.settings.eyes.enabled ? t.lab.cmd.eyesOff : t.lab.cmd.eyesOn,
+              label: valuesShown.castEyesOn.eyes ? t.lab.cmd.eyesOff : t.lab.cmd.eyesOn,
             }
           if (c.id === "blink")
             return {
               ...c,
-              label: valuesShown.settings.blink.enabled ? t.lab.cmd.blinkOff : t.lab.cmd.blinkOn,
+              label: valuesShown.castEyesOn.blink ? t.lab.cmd.blinkOff : t.lab.cmd.blinkOn,
             }
           if (c.id === "pov")
             return { ...c, label: valuesShown.camera.mount?.mode === "pov" ? t.lab.cmd.povOff : t.lab.cmd.povOn }
@@ -6813,7 +6834,7 @@ function Lab() {
           if (c.id === "jelly")
             return {
               ...c,
-              label: valuesShown.settings.jelly.enabled ? t.lab.cmd.jellyOff : t.lab.cmd.jellyOn,
+              label: valuesShown.castEyesOn.jelly ? t.lab.cmd.jellyOff : t.lab.cmd.jellyOn,
             }
           // Same rule as outline: say what pressing it WILL do.
           if (c.id === "timeline")
@@ -6935,8 +6956,23 @@ function Lab() {
   const sceneTools = useSceneTools({
     engine: () => engineRef.current,
     canvas: () => canvasRef.current,
-    settings,
-    patchSettings: (section, part) => patch(section, part as Partial<SceneSettings[typeof section]>),
+    // What the AI reads as eyes, blink and jelly: the first cast member's.
+    settings: Object.assign({}, settings, {
+      eyes: { ...settings.eyes, ...DEFAULT_EYES, ...cast[0]?.eyes },
+      blink: { ...DEFAULT_BLINK, ...cast[0]?.blink },
+      jelly: { ...DEFAULT_JELLY, ...cast[0]?.jelly },
+    }),
+    // Eyes, blink and jelly are each cast member's own: the AI's patch reaches
+    // the whole cast, and only the head turn is the scene's.
+    patchSettings: (section, part) => {
+      if (section === "eyes" || section === "blink" || section === "jelly") {
+        const { head, ...cast } = part as Record<string, unknown>
+        if (section === "eyes" && typeof head === "boolean") patch("eyes", { head })
+        if (Object.keys(cast).length) patchCastEyes(castIdList, section, cast as Partial<CastEyeSections[typeof section]>)
+        return
+      }
+      patch(section, part as Partial<SceneSettings[typeof section]>)
+    },
     camera,
     setCamera: changeCamera,
     cast: cast.map((m) => ({ id: m.id, name: displayName(m.file) })),
@@ -7209,17 +7245,19 @@ function Lab() {
         return pmx ? `${m.id}=${relFilePath(pmx)}:${pmx.size}:${pmx.lastModified}` : m.id
       })
       .join("|"),
+    // Name AND size: a different dance.vmd picked under the same name is a
+    // different file, and the name alone would keep the old bytes.
     Object.entries(animByModel)
-      .map(([k, v]) => `${k}:${v.name}`)
+      .map(([k, v]) => `${k}:${v.name}:${v.src instanceof File ? v.src.size : v.src}`)
       .join("|"),
     // The morph VMDs, and the track's two companions. Every FILE that can
     // land in the bundle has to be here: the fingerprint is what decides whether
     // the bundle is rewritten, so a file it cannot see is a file that never
     // reaches IndexedDB and is gone on the next refresh.
     Object.entries(morphByModel)
-      .map(([k, v]) => `${k}:${v.name}`)
+      .map(([k, v]) => `${k}:${v.name}:${v.src instanceof File ? v.src.size : v.src}`)
       .join("|"),
-    musicClip?.name ?? "",
+    musicClip ? `${musicClip.name}:${sceneFiles.audio?.size ?? ""}` : "",
     midiClip ?? "",
     lyricsClip ?? "",
     // One slot, two kinds: swapping a flat image for a 360 of the same name is
@@ -7295,7 +7333,7 @@ function Lab() {
           ]),
         ),
         camera: { name: cameraClip, booted: scene.assets.cameraAnimation },
-        audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
+        audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null, booted: scene.assets.audio },
         midi: { name: midiClip, booted: scene.assets.midi },
         // Kept whichever sound is chosen, so switching back finds it.
         footstep: { name: footstepFile?.name ?? null, booted: scene.assets.footstep },
@@ -8056,14 +8094,14 @@ function Lab() {
       else if (item.id === "grade-lib") gotoSection("post", { post: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "hideUi") setUiHidden(true)
-      else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { ...s2.eyes, enabled: !s2.eyes.enabled } }))
-      else if (item.id === "blink") setSettings((s2) => ({ ...s2, blink: { ...s2.blink, enabled: !s2.blink.enabled } }))
+      // The whole cast: on while any one has it turns them all off.
+      else if (item.id === "eyes" || item.id === "blink" || item.id === "jelly")
+        patchCastEyes(castIdList, item.id, { enabled: !valuesShown.castEyesOn[item.id] })
       // The same mount again takes it off; the other one swaps to it.
       else if (item.id === "pov" || item.id === "selfie")
         changeCamera({ ...camera, mount: camera.mount?.mode === item.id ? null : { ...camera.mount, mode: item.id } })
       else if (item.id === "motionBlur")
         setSettings((s2) => ({ ...s2, motionBlur: { ...s2.motionBlur, enabled: !s2.motionBlur.enabled } }))
-      else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { ...s2.jelly, enabled: !s2.jelly.enabled } }))
       else if (item.id.startsWith("speed:")) {
         const speed = playbackSpeedFrom(Number(item.id.slice("speed:".length)))
         setSettings((s2) => ({ ...s2, playback: { speed } }))
@@ -8102,6 +8140,9 @@ function Lab() {
       // changes only with the locale, and listing leaves invites the next
       // string to be forgotten.
       t,
+      castIdList,
+      patchCastEyes,
+      valuesShown.castEyesOn,
       recentIds,
       gotoSection,
       openMaterials,
@@ -11275,80 +11316,97 @@ function Lab() {
                     </Tabs>
                   ) : l.id === "eyes" ? (
                     <>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
-                        <Switch size="sm" checked={settings.eyes.enabled} onCheckedChange={(v) => patch("eyes", { enabled: v })} />
-                      </div>
-                      <div className="mt-2.5 flex items-center justify-between">
-                        <span className="text-xs">{t.lab.ctl.eyesThroughHair}</span>
-                        <Switch size="sm" checked={settings.eyes.throughHair} onCheckedChange={(v) => patch("eyes", { throughHair: v })} />
-                      </div>
-                      {/* Auto blink, past a hairline: its switch, then its
-                          dials, always there and inert while off. */}
-                      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
-                        <span className="text-xs">{t.lab.ctl.autoBlink}</span>
-                        <Switch size="sm" checked={settings.blink.enabled} onCheckedChange={(v) => patch("blink", { enabled: v })} />
-                      </div>
-                      <SliderRow
-                        label={t.lab.ctl.blinkInterval}
-                        value={settings.blink.interval}
-                        min={1}
-                        max={10}
-                        step={0.5}
-                        inputMin={1}
-                        inputMax={10}
-                        disabled={!settings.blink.enabled}
-                        onChange={(v) => patch("blink", { interval: v })}
-                        fmt={(v) => `${v.toFixed(1)} s`}
-                      />
-                      <SliderRow
-                        label={t.lab.ctl.blinkSpeed}
-                        value={settings.blink.speed}
-                        min={0.5}
-                        max={2}
-                        step={0.05}
-                        inputMin={0.5}
-                        inputMax={2}
-                        disabled={!settings.blink.enabled}
-                        onChange={(v) => patch("blink", { speed: v })}
-                        fmt={(v) => v.toFixed(2)}
-                      />
-                      {/* Jelly eyes, past a hairline: its switch, then its two
-                          dials, always there and inert while off. */}
-                      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
-                        <span className="text-xs">{t.lab.ctl.jellyEyes}</span>
-                        <Switch size="sm" checked={settings.jelly.enabled} onCheckedChange={(v) => patch("jelly", { enabled: v })} />
-                      </div>
-                      <SliderRow
-                        label={t.lab.ctl.jellyStrength}
-                        value={settings.jelly.strength}
-                        min={0}
-                        max={2}
-                        step={0.05}
-                        inputMin={0}
-                        inputMax={2}
-                        disabled={!settings.jelly.enabled}
-                        onChange={(v) => patch("jelly", { strength: v })}
-                        fmt={(v) => v.toFixed(2)}
-                      />
-                      <div className="mt-2.5 flex items-center justify-between">
-                        <span className="text-xs">{t.lab.ctl.jellyMotion}</span>
-                        <Switch
-                          size="sm"
-                          checked={settings.jelly.motion}
-                          disabled={!settings.jelly.enabled}
-                          onCheckedChange={(v) => patch("jelly", { motion: v })}
+                      {/* The cast heads the pane as its tabs, as it heads Motion:
+                          each one's eyes are its own. */}
+                      {cast.length > 0 && (
+                        <Tabs value={eyeModel?.id} onValueChange={setEyeTab}>
+                          <TabsList className="mb-2 w-full">
+                            {cast.map((m) => (
+                              <TabsTrigger key={m.id} value={m.id} className="min-w-0">
+                                <span className="truncate">{displayName(m.file)}</span>
+                              </TabsTrigger>
+                            ))}
+                          </TabsList>
+                        </Tabs>
+                      )}
+                      {eyeModel && (
+                        <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
+                          <Switch size="sm" checked={ownEyes.enabled} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "eyes", { enabled: v })} />
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.eyesThroughHair}</span>
+                          <Switch size="sm" checked={ownEyes.throughHair} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "eyes", { throughHair: v })} />
+                        </div>
+                        {/* Auto blink, past a hairline: its switch, then its
+                            dials, always there and inert while off. */}
+                        <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
+                          <span className="text-xs">{t.lab.ctl.autoBlink}</span>
+                          <Switch size="sm" checked={ownBlink.enabled} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "blink", { enabled: v })} />
+                        </div>
+                        <SliderRow
+                          label={t.lab.ctl.blinkInterval}
+                          value={ownBlink.interval}
+                          min={1}
+                          max={10}
+                          step={0.5}
+                          inputMin={1}
+                          inputMax={10}
+                          disabled={!ownBlink.enabled}
+                          onChange={(v) => patchCastEyes([eyeModel.id], "blink", { interval: v })}
+                          fmt={(v) => `${v.toFixed(1)} s`}
                         />
-                      </div>
-                      <div className="mt-2.5 flex items-center justify-between">
-                        <span className="text-xs">{t.lab.ctl.jellyIdle}</span>
-                        <Switch
-                          size="sm"
-                          checked={settings.jelly.idle}
-                          disabled={!settings.jelly.enabled}
-                          onCheckedChange={(v) => patch("jelly", { idle: v })}
+                        <SliderRow
+                          label={t.lab.ctl.blinkSpeed}
+                          value={ownBlink.speed}
+                          min={0.5}
+                          max={2}
+                          step={0.05}
+                          inputMin={0.5}
+                          inputMax={2}
+                          disabled={!ownBlink.enabled}
+                          onChange={(v) => patchCastEyes([eyeModel.id], "blink", { speed: v })}
+                          fmt={(v) => v.toFixed(2)}
                         />
-                      </div>
+                        {/* Jelly eyes, past a hairline: its switch, then its two
+                            dials, always there and inert while off. */}
+                        <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
+                          <span className="text-xs">{t.lab.ctl.jellyEyes}</span>
+                          <Switch size="sm" checked={ownJelly.enabled} onCheckedChange={(v) => patchCastEyes([eyeModel.id], "jelly", { enabled: v })} />
+                        </div>
+                        <SliderRow
+                          label={t.lab.ctl.jellyStrength}
+                          value={ownJelly.strength}
+                          min={0}
+                          max={2}
+                          step={0.05}
+                          inputMin={0}
+                          inputMax={2}
+                          disabled={!ownJelly.enabled}
+                          onChange={(v) => patchCastEyes([eyeModel.id], "jelly", { strength: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                        <div className="mt-2.5 flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.jellyMotion}</span>
+                          <Switch
+                            size="sm"
+                            checked={ownJelly.motion}
+                            disabled={!ownJelly.enabled}
+                            onCheckedChange={(v) => patchCastEyes([eyeModel.id], "jelly", { motion: v })}
+                          />
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.jellyIdle}</span>
+                          <Switch
+                            size="sm"
+                            checked={ownJelly.idle}
+                            disabled={!ownJelly.enabled}
+                            onCheckedChange={(v) => patchCastEyes([eyeModel.id], "jelly", { idle: v })}
+                          />
+                        </div>
+                        </>
+                      )}
                     </>
                   ) : l.id === "physics" ? (
                     // Simulating unless switched off — off sits every body on

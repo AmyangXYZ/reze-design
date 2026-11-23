@@ -10,7 +10,12 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, markersFrom, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, markersFrom, DEFAULT_PHYSICS,
+  castSectionDoc,
+  castSectionFrom,
+  type CastBlink,
+  type CastEyes,
+  type CastJelly,
   LEGACY_VIEW,
   audioFrom,
   bloomFrom,
@@ -153,6 +158,12 @@ export type SceneModel = {
   /** What brought it: the tag of the scene patch it came in with. A later patch
    *  with the same tag replaces it. See lib/scene-patch. Absent: added by hand. */
   origin?: string
+  /** A cast member's own eyes on the camera and through hair. Absent = DEFAULT_EYES. */
+  eyes?: CastEyes
+  /** Its own auto blink. Absent = DEFAULT_BLINK. */
+  blink?: CastBlink
+  /** Its own jelly eyes. Absent = DEFAULT_JELLY. */
+  jelly?: CastJelly
 }
 
 export type SceneAssets = {
@@ -583,6 +594,10 @@ export type SceneModelDoc = {
   look?: string
   /** The tag of the scene patch it came in with. See SceneModel.origin. */
   origin?: string
+  /** Its own eyes, blink and jelly. Absent = the defaults. See SceneModel. */
+  eyes?: CastEyes
+  blink?: CastBlink
+  jelly?: CastJelly
   /** This model's Materials-tab state. Absent = auto-group at load. */
   materials?: SceneModelMaterialsDoc
 }
@@ -667,12 +682,12 @@ export type SceneAssetsDoc = {
 export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes" | "jelly" | "blink" | "playback" | "motionBlur"> & {
   /** Absent before motion blur existed; read as off. */
   motionBlur?: SceneSettings["motionBlur"]
-  /** Absent in documents from before the toggle existed; read as off. */
-  eyes?: SceneSettings["eyes"]
-  /** Likewise. */
-  jelly?: SceneSettings["jelly"]
-  /** Likewise, read as on (DEFAULT_BLINK). */
-  blink?: SceneSettings["blink"]
+  /** The head turn. A document written before each cast member had its own
+   *  eyes also carries `enabled` and `throughHair` here, and `jelly` and
+   *  `blink` beside it: read once onto the cast (withLegacyEyes). */
+  eyes?: Partial<SceneSettings["eyes"] & CastEyes>
+  jelly?: Partial<CastJelly>
+  blink?: Partial<CastBlink>
   /** Absent before speed existed; read as 1×. */
   playback?: SceneSettings["playback"]
   camera: SceneCamera
@@ -849,9 +864,13 @@ const passFieldsOf = (g: Pick<StyleGroup, "renderClass" | "alphaMode" | "blend">
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "materialVisibility" | "castShadow" | "layers" | "fill" | "bloom" | "look" | "origin"
+    | "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "materialVisibility"
+    | "castShadow" | "layers" | "fill" | "bloom" | "look" | "origin" | "eyes" | "blink" | "jelly"
   >,
 ) {
+  const eyes = castSectionDoc(m.eyes, DEFAULT_EYES)
+  const blink = castSectionDoc(m.blink, DEFAULT_BLINK)
+  const jelly = castSectionDoc(m.jelly, DEFAULT_JELLY)
   const sun = m.sun
   return {
     ...(m.stage ? { stage: true as const } : {}),
@@ -877,6 +896,10 @@ function stageFieldsOf(
     ...(typeof m.look === "string" && m.look ? { look: m.look } : {}),
     // And what brought it, for the next patch with the same tag to find.
     ...(typeof m.origin === "string" && m.origin ? { origin: m.origin } : {}),
+    // A cast member's eyes, written only where they differ from the defaults.
+    ...(eyes ? { eyes } : {}),
+    ...(blink ? { blink } : {}),
+    ...(jelly ? { jelly } : {}),
   }
 }
 
@@ -906,6 +929,35 @@ function materialVisibilityFieldOf(lanes: Record<string, VisibilityWindow[]> | u
     return clean ? [[name, clean] as const] : []
   })
   return kept.length > 0 ? { materialVisibility: Object.fromEntries(kept) } : {}
+}
+
+/**
+ * A scene written when the eyes were one setting for the whole cast, read as
+ * each cast member's own: every cast entry without its own section takes the
+ * scene's. Once, on the way in — the next save writes the new shape, and the
+ * scene settings it came from are not written again.
+ */
+function withLegacyEyes(
+  assets: SceneAssets,
+  legacy: { eyes?: unknown; blink?: unknown; jelly?: unknown },
+): SceneAssets {
+  const eyes = castSectionDoc(castSectionFrom(legacy.eyes, DEFAULT_EYES), DEFAULT_EYES)
+  const blink = castSectionDoc(castSectionFrom(legacy.blink, DEFAULT_BLINK), DEFAULT_BLINK)
+  const jelly = castSectionDoc(castSectionFrom(legacy.jelly, DEFAULT_JELLY), DEFAULT_JELLY)
+  if (!eyes && !blink && !jelly) return assets
+  return {
+    ...assets,
+    models: assets.models.map((m) =>
+      m.stage || m.prop
+        ? m
+        : {
+            ...m,
+            ...(eyes && !m.eyes ? { eyes } : {}),
+            ...(blink && !m.blink ? { blink } : {}),
+            ...(jelly && !m.jelly ? { jelly } : {}),
+          },
+    ),
+  }
 }
 
 export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
@@ -1095,7 +1147,8 @@ export function parseSceneDoc(
       .filter((g): g is StyleGroup => g !== null)
   }
 
-  const { camera: docCamera, background, ...settings } = doc.settings
+  // blink and jelly leave the settings here: they are the cast's now.
+  const { camera: docCamera, background, blink: legacyBlink, jelly: legacyJelly, ...settings } = doc.settings
   // Pre-angle documents (and forks copied from them) get the stock angles the
   // engine always used — identical framing to what they had. Same for the lens.
   const camera: SceneCamera = {
@@ -1105,7 +1158,7 @@ export function parseSceneDoc(
     fov: docCamera.fov ?? CAMERA_DEFAULT_FOV,
   }
 
-  const assets = parseAssetsDoc(doc.assets)
+  const assets = withLegacyEyes(parseAssetsDoc(doc.assets), { eyes: settings.eyes, blink: legacyBlink, jelly: legacyJelly })
   const materials = doc.assets.models.flatMap((m) => (m.materials ? [[m.id, m.materials] as const] : []))
   const hidden = materials.filter(([, m]) => m.hidden?.length)
 
@@ -1127,9 +1180,7 @@ export function parseSceneDoc(
       settings: {
         ...settings,
         physics: { ...DEFAULT_PHYSICS, ...settings.physics },
-        eyes: { ...DEFAULT_EYES, ...settings.eyes },
-        jelly: { ...DEFAULT_JELLY, ...settings.jelly },
-        blink: { ...DEFAULT_BLINK, ...settings.blink },
+        eyes: castSectionFrom(settings.eyes, DEFAULT_HEAD),
         motionBlur: { ...DEFAULT_MOTION_BLUR, ...settings.motionBlur },
         playback: { speed: playbackSpeedFrom(settings.playback?.speed ?? DEFAULT_PLAYBACK.speed) },
         markers: markersFrom(settings.markers),
@@ -1863,8 +1914,8 @@ function restored(base: Scene): Scene {
   // signal, so an empty record (a New scene) is an empty cast, not a fallthrough to
   // the demo. Absent (first visit, or a cleared browser), the demo stands.
   const storedAssets = stored?.id ? loadStoredAssets(stored.id) : null
-  const assets = storedAssets ? parseAssetsDoc(storedAssets) : base.assets
   const settingsBase = stored?.settings ?? base.state.settings
+  const assets = storedAssets ? withLegacyEyes(parseAssetsDoc(storedAssets), settingsBase) : base.assets
   // Groups restore PER MODEL: an entry only applies when its model id is in the scene (groups
   const storedGroups = stored?.groups ?? null
   const baseIds = new Set(assets.models.map((m) => m.model.id))
@@ -1924,9 +1975,7 @@ function restored(base: Scene): Scene {
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
         physics: { ...base.state.settings.physics, ...settingsBase.physics },
-        eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
-        jelly: { ...base.state.settings.jelly, ...settingsBase.jelly },
-        blink: { ...base.state.settings.blink, ...settingsBase.blink },
+        eyes: castSectionFrom({ ...base.state.settings.eyes, ...settingsBase.eyes }, DEFAULT_HEAD),
         motionBlur: { ...base.state.settings.motionBlur, ...settingsBase.motionBlur },
         playback: { speed: playbackSpeedFrom(settingsBase.playback?.speed ?? base.state.settings.playback.speed) },
         markers: markersFrom(settingsBase.markers ?? base.state.settings.markers),

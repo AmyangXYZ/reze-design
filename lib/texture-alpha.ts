@@ -15,12 +15,27 @@
 // almost nothing: measured over X309, X323 and X340, fully opaque images are
 // 90–95% of all texture bytes.
 
+/** Whether a PNG has a tRNS chunk, walking the chunks up to the first IDAT. */
+function pngHasTrns(b: Uint8Array): boolean {
+  const tag = (at: number) => String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at + 3])
+  for (let at = 8; at + 8 <= b.length; ) {
+    const length = ((b[at] << 24) | (b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3]) >>> 0
+    const type = tag(at + 4)
+    if (type === "tRNS") return true
+    if (type === "IDAT" || type === "IEND") return false
+    at += 12 + length
+  }
+  return false
+}
+
 /** Whether the file format even has an alpha channel — a header read, so the
  *  common case never pays for the pixel scan below. */
 export function declaresAlpha(buffer: ArrayBuffer, path: string): boolean {
   const b = new Uint8Array(buffer)
-  // PNG: IHDR colour type at byte 25. 4 is grey+alpha, 6 is RGBA.
-  if (/\.png$/i.test(path)) return b.length > 25 && (b[25] === 4 || b[25] === 6)
+  // PNG: IHDR colour type at byte 25, 4 grey+alpha and 6 RGBA — or any type
+  // with a tRNS chunk ahead of the pixels, which is how a palette PNG carries
+  // its transparency.
+  if (/\.png$/i.test(path)) return b.length > 25 && (b[25] === 4 || b[25] === 6 || pngHasTrns(b))
   // TGA: bits per pixel at 16, and the low nibble of the descriptor at 17 is
   // how many of them are alpha.
   if (/\.tga$/i.test(path)) return b.length > 17 && (b[16] === 32 || (b[17] & 0x0f) > 0)

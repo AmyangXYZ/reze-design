@@ -20,7 +20,11 @@ import { LOOK_TOOLS } from "@/lib/ai/look-tools"
 import { TIMELINE_TOOLS } from "@/lib/ai/timeline-tools"
 import { OBJECT_TOOLS } from "@/lib/ai/object-tools"
 import type { DialKey } from "@/lib/effects"
-import type { SceneSettings } from "@/lib/scene-settings"
+import { CAST_EYE_DEFAULTS, type CastEyeSections, type SceneSettings } from "@/lib/scene-settings"
+
+/** A settings section the AI can patch: the scene's own, or one each cast
+ *  member carries for itself (the host patches the whole cast). */
+export type SettingsSection = keyof SceneSettings | keyof CastEyeSections
 import type { CaptureView } from "@/lib/video-export"
 import { recentLogs } from "@/lib/crash-log"
 import { checkSettingsPatch, readableSettings } from "@/lib/ai/settings-schema"
@@ -38,7 +42,7 @@ export type SceneToolHandles = {
   canvas: () => HTMLCanvasElement | null
   settings: SceneSettings
   /** The editor's settings patcher — one section, merged. */
-  patchSettings: (section: keyof SceneSettings, part: Record<string, unknown>) => void
+  patchSettings: (section: SettingsSection, part: Record<string, unknown>) => void
   camera: SceneCamera
   /** The editor's camera applier: writes the document's camera and the engine's. */
   setCamera: (next: SceneCamera) => void
@@ -305,7 +309,7 @@ const CORE_TOOLS: SceneTool[] = [
         // A preset by name is the built-in itself: drop any custom grade values
         // and provenance left from before, or they would win over it.
         const part = section === "grade" && "preset" in fields ? { ...fields, spec: undefined, from: undefined } : fields
-        h.patchSettings(section as keyof SceneSettings, part)
+        h.patchSettings(section as SettingsSection, part)
       }
       return { data: { applied: check.apply, clamped: check.clamped, errors: check.errors } }
     },
@@ -326,8 +330,12 @@ const CORE_TOOLS: SceneTool[] = [
       const reset: string[] = []
       if (asked.includes("look")) {
         for (const section of LOOK_SECTIONS) {
-          const value = d.settings[section as keyof SceneSettings]
-          if (value && typeof value === "object") h.patchSettings(section as keyof SceneSettings, value as Record<string, unknown>)
+          // Eyes and blink: the cast's own defaults, and the scene's head turn.
+          const value =
+            section === "eyes" || section === "blink"
+              ? { ...CAST_EYE_DEFAULTS[section], ...(section === "eyes" ? d.settings.eyes : {}) }
+              : d.settings[section as keyof SceneSettings]
+          if (value && typeof value === "object") h.patchSettings(section, value as Record<string, unknown>)
         }
         reset.push("look")
       }

@@ -18,13 +18,13 @@ import { idbBundleId, modelPmxUrl, mountOptions, type AssetRef, type Scene, type
 import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } from "@/lib/uploads"
 import { loadLocalBundle, loadModelLooks } from "@/lib/asset-store"
 import { fitLooks, modelLooksKey } from "@/lib/model-looks"
-import { sceneFiles } from "@/lib/scene-files"
+import { bundleRoot, sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, engineGroups } from "@/lib/material-maps"
 import { loadParticleTextures } from "@/lib/effect-textures"
 import { stageMaterialRig } from "@/lib/gltf-stage"
 import { setStageTint } from "@/lib/timeline/stage-tint"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
-import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
+import { groundExtent, hexToLinearVec3, type CastBlink, type CastEyes, type CastJelly } from "@/lib/scene-settings"
 import { castRotationToEngine, pushTimeline, seedLane, seedMaterialLanes, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
 import type { DialKey } from "@/lib/effects"
 import { bundleReader, dress, loadNativeLook, loadNativeStage } from "@/lib/unity-native"
@@ -511,9 +511,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         }
         throw new Error(`Missing in scene assets: ${src.path}`)
       }
-      // Scoped to this model's folder: two models in one bundle can share a
-      // texture basename, and the engine's basename fallback would guess.
-      const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
+      // Scoped to this model's own folder of the bundle (models/<id>/), which
+      // holds every file it was uploaded with: two models can share a texture
+      // name, and a .pmx in a subfolder can name ..\tex\body.png.
+      const dir = bundleRoot(src.path)
       // Read out of the zip here, this folder only, all at once.
       const files = await readBundleFiles(bundle!.filter((f) => f.name.startsWith(dir)))
       if (stale()) return null
@@ -697,6 +698,9 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       info.layers = entry.layers
     }
     if (entry.fill === false) info.fill = false
+    if (entry.eyes) info.eyes = entry.eyes
+    if (entry.blink) info.blink = entry.blink
+    if (entry.jelly) info.jelly = entry.jelly
     if (entry.bloom === false) info.bloom = false
     const modelGroups = withSpecialGroups(
       docGroups ?? autoGroups ?? [],
@@ -978,6 +982,10 @@ export type EngineModelInfo = {
   fill?: false
   /** Left out of the bloom — see SceneModel.bloom. */
   bloom?: false
+  /** Its own eyes, blink and jelly — see SceneModel.eyes. Absent = the defaults. */
+  eyes?: CastEyes
+  blink?: CastBlink
+  jelly?: CastJelly
   /** Every bone's name, in rig order — what a prop's bone picker lists. Kept
    *  here rather than read off the live model in render, which the row cannot
    *  do without reaching into a ref. */

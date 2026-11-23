@@ -1111,6 +1111,7 @@ One type id per operation, written `family/operation`.
 | `material_shininess` | — | `value` |
 | `material_diffuse` | — | `color` |
 | `sphere_map` | `base` `strength` | `color` |
+| `toon_map` | `fac` | `color` |
 | `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
 | `uv_map` | — | `uv` |
 | `normal_map` | `color` `strength` | `normal` |

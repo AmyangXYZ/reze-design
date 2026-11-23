@@ -21,6 +21,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "material_shininess", label: "Material Shininess" },
       { type: "material_ambient", label: "Material Ambient" },
       { type: "sphere_map", label: "Sphere Map" },
+      { type: "toon_map", label: "Toon Map" },
       { type: "light", label: "Light" },
       { type: "time", label: "Time" },
       { type: "head_basis", label: "Head Basis" },

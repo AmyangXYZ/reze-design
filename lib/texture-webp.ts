@@ -30,7 +30,7 @@
 // whose table will not rewrite — falls back to the bytes that were uploaded.
 // The worst outcome is a bigger scene, never a character that would not load.
 
-import { readPmxDocument, writePmxDocument } from "reze-engine"
+import { normalizeAssetPath, readPmxDocument, writePmxDocument } from "reze-engine"
 import { decodeTga } from "@/lib/tga"
 import { relFilePath } from "@/lib/scene-files"
 import { declaresAlpha, opaqueEverywhere } from "@/lib/texture-alpha"
@@ -155,6 +155,28 @@ class Encoders {
 }
 
 /**
+ * The uploaded file the engine reads for one texture entry of the .pmx, by the
+ * engine's own lookup (reze-engine's createFileMapAssetReader): the path under
+ * the model's folder, then the same path in any case, then the bare file name —
+ * a flat pick has no folders to match.
+ */
+function loadedFile(files: File[], dir: string, entry: string): File | undefined {
+  const key = normalizeAssetPath(dir + entry)
+  const paths = files.map((f) => [normalizeAssetPath(relFilePath(f)), f] as const)
+  const lower = key.toLowerCase()
+  const base = lower.split("/").pop()
+  const only = (match: (p: string) => boolean) => {
+    const hits = paths.filter(([p]) => match(p))
+    return hits.length === 1 ? hits[0][1] : undefined
+  }
+  return (
+    paths.find(([p]) => p === key)?.[1] ??
+    only((p) => p.toLowerCase() === lower) ??
+    only((p) => p.toLowerCase().split("/").pop() === base)
+  )
+}
+
+/**
  * Convert an upload's textures, and point its .pmx at the results.
  *
  * Returns the same shape it was given, so a caller that does not care about the
@@ -170,13 +192,34 @@ export async function texturesToWebp(
   // The encoder every path here needs. Without it there is nothing to fall back
   // to, so the upload proceeds exactly as it did before this existed.
   if (typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return untouched
-  const targets = files.filter((f) => CONVERT.test(relFilePath(f)) && f.size > FLOOR)
+  // ONLY WHAT THIS .PMX NAMES, and its maps/. The .pmx table is the one list
+  // rewritten below, and maps/ is found by a rule that probes for .webp. Every
+  // other picture in the folder is found by its own name by something else — an
+  // .x part's table, a ray-mmd .fx, a sky panorama — and renaming it would lose
+  // it. And never onto a name the folder already holds: face.png beside face.tga
+  // would both become face.webp, one picture for two materials.
+  let doc: { textures: string[] }
+  try {
+    doc = readPmxDocument(await pmx.arrayBuffer()) as { textures: string[] }
+  } catch {
+    return untouched
+  }
+  const dir = relFilePath(pmx).replace(/[^/]*$/, "")
+  const named = new Set(doc.textures.map((t) => loadedFile(files, dir, t)).filter((f): f is File => !!f))
+  const taken = new Set(files.map((f) => relFilePath(f).toLowerCase()))
+  const targets = files.filter((f) => {
+    const path = relFilePath(f)
+    if (!CONVERT.test(path) || f.size <= FLOOR) return false
+    if (!named.has(f) && !path.toLowerCase().startsWith(`${dir}maps/`.toLowerCase())) return false
+    const to = path.replace(/\.[^./]+$/, ".webp").toLowerCase()
+    if (taken.has(to)) return false
+    taken.add(to)
+    return true
+  })
   if (!targets.length) return untouched
 
   const report: WebpReport = { converted: 0, before: 0, after: 0, kept: 0, kept_mb: 0 }
   const replaced = new Map<File, File>()
-  /** Old basename, lower-case, to the new one — how the .pmx is rewritten. */
-  const renamed = new Map<string, string>()
   // Lanes rather than all at once: every lane holds a decoded bitmap, and a
   // stage's worth of 2048s decoded together is gigabytes of transient memory.
   const pool = new Encoders(Math.max(2, Math.min(8, navigator.hardwareConcurrency || 4)))
@@ -205,7 +248,6 @@ export async function texturesToWebp(
         }
         const to = path.replace(/\.[^./]+$/, ".webp")
         replaced.set(file, new File([out], to, { type: "image/webp" }))
-        renamed.set((path.split("/").pop() ?? path).toLowerCase(), to.split("/").pop()!)
         report.converted++
         report.before += file.size
         report.after += out.byteLength
@@ -220,17 +262,19 @@ export async function texturesToWebp(
   }
   if (!replaced.size) return untouched
 
-  // The model's texture table, pointed at what now exists.
+  // The model's texture table, pointed at what now exists. Each entry follows
+  // the file it actually loads, never its name alone: a model's hair.png,
+  // spa/hair.png and toon/hair.png are three files, and converting one of them
+  // must not send the others looking for a .webp they do not have.
   let outPmx = pmx
   try {
-    const doc = readPmxDocument(await pmx.arrayBuffer()) as { textures: string[] }
     let touched = false
     doc.textures = doc.textures.map((t) => {
-      const base = (t.replace(/\\/g, "/").split("/").pop() ?? t).toLowerCase()
-      const to = renamed.get(base)
+      const file = loadedFile(files, dir, t)
+      const to = file && replaced.get(file)
       if (!to) return t
       touched = true
-      return t.replace(/[^/\\]+$/, to)
+      return t.replace(/[^/\\]+$/, to.name.split("/").pop()!)
     })
     if (touched) outPmx = new File([writePmxDocument(doc as never)], relFilePath(pmx))
   } catch (e) {

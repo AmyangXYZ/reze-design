@@ -571,7 +571,7 @@ function SceneStage({
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   // The cast — everything that is not a stage or a prop — for the settings
   // that apply per character: the same list the editor hands over.
-  const { castIds, unfilledIds, unbloomedIds, stageSuns } = useSceneCast(models, stages, props)
+  const { castIds, castEyes, unfilledIds, unbloomedIds, stageSuns } = useSceneCast(models, stages, props)
   /**
    * The scene's timeline — who is on stage when, among the rest.
    *
@@ -593,6 +593,7 @@ function SceneStage({
     engineRef,
     ready: stageReady,
     castIds,
+    castEyes,
     unfilledIds,
     unbloomedIds,
     stageSuns,

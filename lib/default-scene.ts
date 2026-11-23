@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
+  DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   DEFAULT_BLOOM,
 } from "@/lib/scene-settings"
@@ -85,6 +85,8 @@ const DEMO_SCENE_DOC: SceneDoc = {
         // whether to stay.
         animation: `${DEMO}/animations-gz/Demo.vmd`,
         morph: `${DEMO}/animations-gz/Demo_morph.vmd`,
+        // Her eyes follow the camera: the first thing a visitor sees should look back.
+        eyes: { enabled: true, throughHair: true },
         materials: {
           groups: [
             { id: "body", label: "Body", materials: ["skin"], graph: "AG Body" },
@@ -190,10 +192,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     grade: { preset: "Neutral", intensity: 1 },
     ground: { enabled: true, color: "#ed6aff", size: 160, opacity: 0.48, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
-    // Her eyes follow the camera: the first thing a visitor sees should look back.
-    eyes: { enabled: true, throughHair: true, head: false },
-    jelly: DEFAULT_JELLY,
-    blink: DEFAULT_BLINK,
+    eyes: DEFAULT_HEAD,
     motionBlur: DEFAULT_MOTION_BLUR,
     playback: DEFAULT_PLAYBACK,
   },
@@ -235,9 +234,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     grade: { preset: "Neutral", intensity: 1 },
     ground: { enabled: true, color: "#3a3a3d", size: 160, opacity: 0.42, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
-    eyes: DEFAULT_EYES,
-    jelly: DEFAULT_JELLY,
-    blink: DEFAULT_BLINK,
+    eyes: DEFAULT_HEAD,
     motionBlur: DEFAULT_MOTION_BLUR,
     playback: DEFAULT_PLAYBACK,
   },

@@ -30,7 +30,21 @@ import { effectParams, type AppliedEffect, type DialKey, type EffectSurface } fr
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera, type SceneLight } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
-import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
+import {
+  azElToDirection,
+  groundExtent,
+  windVariation,
+  hexToLinearVec3,
+  hexToSrgbVec3,
+  windDirection,
+  DEFAULT_BLINK,
+  DEFAULT_EYES,
+  DEFAULT_JELLY,
+  type CastBlink,
+  type CastEyes,
+  type CastJelly,
+  type SceneSettings,
+} from "@/lib/scene-settings"
 import { keyToEngine, pushTimeline, setLampRig, timelineOf } from "@/lib/timeline"
 import { lightCookieImage, type LightCookie } from "@/lib/light-cookies"
 
@@ -141,6 +155,9 @@ export function useSceneSync({
   /** Cast member ids, in order — stages excluded, the same list the engine's
    *  own subjects are drawn from. */
   castIds = [],
+  /** Each cast member's own eyes, blink and jelly; a member not listed, or a
+   *  section absent, takes the default. */
+  castEyes = [],
   /** The cast members the cast fill leaves out. */
   unfilledIds = [],
   /** The cast members left out of the bloom. */
@@ -168,6 +185,7 @@ export function useSceneSync({
   hdri?: File | null
   exportBackground?: ExportBackground
   castIds?: string[]
+  castEyes?: { id: string; eyes?: CastEyes; blink?: CastBlink; jelly?: CastJelly }[]
   unfilledIds?: string[]
   unbloomedIds?: string[]
   stageSuns?: { id: string; sun: { color: string; strength: number } | null }[]
@@ -594,11 +612,22 @@ export function useSceneSync({
   //
   // Per cast model, and again as models land: the list is what changes when
   // one arrives, and a setting pushed before it existed reached nothing.
+  //
+  // Each section is keyed on its own: a cast member's jelly changing must not
+  // restart everyone's blink timers. The key carries the values, so the effect
+  // reads them back from it rather than from a closure.
+  const own = new Map(castEyes.map((c) => [c.id, c]))
+  const eyesKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_EYES, ...own.get(id)?.eyes }]))
+  const blinkKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_BLINK, ...own.get(id)?.blink }]))
+  const jellyKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_JELLY, ...own.get(id)?.jelly }]))
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
-  }, [engineRef, ready, castIds, settings.eyes.enabled])
+    for (const [id, eyes] of JSON.parse(eyesKey) as [string, CastEyes][]) {
+      engine.setEyeTracking(id, eyes.enabled ? {} : null)
+      engine.setModelSeeThroughHair(id, eyes.throughHair)
+    }
+  }, [engineRef, ready, eyesKey])
 
   // ── Head on the camera ──
   useEffect(() => {
@@ -607,13 +636,6 @@ export function useSceneSync({
     for (const id of castIds) engine.setHeadTracking(id, settings.eyes.head ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes.head])
 
-  // ── Eyes through hair ──
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    for (const id of castIds) engine.setModelSeeThroughHair(id, settings.eyes.throughHair)
-  }, [engineRef, ready, castIds, settings.eyes.throughHair])
-
   // ── Auto blink ──
   //
   // Same shape again. A model with no closing morph just doesn't blink.
@@ -621,10 +643,10 @@ export function useSceneSync({
     const engine = engineRef.current
     if (!engine || !ready) return
     // Now and then a blink comes doubled, a quick flutter: always, as people do.
-    const { enabled, interval, speed } = settings.blink
-    const options = { interval, speed }
-    for (const id of castIds) engine.setAutoBlink(id, enabled ? options : null)
-  }, [engineRef, ready, castIds, settings.blink])
+    for (const [id, { enabled, interval, speed }] of JSON.parse(blinkKey) as [string, CastBlink][]) {
+      engine.setAutoBlink(id, enabled ? { interval, speed } : null)
+    }
+  }, [engineRef, ready, blinkKey])
 
   // ── Motion blur ──
   //
@@ -652,10 +674,10 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    const { enabled, strength, motion, idle } = settings.jelly
-    const options = { strength, motion, idle }
-    for (const id of castIds) engine.setModelJellyEyes(id, enabled ? options : null)
-  }, [engineRef, ready, castIds, settings.jelly])
+    for (const [id, { enabled, strength, motion, idle }] of JSON.parse(jellyKey) as [string, CastJelly][]) {
+      engine.setModelJellyEyes(id, enabled ? { strength, motion, idle } : null)
+    }
+  }, [engineRef, ready, jellyKey])
 
   // ── The cast takes the sky flat ──
   //
@@ -1010,7 +1032,9 @@ export function useSceneSync({
  * row's `instance`: a model replaced by a file of the same name keeps its id on
  * a new engine Model, which holds none of what was pushed to the old one.
  */
-export function useSceneCast<M extends { id: string; instance: number; fill?: false; bloom?: false }>(
+export function useSceneCast<
+  M extends { id: string; instance: number; fill?: false; bloom?: false; eyes?: CastEyes; blink?: CastBlink; jelly?: CastJelly },
+>(
   models: M[],
   stages: { id: string; partOf?: string; sun?: { color: string; strength: number } | null }[],
   props: { id: string }[],
@@ -1029,5 +1053,7 @@ export function useSceneCast<M extends { id: string; instance: number; fill?: fa
     const first = stages.find((s) => !s.partOf)
     return first ? [{ id: first.id, sun: first.sun ?? null }] : []
   }, [stages])
-  return { stageIds, cast, castIds, unfilledIds, unbloomedIds, stageSuns }
+  // Each cast member's own eyes, blink and jelly, for useSceneSync.
+  const castEyes = useMemo(() => cast.map((m) => ({ id: m.id, eyes: m.eyes, blink: m.blink, jelly: m.jelly })), [cast])
+  return { stageIds, cast, castIds, castEyes, unfilledIds, unbloomedIds, stageSuns }
 }
