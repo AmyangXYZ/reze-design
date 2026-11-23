@@ -323,7 +323,7 @@ type BackdropFrames = {
  */
 export async function openVideoBackdrop(
   media: BackdropMedia,
-  o: { width: number; height: number; startTime: number; fps: number; total: number; loop: boolean },
+  o: { width: number; height: number; startTime: number; fps: number; total: number; loop: boolean; alpha?: boolean },
 ): Promise<BackdropFrames> {
   const { Input, BufferSource, CanvasSink, ALL_FORMATS } = await import("mediabunny")
   // READ ONCE, UP FRONT, rather than letting the demuxer read the File lazily
@@ -345,7 +345,11 @@ export async function openVideoBackdrop(
   const input = new Input({ source: new BufferSource(bytes), formats: ALL_FORMATS })
   const track = await input.getPrimaryVideoTrack()
   if (!track) throw new Error(`No video track in ${media.name}`)
-  const sink = new CanvasSink(track, { width: o.width, height: o.height, fit: "cover", poolSize: 2 })
+  // An overlay keeps its transparency: WebCodecs decodes a video's colour
+  // alone, and a transparent WebM carries its alpha as a second stream that
+  // only `alpha` decodes and merges. Without it every frame came out opaque
+  // and covered the whole scene.
+  const sink = new CanvasSink(track, { width: o.width, height: o.height, fit: "cover", poolSize: 2, alpha: o.alpha ?? false })
   const span = o.loop ? Math.max(await track.computeDuration(), 1 / 1000) : Infinity
   /** Scene time -> time within the file, wrapping when the backdrop loops. */
   const sourceTime = (i: number) => {

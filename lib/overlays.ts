@@ -174,6 +174,7 @@ export async function openOverlayFrames(
           fps: run.fps,
           total: run.total,
           loop: true,
+          alpha: true,
         })
         return { o, video, image: null, anim: null }
       }
