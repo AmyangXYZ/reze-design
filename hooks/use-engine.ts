@@ -555,7 +555,15 @@ export function useEngine(
     }
     // One commit with the reveal above it — the mesh, its shading and its row
     // land on the same frame.
-    setModels((prev) => withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model, undefined, { at: position, guess: true })))
+    // Its eyes on the camera from the start: a character arriving should look
+    // back. The document's default stays off, which is what a scene saved
+    // before the switch existed means.
+    setModels((prev) =>
+      withId(prev, {
+        ...infoFor(id, pmxBaseName(pmxFile.name), model, undefined, { at: position, guess: true }),
+        eyes: { ...CAST_EYE_DEFAULTS.eyes, enabled: true },
+      }),
+    )
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id
   }, [])
@@ -1158,8 +1166,14 @@ export function useEngine(
         prev.map((m) =>
           m.id === targetId
             ? // The slot's placement survives the upload, and so does whether
-              // anyone chose it: replacing the model does not place it.
-              infoFor(id, pmxBaseName(pmxFile.name), model, undefined, at ? { at, guess: m.spawnGuess } : undefined)
+              // anyone chose it: replacing the model does not place it. Its
+              // eyes, blink and jelly are the slot's too.
+              {
+                ...infoFor(id, pmxBaseName(pmxFile.name), model, undefined, at ? { at, guess: m.spawnGuess } : undefined),
+                ...(m.eyes ? { eyes: m.eyes } : {}),
+                ...(m.blink ? { blink: m.blink } : {}),
+                ...(m.jelly ? { jelly: m.jelly } : {}),
+              }
             : m,
         ),
       )
