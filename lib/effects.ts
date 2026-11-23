@@ -65,6 +65,20 @@ export function followsCharacter(wgsl: string): boolean {
   return /\brz(?:Subject|Anchor|Trail|TrailCount)\s*\(/.test(wgsl) || /^#anchor\b/m.test(wgsl) || /^#param\s+bone\b/m.test(wgsl)
 }
 
+/**
+ * An effect as it goes on a scene. A character effect becomes one copy per
+ * character, each aimed at her alone, so every character's dials, keys and
+ * clips are her own: white wings on one dancer and red on the other are two
+ * copies from the start. Handing a copy to someone else is the timeline's
+ * Copy to. An effect already aimed is copied for the characters it names. A
+ * scene effect (rain), or a scene with no cast yet, goes on once.
+ */
+export function copiesPerCharacter(e: AppliedEffect, castIds: readonly string[]): AppliedEffect[] {
+  const ids = e.models ?? castIds
+  if (ids.length === 0 || !followsCharacter(e.wgsl)) return [e]
+  return ids.map((id) => ({ ...e, models: [id] }))
+}
+
 /** Kinds whose keys hold rather than travel: a switch, a list, a bone. */
 export const HOLDING_KINDS = new Set(["bool", "enum", "bone", "text"])
 

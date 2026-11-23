@@ -27,6 +27,8 @@ const definesParticles = (wgsl: string) =>
   /\bfn\s+particleShade\s*\(/.test(wgsl)
 /** The effect places its own corners (`particleCorner`). */
 const meshed = (wgsl: string) => /\bfn\s+particleCorner\s*\(/.test(wgsl)
+/** The step takes its slot (`particleStep(p, dt, id)`), as the engine passes it. */
+const stepTakesId = (wgsl: string) => /\bfn\s+particleStep\s*\([^)]*,[^)]*,[^)]*\)/.test(wgsl)
 /** `#particles N`, read the way the engine reads it. */
 const particleCount = (wgsl: string) => {
   const m = wgsl.match(/^[ \t]*#particles[ \t]+(\d+)/m)
@@ -897,7 +899,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let generation = floor(u.time * 0.37) + f32(i) * 0.618;
     p = particleInit(i, rzHash11(generation));
   } else {
-    p = particleStep(p, u.dt);
+    p = particleStep(p, u.dt${stepTakesId(wgsl) ? ", i" : ""});
     p.age = p.age + u.dt;
   }
   particles[i] = p;

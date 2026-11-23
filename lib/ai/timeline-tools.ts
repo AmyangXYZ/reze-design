@@ -9,7 +9,7 @@
 import { stockName, stockSearchText } from "@/lib/stock-text"
 import type { EffectParamValue } from "reze-engine"
 import { parseDirectives } from "reze-engine"
-import type { AppliedEffect } from "@/lib/effects"
+import { copiesPerCharacter, followsCharacter, type AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
 import type { SceneLight, SceneLightTrack } from "@/lib/scene"
 import type { VisibilityWindow } from "@/lib/timeline"
@@ -330,7 +330,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   {
     name: "add_effect",
     description:
-      "Add an effect by name from list_effects. Optionally when it plays (clips, in seconds), how strongly (influence 0–1), its dials (defaults and ranges: list_effects with names), and which characters it is on. Several copies of one effect are fine — each is its own.",
+      "Add an effect by name from list_effects. Optionally when it plays (clips, in seconds), how strongly (influence 0–1), its dials (defaults and ranges: list_effects with names), and which characters it is on. An effect on characters (wings, hand trails) goes on as one copy per character, each with its own dials, and returns every copy's id; tune each by its id. Several copies of one effect are fine — each is its own.",
     parameters: {
       type: "object",
       properties: {
@@ -356,8 +356,12 @@ export const TIMELINE_TOOLS: SceneTool[] = [
         ...(Object.keys(params).length ? { params } : {}),
         ...(charactersIn(h, args.characters) ? { models: charactersIn(h, args.characters) } : {}),
       }
-      const uid = h.addEffect(effect)
-      return { data: { id: uid, name: def.name, ...(errors.length ? { errors } : {}) } }
+      const ids = copiesPerCharacter(effect, h.cast.map((c) => c.id)).map((c) => ({
+        id: h.addEffect(c),
+        ...(c.models ? { character: h.cast.find((m) => m.id === c.models![0])?.name ?? c.models[0] } : {}),
+      }))
+      const out = ids.length === 1 ? { id: ids[0].id } : { copies: ids }
+      return { data: { ...out, name: def.name, ...(errors.length ? { errors } : {}) } }
     },
   },
   {
@@ -370,7 +374,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
         clips: { type: "array", items: CLIP_SCHEMA, description: "Replaces its clips; [] plays it throughout." },
         influence: { type: "number" },
         dials: { type: "object" },
-        characters: { type: "array", items: { type: "string" }, description: "[] for everyone." },
+        characters: { type: "array", items: { type: "string" }, description: "A scene effect: who it is on, [] for everyone. A character effect: the ONE character this copy moves to." },
       },
       required: ["effect"],
     },
@@ -386,7 +390,13 @@ export const TIMELINE_TOOLS: SceneTool[] = [
         part.params = { ...(e.params ?? {}), ...r.params }
         errors.push(...r.errors)
       }
-      if (Array.isArray(args.characters)) part.models = charactersIn(h, args.characters)
+      if (Array.isArray(args.characters)) {
+        const models = charactersIn(h, args.characters)
+        // A character effect's copy is one character's: moved, never shared.
+        if (followsCharacter(e.wgsl) && (models?.length ?? 0) !== 1)
+          return { data: { error: "a character effect's copy is on exactly one character — name one to move it there; add_effect makes a copy for another" } }
+        part.models = models
+      }
       h.patchEffect(e.uid, part)
       return { data: { id: e.uid, ...(errors.length ? { errors } : {}) } }
     },

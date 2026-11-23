@@ -33,6 +33,10 @@
 // built-ins would need a line adding and every fork could forget it. The engine
 // reports whether an effect reads the cast at all (`readsCast`), and that is what
 // decides whether the list is here: rain falls on the scene.
+//
+// A character effect is one copy per character (copiesPerCharacter): the page
+// hands this the characters wearing ANY copy, ticking one gives her a copy of
+// her own, and `whose`, under the list, picks whose copy the dials below are.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Check, ChevronDown, RotateCcw } from "lucide-react"
@@ -75,6 +79,7 @@ export function EffectParams({
   cast = [],
   models,
   onModels,
+  whose,
   keys,
   onKeys,
   frameNow,
@@ -99,6 +104,8 @@ export function EffectParams({
   /** Undefined means everyone, which is also what unticking the last model
    *  gives back — an effect on nobody is a dark effect with no sign of why. */
   onModels?: (next: string[] | undefined) => void
+  /** Under the list: whose copy the dials are, when several characters wear it. */
+  whose?: ReactNode
   /** This copy's keyed dials, by name. A dial with keys shows its value at the
    *  playhead and moving it writes a key there. */
   keys?: Record<string, DialKey[]>
@@ -357,7 +364,7 @@ export function EffectParams({
     )
   }
 
-  if (rows.length === 0 && !aimable) return null
+  if (rows.length === 0 && !aimable && !whose) return null
 
   return (
     <>
@@ -414,6 +421,7 @@ export function EffectParams({
           </Popover>
         </div>
       )}
+      {whose}
       {onReset && rows.length > 0 && (
         // A header line: what the panel is on the left, its one action on the
         // right — the reading order every other header in the chrome uses, and

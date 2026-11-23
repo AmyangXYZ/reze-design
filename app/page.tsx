@@ -244,6 +244,7 @@ import {
   stockEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
+  copiesPerCharacter,
   followsCharacter,
   readsXray,
   xrayDefaultCut,
@@ -3637,6 +3638,9 @@ function Lab() {
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
+  /** Whose dials a character effect's panel tunes: "all" its wearers at
+   *  once, or one character's copy alone. */
+  const [effectScope, setEffectScope] = useState<string>("all")
   // The effect last picked from the dock's tabs, for the library to scroll to.
   const [effectReveal, setEffectReveal] = useState<string | null>(null)
   /** Patch one applied effect's timing, dials or targets, by uid. */
@@ -4260,13 +4264,15 @@ function Lab() {
   const effectSummary =
     bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.effectsN(bgEffects.length)
 
-  /** The edited effect back into the list it came from — IN PLACE when it was
-   *  already applied, appended when the session created it. Editing a layer
-   *  must not move it: the order is the composition. */
-  const mergeEffect = (list: AppliedEffect[], e: AppliedEffect): AppliedEffect[] => {
-    const at = list.findIndex((x) => x.id === e.id)
-    return at >= 0 ? list.map((x, i) => (i === at ? e : x)) : [...list, e]
-  }
+  /** The edited effect back into the list it came from. The code is the
+   *  effect's, so EVERY copy of it takes the new code IN PLACE and keeps its
+   *  own dials, keys, clips and character; editing a layer must not move it,
+   *  the order is the composition. One the scene does not wear yet goes on
+   *  as one copy per character, as from the library. */
+  const mergeEffect = (list: AppliedEffect[], e: AppliedEffect): AppliedEffect[] =>
+    list.some((x) => x.id === e.id)
+      ? list.map((x) => (x.id === e.id ? { ...x, name: e.name, wgsl: e.wgsl } : x))
+      : [...list, ...copiesPerCharacter(e, castIdList)]
   /**
    * The same, for a copy that takes its ORIGINAL'S place.
    *
@@ -4284,10 +4290,10 @@ function Lab() {
    * something from the library that the scene is not wearing has nothing to
    * supersede, and the copy is simply added.
    */
-  const supersedeEffect = (list: AppliedEffect[], oldId: string, e: AppliedEffect): AppliedEffect[] => {
-    const at = list.findIndex((x) => x.id === oldId)
-    return at >= 0 ? list.map((x, i) => (i === at ? e : x)) : mergeEffect(list, e)
-  }
+  const supersedeEffect = (list: AppliedEffect[], oldId: string, e: AppliedEffect): AppliedEffect[] =>
+    list.some((x) => x.id === oldId)
+      ? list.map((x) => (x.id === oldId ? { ...x, id: e.id, name: e.name, wgsl: e.wgsl } : x))
+      : mergeEffect(list, e)
 
   // ── The WGSL effect editor ──
   //
@@ -4391,6 +4397,26 @@ function Lab() {
    * A preview is a way of looking. It has no business in the document.
    */
   const documentEffects = effectEditor ? effectEditor.prior : bgEffects
+
+  /**
+   * A character effect is one character's: wherever a copy is shared, by a
+   * scene saved before copies were per character or by any path that adds one
+   * aimed at everyone, it splits into a copy for each, the first keeping its
+   * uid (and so the selection). Not while the editor previews, whose list is
+   * not the scene's; not a stage's own effects, which belong to the stage.
+   */
+  useEffect(() => {
+    if (effectEditor || castIdList.length < 2) return
+    const shared = (e: AppliedEffect) => !e.stage && followsCharacter(e.wgsl) && (e.models?.length ?? castIdList.length) > 1
+    if (!bgEffects.some(shared)) return
+    setBgEffects((list) =>
+      list.flatMap((e) => {
+        if (!shared(e)) return [e]
+        const [first, ...rest] = copiesPerCharacter(e, castIdList)
+        return [first, ...rest.map(({ uid: _uid, ...copy }) => (void _uid, copy))]
+      }),
+    )
+  }, [bgEffects, castIdList, effectEditor, setBgEffects])
   /** Edit the effect the scene is wearing. No subject to resolve — an applied
    *  effect already IS its row, carried by value.
    *
@@ -7094,7 +7120,9 @@ function Lab() {
       const trial: AppliedEffect = target
         ? { id: tempId, name: wanted, wgsl, uid: target.uid, influence: target.influence, window: target.window, models: target.models, stage: target.stage }
         : { id: tempId, name: wanted, wgsl }
-      const next = stampEffectUids(target ? supersedeEffect(base, target.id, trial) : mergeEffect(base, trial))
+      // The one copy named is replaced whole, its old dials dropped; a new
+      // effect goes on like any other.
+      const next = stampEffectUids(target ? base.map((e) => (e.uid === target.uid ? trial : e)) : mergeEffect(base, trial))
       const rs = await installEffects(next)
       if (!rs) return { ok: false, diagnostics: [t.lab.engineNotReady] }
       const at = next.findIndex((e) => e.id === tempId)
@@ -8182,12 +8210,49 @@ function Lab() {
   // Who it plays to, only for an effect that reads the cast: a rain effect is
   // handed nothing to aim.
   const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
+  // A character effect is ONE tab however many characters wear it: each wears
+  // a copy of her own, and whose dials show is picked inside the tab. A scene
+  // effect's copies are a tab each, as two rains are two layers.
+  const fxTabKey = (e: AppliedEffect) => (followsCharacter(e.wgsl) && !e.stage ? `fx:${e.id}` : (e.uid ?? e.id))
+  const effectTabs = (() => {
+    const tabs = new Map<string, AppliedEffect[]>()
+    for (const e of effectsTopFirst) tabs.set(fxTabKey(e), [...(tabs.get(fxTabKey(e)) ?? []), e])
+    return [...tabs]
+  })()
+  const effectFxKey = effectFx ? fxTabKey(effectFx) : ""
+  const effectFxCopies = effectTabs.find(([k]) => k === effectFxKey)?.[1] ?? []
+  /** Her copy in the chosen tab. */
+  const effectCopyOf = (id: string) => effectFxCopies.find((e) => e.models?.length === 1 && e.models[0] === id)
+  /** Who wears the chosen effect, in cast order. */
+  const effectFxWearers = castTargets.filter((m) => effectFxCopies.some((e) => !e.models || e.models.includes(m.id)))
+  /** Who wears it, from the panel's ticks (undefined: everyone). A character
+   *  ticked gets a copy of her own, starting from the dials on screen, after
+   *  its other copies; one unticked loses hers. */
+  /** Several wear it: the panel tunes them all, or one picked character. */
+  const effectFxShared = effectFxAimable && effectFxWearers.length > 1
+  const effectFxScope = effectFxShared && effectFxWearers.some((m) => m.id === effectScope) ? effectScope : "all"
+  /** The copies a dial change goes to: every wearer's under All, else the one shown. */
+  const effectFxTargets = effectFxShared && effectFxScope === "all" ? effectFxCopies.flatMap((e) => (e.uid ? [e.uid] : [])) : [effectFxUid]
+  const setEffectWearers = (picked: string[] | undefined) => {
+    if (!effectFx) return
+    const next = picked ?? castIdList
+    const key = fxTabKey(effectFx)
+    const have = new Set(effectFxCopies.flatMap((e) => e.models ?? []))
+    const { uid: _uid, ...from } = effectFx
+    void _uid
+    const added = next.filter((id) => !have.has(id)).map((id) => ({ ...from, models: [id] }))
+    const kept = bgEffects.filter((e) => fxTabKey(e) !== key || (e.models ?? []).some((m) => next.includes(m)))
+    // Taking off the copy on screen shows another's.
+    if (!kept.some((e) => e.uid === effectFx.uid)) setSelectedEffect(kept.find((e) => fxTabKey(e) === key)?.uid ?? null)
+    const last = kept.reduce((at, e, i) => (fxTabKey(e) === key ? i : at), -1)
+    setBgEffects([...kept.slice(0, last + 1), ...added, ...kept.slice(last + 1)])
+  }
   // An effect chosen from the canvas or the timeline comes into view in the
   // pane's tab line.
   useEffect(() => {
-    if (!effectFxUid) return
-    document.querySelector(`[data-effect-tab="${CSS.escape(effectFxUid)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
-  }, [effectFxUid])
+    if (!effectFxKey) return
+    document.querySelector(`[data-effect-tab="${CSS.escape(effectFxKey)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [effectFxKey])
 
   // The render panel's body, set as a column of type on the cover.
   const exportBody = (
@@ -9033,13 +9098,14 @@ function Lab() {
           const fx = bgEffects.find((e) => e.id === id)
           if (fx?.uid) setSelectedEffect(fx.uid)
         }}
-        // Applying from the library APPENDS; the library takes off what is
-        // already on (its `wears`). An effect put on here is the one the pane
-        // beside it chooses, at once.
+        // Applying from the library APPENDS, a character effect as one copy
+        // per character; the library takes off what is already on (its
+        // `wears`). An effect put on here is the one the pane beside it
+        // chooses, at once.
         onApply={(e) => {
-          const uid = newSceneId()
-          setBgEffects((list) => [...list, { ...e, uid }])
-          setSelectedEffect(uid)
+          const copies = copiesPerCharacter(e, castIdList).map((c) => ({ ...c, uid: newSceneId() }))
+          setBgEffects((list) => [...list, ...copies])
+          setSelectedEffect(copies[0].uid)
         }}
         onRemove={(item) => setBgEffects((list) => list.filter((e) => !wears(e, item)))}
         onRenamed={(oldName, newName) =>
@@ -10270,10 +10336,13 @@ function Lab() {
                     // under the line, as Camera's do.
                     effectFx ? (
                       <Tabs
-                        value={effectFxUid}
-                        onValueChange={(uid) => {
-                          setSelectedEffect(uid)
-                          setEffectReveal(bgEffects.find((e) => e.uid === uid)?.id ?? null)
+                        value={effectFxKey}
+                        onValueChange={(key) => {
+                          // The same character's copy as before, where she wears it.
+                          const copies = effectTabs.find(([k]) => k === key)?.[1] ?? []
+                          const pick = copies.find((e) => e.models?.[0] === effectFx.models?.[0]) ?? copies[0]
+                          setSelectedEffect(pick?.uid ?? null)
+                          setEffectReveal(pick?.id ?? null)
                         }}
                       >
                         {/* A scene wearing many effects wraps its tab line:
@@ -10288,27 +10357,67 @@ function Lab() {
                             )}
                           >
                             <TabsList className="w-full border-b-0">
-                              {effectsTopFirst.map((e) => (
-                                <TabsTrigger key={e.uid ?? e.id} value={e.uid ?? ""} data-effect-tab={e.uid} className="min-w-0">
+                              {effectTabs.map(([key, [e]]) => (
+                                <TabsTrigger key={key} value={key} data-effect-tab={key} className="min-w-0">
                                   <span className="truncate">{effectLabel(e.name)}</span>
                                 </TabsTrigger>
                               ))}
                             </TabsList>
                           </div>
                         </div>
-                        <TabsContent value={effectFxUid}>
+                        <TabsContent value={effectFxKey}>
                           {(effectFxDecls.length > 0 || effectFxAimable) && (
                             <div className="mt-2.5">
                               <EffectParams
                                 decls={effectFxDecls}
                                 values={effectFx.params}
-                                onChange={(name, value) => setEffectParam(effectFxUid, name, value)}
+                                onChange={(name, value) => effectFxTargets.forEach((uid) => setEffectParam(uid, name, value))}
                                 cast={effectFxAimable || effectFxDecls.some((d) => d.kind === "bone" || d.kind === "point") ? castTargets : []}
-                                models={effectFx.models}
-                                onModels={effectFxAimable ? (models) => patchEffect(effectFxUid, { models }) : undefined}
+                                models={effectFxAimable ? effectFxWearers.map((m) => m.id) : effectFx.models}
+                                onModels={effectFxAimable ? setEffectWearers : undefined}
+                                whose={
+                                  effectFxShared ? (
+                                    // Whose dials these are: everyone's at once, or one
+                                    // character's copy alone — a row like a dial's.
+                                    <div className="mb-1.5 flex items-center gap-1.5">
+                                      <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.dialsFor}</span>
+                                      <Select
+                                        value={effectFxScope}
+                                        onValueChange={(v) => {
+                                          setEffectScope(v)
+                                          if (v === "all") {
+                                            // All means all alike: the dials and curves on
+                                            // screen go to every wearer, then move together.
+                                            const key = fxTabKey(effectFx)
+                                            setBgEffects((list) =>
+                                              list.map((e) =>
+                                                fxTabKey(e) === key && e.uid !== effectFx.uid ? { ...e, params: effectFx.params, keys: effectFx.keys } : e,
+                                              ),
+                                            )
+                                            return
+                                          }
+                                          const c = effectCopyOf(v)
+                                          if (c?.uid) setSelectedEffect(c.uid)
+                                        }}
+                                      >
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] min-w-0 text-xs data-[size=sm]:h-5">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="all">{t.lab.ctl.allModels}</SelectItem>
+                                          {effectFxWearers.map((m) => (
+                                            <SelectItem key={m.id} value={m.id}>
+                                              {m.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  ) : undefined
+                                }
                                 keys={effectFx.keys}
-                                onKeys={(name, keys) => setEffectKeys(effectFxUid, name, keys)}
-                                onPreview={(name, value, keys) => previewEffectDial(effectFxUid, name, value, keys)}
+                                onKeys={(name, keys) => effectFxTargets.forEach((uid) => setEffectKeys(uid, name, keys))}
+                                onPreview={(name, value, keys) => effectFxTargets.forEach((uid) => previewEffectDial(uid, name, value, keys))}
                                 frameNow={playheadFrame}
                                 boneNames={(id) =>
                                   models.find((m) => m.id === (id ?? effectFx.models?.[0] ?? cast[0]?.id))?.bones ?? []
@@ -10344,7 +10453,7 @@ function Lab() {
                             <Button
                               variant="bare"
                               disabled={!effectFx.params || Object.keys(effectFx.params).length === 0}
-                              onClick={() => resetEffectParams(effectFxUid)}
+                              onClick={() => effectFxTargets.forEach((uid) => resetEffectParams(uid))}
                               className={cn(LINE_ACTION, "disabled:opacity-40")}
                             >
                               <RotateCcw className="size-3.5" />
@@ -10355,7 +10464,15 @@ function Lab() {
                               aria-label={t.lab.aria.removeEffect(effectFx.name)}
                               // BY INSTANCE. Filtering on id took every copy of
                               // the effect with it.
-                              onClick={() => setBgEffects((list) => list.filter((x) => x.uid !== effectFx.uid))}
+                              // A character effect's tab stays on whoever else
+                              // wears it, showing hers.
+                              // Under All it takes the effect off everyone.
+                              onClick={() => {
+                                const gone = new Set(effectFxTargets)
+                                const next = effectFxCopies.find((x) => x.uid && !gone.has(x.uid))
+                                if (next?.uid) setSelectedEffect(next.uid)
+                                setBgEffects((list) => list.filter((x) => !x.uid || !gone.has(x.uid)))
+                              }}
                               className={cn(LINE_ACTION, "hover:text-red-400")}
                             >
                               <X className="size-3.5" />
@@ -12157,7 +12274,10 @@ function Lab() {
             applied: (id) => bgEffects.some((x) => x.id === id),
             onToggle: (id) => {
               const e = phoneEffects.find((x) => x.id === id)
-              if (e) setBgEffects((list) => (list.some((x) => x.id === id) ? list.filter((x) => x.id !== id) : [...list, applyDefaults(e)]))
+              if (e)
+                setBgEffects((list) =>
+                  list.some((x) => x.id === id) ? list.filter((x) => x.id !== id) : [...list, ...copiesPerCharacter(applyDefaults(e), castIdList)],
+                )
             },
             tune: (id) => {
               const e = bgEffects.find((x) => x.id === id)

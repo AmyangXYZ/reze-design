@@ -464,6 +464,17 @@ await test("effects target characters by name", async () => {
   assert.deepEqual(state.effects[0].models, ["m1"])
 })
 
+await test("a character effect goes on as one copy per character, each moved alone", async () => {
+  const { h, state } = fake({ cast: [{ id: "m1", name: "Reze" }, { id: "m2", name: "Makima" }] })
+  const fx = stockEffects().find((e) => /^#anchor\b/m.test(e.payload.wgsl))
+  assert.ok(fx, "a built-in that reads a bone")
+  const r = await runSceneTool("add_effect", { name: fx!.name }, h)
+  assert.deepEqual(state.effects.map((e) => e.models), [["m1"], ["m2"]])
+  assert.equal((r.data as { copies: unknown[] }).copies.length, 2)
+  const shared = await runSceneTool("update_effect", { effect: state.effects[0].uid, characters: ["Reze", "Makima"] }, h)
+  assert.match((shared.data as { error: string }).error, /exactly one character/)
+})
+
 // ── lamps ──────────────────────────────────────────────────────────────────
 
 await test("add_lamp: defaults, clamps, spot from an aim, keys in frames", async () => {
