@@ -101,8 +101,6 @@ import { DROP_BOUND, useFileDrop, useRefuseStrayDrops } from "@/hooks/use-file-d
 import { FileDropArea } from "@/components/editor/file-drop-area"
 import { WORDMARK } from "@/components/wordmark"
 import { FpsReadout } from "@/components/scene/fps-readout"
-import { MobileStudio } from "@/components/mobile/mobile-studio"
-import { MenuMark } from "@/components/mobile/menu-mark"
 import { SCROLL_FADE, scrollFade, softScrollFade, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -240,7 +238,6 @@ import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
-  applyDefaults,
   stockEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
@@ -478,22 +475,6 @@ const POINT_EFFECTS = [
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
  *  this exists to prevent, and it is what applying one effect twice produces. */
-/** A phone's list of looks: the stock and the community's rows as one,
- *  newest first. One row per name, the stock's where a community row shares
- *  it, since the name is what applying resolves by. */
-function newestFirst<T extends { name: string; createdAt?: string }>(stock: T[], community: T[]): T[] {
-  const seen = new Set<string>()
-  const when = (r: T) => (r.createdAt ? Date.parse(r.createdAt) || 0 : 0)
-  return [...stock, ...community]
-    .filter((r) => {
-      const k = nameKey(r.name)
-      if (seen.has(k)) return false
-      seen.add(k)
-      return true
-    })
-    .sort((a, b) => when(b) - when(a))
-}
-
 function stampEffectUids(list: AppliedEffect[]): AppliedEffect[] {
   const seen = new Set<string>()
   return list.map((e) => {
@@ -521,8 +502,6 @@ function AddLine({ label, onPick, onFiles }: { label: string; onPick: () => void
 }
 
 const FRAME_ASPECT_TOL = 1.03
-/** What a phone's render panel tells the frame: nothing. */
-const noFramePreview = () => {}
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
 const RECENTS_KEY = storageKey("palette-recents")
@@ -2945,8 +2924,6 @@ function Lab() {
   // A phone (or a tablet) gets the scene and its transport, play only
   // (globals.css, "Phone"; lib/device.ts).
   const phone = usePhone()
-  /** The phone's tools, open on their side sheet (components/mobile/mobile-studio). */
-  const [phoneEdit, setPhoneEdit] = useState(false)
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
@@ -4982,11 +4959,6 @@ function Lab() {
   // group back, or a look built here could only ever live in this one scene:
   // invisible in the library, unusable on another group, impossible to publish.
   const communityGraphs = useCommunity<GraphItem>("graph")
-  // The phone's lists: built-ins and community rows together, newest first.
-  // Desktop's libraries read the same rows; only the phone needs them merged.
-  const phoneEffects = phone ? newestFirst(stockEffects(), communityEffects) : []
-  const phoneGraphs = phone ? newestFirst(stockGraphs(), communityGraphs) : []
-  const phoneGrades = phone ? newestFirst(stockGrades(), communityGrades) : []
   // Eager, unlike the other two editors': this panel stays MOUNTED while closed
   // (see the JSX), so it needs its rect on the first render it appears in.
   const { rect: graphPanelRect, update: updateGraphPanelRect } = useStoredRect(GRAPH_PANEL_KEY, defaultPanelRect, {
@@ -5289,16 +5261,6 @@ function Lab() {
     setDrawerOpen(false)
   }
   /** Apply a library graph to the group the library was opened from. */
-  /** A look onto one model's group, from a list (a phone): the same split
-   *  applyGraphLibrary makes, for a model and group named outright. */
-  const applyGraphTo = (modelId: string, groupId: string, graph: ShaderGraph, name: string) => {
-    const groups = groupsByModel[modelId] ?? []
-    const group = groups.find((g) => g.id === groupId)
-    if (!group) return
-    const updated: StyleGroup = { ...group, graph: { ...graph, name } }
-    if (updated.materials.length) void upsertGroup(modelId, updated)
-    else void applyGroups(modelId, groups.map((x) => (x.id === groupId ? updated : x)))
-  }
   const applyGraphLibrary = (graph: ShaderGraph, name: string) => {
     const group = libGroup
     if (!inspectedId || !group) return
@@ -8289,8 +8251,7 @@ function Lab() {
         // and a failed render is not a reason to keep nagging.
         if (v) setExportedOnce(true)
       }}
-      // A phone keeps its scene full screen while the render is set up.
-      onFramePreviewChange={phone ? noFramePreview : framing.handleFramePreview}
+      onFramePreviewChange={framing.handleFramePreview}
       onProgressChange={setExportProgress}
       rasterLyricsAt={rasterLyricsAt}
       // Only the MOVING ones: a still card is already in its texture and
@@ -12138,7 +12099,7 @@ function Lab() {
           MOUNTED even while closed: the export runs inside RenderPanel, and
           unmounting would kill a render in flight. Close hides; the pill below
           carries the progress; completion downloads by itself (iMovie-quiet),
-          so nothing reopens. A phone renders from its own Export section. */}
+          so nothing reopens. A phone only views. */}
       {mounted && !phone && (
         // On the cover: a column of type at the right edge past a hairline,
         // where the art director stands when it is open (one at a time).
@@ -12205,125 +12166,8 @@ function Lab() {
             <Link href="/gallery" className="text-xs text-foreground">
               {t.lab.gallery}
             </Link>
-            {/* The way into the phone's options: the account and every tool. Held
-                on its side, a phone only plays. */}
-            <Button
-              variant="bare"
-              aria-label={t.mobile.edit}
-              aria-expanded={phoneEdit}
-              onClick={() => setPhoneEdit((v) => !v)}
-              className="flex size-6 items-center justify-center text-foreground"
-            >
-              <MenuMark open={phoneEdit} />
-            </Button>
           </span>
         </div>
-      )}
-
-      {/* The editor on a phone, lite: the sections and their sheet, inside the
-          phone shell (components/mobile/mobile-studio). */}
-      {phone && mounted && (
-        <MobileStudio
-          open={phoneEdit}
-          onOpenChange={setPhoneEdit}
-          cast={cast.map((m) => ({ id: m.id, name: displayName(m.file) }))}
-          onAddModel={(files) => {
-            modelTarget.current = { mode: "add" }
-            void onModelPicked(files)
-          }}
-          onReplaceModel={(id, files) => {
-            modelTarget.current = { mode: "replace", id }
-            void onModelPicked(files)
-          }}
-          onRemoveModel={removeCastMember}
-          motion={
-            cast[0]
-              ? {
-                  name: animByModel[cast[0].id]?.name ?? null,
-                  onPick: (file) => loadMotionFile(cast[0].id, file),
-                  onRemove: () => removeAnimation(cast[0].id),
-                }
-              : null
-          }
-          morph={
-            cast[0]
-              ? {
-                  name: morphByModel[cast[0].id]?.name ?? null,
-                  onPick: (file) =>
-                    void loadMorphFile(cast[0].id, file).then((name) => {
-                      if (name) setMorphByModel((prev) => ({ ...prev, [cast[0].id]: { name, src: file } }))
-                    }),
-                  onRemove: () => removeMorph(cast[0].id),
-                }
-              : null
-          }
-          camera={{ name: cameraClip, onPick: loadCameraFile, onRemove: removeCamera }}
-          music={{ name: musicClip?.name ?? null, onPick: setMusicFile, onRemove: removeMusic }}
-          background={{
-            color: settings.background.color,
-            onColor: (hex) => patch("background", { color: hex }),
-            image: {
-              name: bgImage && bgImage.slot !== "dome" ? bgImage.name : null,
-              onPick: (file) => {
-                bgImageSlot.current = "flat"
-                void onBgImagePicked(file)
-              },
-              onRemove: () => swapBgImage(null),
-            },
-          }}
-          ground={{
-            enabled: settings.ground.enabled,
-            onEnabled: (on) => patch("ground", { enabled: on }),
-            color: settings.ground.color,
-            onColor: (hex) => patch("ground", { color: hex }),
-          }}
-          effects={{
-            items: phoneEffects.map((e) => ({ id: e.id, label: stockName("effect", e, uiLocale) })),
-            applied: (id) => bgEffects.some((x) => x.id === id),
-            onToggle: (id) => {
-              const e = phoneEffects.find((x) => x.id === id)
-              if (e)
-                setBgEffects((list) =>
-                  list.some((x) => x.id === id) ? list.filter((x) => x.id !== id) : [...list, ...copiesPerCharacter(applyDefaults(e), castIdList)],
-                )
-            },
-            tune: (id) => {
-              const e = bgEffects.find((x) => x.id === id)
-              const uid = e?.uid
-              const decls = uid ? (effectSurface[uid]?.params ?? []) : []
-              if (!e || !uid || decls.length === 0) return null
-              return {
-                decls,
-                values: e.params,
-                onChange: (name, value) => setEffectParam(uid, name, value),
-                onReset: () => resetEffectParams(uid),
-              }
-            },
-          }}
-          materials={{
-            groups: (cast[0] ? (groupsByModel[cast[0].id] ?? []) : []).map((g) => {
-              const look = phoneGraphs.find((x) => x.name === g.graph?.name)
-              return { id: g.id, label: localGroupLabel(groupLabel(g), uiLocale), look: look ? stockName("graph", look, uiLocale) : (g.graph?.name ?? "—") }
-            }),
-            looks: phoneGraphs.map((x) => ({ name: x.name, label: stockName("graph", x, uiLocale) })),
-            onPick: (groupId, name) => {
-              const look = phoneGraphs.find((x) => x.name === name)
-              if (cast[0] && look) applyGraphTo(cast[0].id, groupId, look.payload.graph, name)
-            },
-          }}
-          grades={{
-            items: phoneGrades.map((g) => ({ name: g.name, label: stockName("grade", g, uiLocale) })),
-            current: settings.grade.preset,
-            onPick: pickGrade,
-            intensity: settings.grade.intensity,
-            onIntensity: (v) => {
-              patch("grade", { intensity: v })
-              rememberIntensity(settings.grade.preset, v)
-            },
-          }}
-          exportPane={exportBody}
-          onExportOpen={(on) => (on ? openExport() : setExportOpen(false))}
-        />
       )}
 
       {/* ── Transport ──
