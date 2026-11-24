@@ -15,7 +15,7 @@
 // its own collapse does.
 
 import { useCallback, useEffect, useState } from "react"
-import { exportDims, type FramePreview } from "@/components/editor/render-panel"
+import type { FramePreview } from "@/components/editor/render-panel"
 import type { ExportBackground } from "@/lib/export-background"
 
 export function useRenderFraming() {
@@ -36,15 +36,6 @@ export function useRenderFraming() {
 
   const activeFrame = framePreview ?? (exporting ? lastFrame : null)
   const liveBackground: ExportBackground = activeFrame === null ? "scene" : background
-  /** The export's frame with the render surface closed: what you compose in
-   *  is what renders, always. The panel's last word when it has spoken this
-   *  session, else the saved choice. Its shape only: the watermark and the
-   *  background are previews of the open panel. */
-  const [savedAspect] = useState(() => {
-    const [w, h] = exportDims()
-    return w / h
-  })
-  const restFrame: FramePreview = { aspect: lastFrame?.aspect ?? savedAspect, watermark: null }
 
   // Seeded from the window rather than left null until an effect runs: the pair
   // (frame, viewport) decides the render size, and measuring one render later
@@ -53,13 +44,13 @@ export function useRenderFraming() {
   const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(() =>
     typeof window === "undefined" ? null : { w: window.innerWidth, h: window.innerHeight },
   )
-  // Always: the editor is framed whether or not the render surface is open.
   useEffect(() => {
+    if (!activeFrame) return
     const update = () => setFrameVp({ w: window.innerWidth, h: window.innerHeight })
     update()
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
-  }, [])
+  }, [activeFrame])
 
   return {
     exporting,
@@ -69,7 +60,6 @@ export function useRenderFraming() {
     framePreview,
     handleFramePreview,
     activeFrame,
-    restFrame,
     liveBackground,
     frameVp,
   }
