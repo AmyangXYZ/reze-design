@@ -1119,13 +1119,6 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   --chrome-line-strong: oklch(0 0 0 / 0.14);
 }
 
-/* PHONE (usePhone, lib/device): the editor is the scene and its transport,
-   play only. Everything else on the page is gone, not hidden: there is
-   nothing to set on a phone. */
-main[data-phone] > :not([data-keep], [data-edge="bottom"]) {
-  display: none !important;
-}
-
 /* Hide UI (components/scene/hide-ui.tsx): every child of the page but what is
    marked to stay. Visibility, so nothing unmounts or re-measures and a hidden
    control takes no clicks. A tooltip open on the button that hid it portals

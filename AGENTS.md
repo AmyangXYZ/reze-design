@@ -62,11 +62,13 @@ paper too, on the side opposite the cover's ink, with no edge. The floating
 editors (graph, WGSL, grade) are solid black in the dark paper's ink and
 hairline, whatever the scene; the code view keeps its own ground
 (`data-ground="code"`). The material tree, AI panel and publish keep surfaces.
-A phone (a touch screen under 600px on its shorter side, `isPhone` in
-`lib/device.ts`) is a viewer only: the scene full screen, the masthead, the
-gallery and the transport. Nothing is picked, applied, tuned or authored on a
-phone. A tablet is a computer: an iPad gets the whole editor, timeline
-included, by touch. The desktop chrome never branches for a phone.
+Every device gets the one editor, by touch where there is no mouse
+(`components/touch-gestures.tsx`: a held finger is a right-click, two taps a
+double-click; the `touch:` variant shows what hover would). A phone (a touch
+screen under 600px on its shorter side, `isPhone` in `lib/device.ts`) uses it
+sideways: held upright it is asked to turn
+(`components/editor/turn-sideways.tsx`). The desktop chrome never branches
+for a phone; only the gallery and the scene viewer have phone layouts.
 
 **Surfaces and edges.** `bg-surface` for chrome, `bg-surface-raised` for
 anything stacked on it, `bg-background` for a page's own ground. Tints over

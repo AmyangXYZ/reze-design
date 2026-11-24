@@ -105,7 +105,7 @@ import { SCROLL_FADE, scrollFade, softScrollFade, useScrollFade } from "@/compon
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
-import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
+import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { exportDims, RenderPanel } from "@/components/editor/render-panel"
 import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
@@ -152,11 +152,10 @@ import { boneGroupsOf, charRow, copyEffectTo, effectOn, moveEffectTo, OVERLAYS_R
 import { holdsOf } from "@/lib/prop-throw"
 import { normalizeVisibility, planeTransformAt, timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
-import Link from "next/link"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
-import { usePhone } from "@/lib/device"
+import { TurnSideways } from "@/components/editor/turn-sideways"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useOverlays } from "@/hooks/use-overlays"
@@ -2921,9 +2920,6 @@ function Lab() {
   useRefuseStrayDrops()
   const [exportOpen, setExportOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  // A phone gets the scene and its transport, play only; a tablet is a computer
-  // (globals.css, "Phone"; lib/device.ts).
-  const phone = usePhone()
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
@@ -2983,10 +2979,8 @@ function Lab() {
   // Export states its own frame a render after it opens; until it does (coming
   // from publish, say) the frame on screen holds, so the picture eases from one
   // frame to the other and never springs back to the window between them.
-  // Not on a phone: its scene stays full screen whatever is open, the render's
-  // settings on its options card.
   const shownFrame =
-    framing.activeFrame ?? (!phone && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: null } : null)
+    framing.activeFrame ?? (shareOpen || exportOpen ? { aspect: 16 / 9, watermark: null } : null)
   const framed = shownFrame !== null
   const frameRect =
     shownFrame && framing.frameVp
@@ -8399,7 +8393,6 @@ function Lab() {
       ref={coverRef}
       className="cover relative h-dvh w-screen overflow-hidden transition-[background-color] select-none"
       data-ui-hidden={uiHidden || undefined}
-      data-phone={phone || undefined}
       data-backed={backing > 0 || undefined}
       data-ink={coverInk(sceneGround)}
       // The scene's own colour, so the ground under the canvas is the colour the
@@ -12099,8 +12092,8 @@ function Lab() {
           MOUNTED even while closed: the export runs inside RenderPanel, and
           unmounting would kill a render in flight. Close hides; the pill below
           carries the progress; completion downloads by itself (iMovie-quiet),
-          so nothing reopens. A phone only views. */}
-      {mounted && !phone && (
+          so nothing reopens. */}
+      {mounted && (
         // On the cover: a column of type at the right edge past a hairline,
         // where the art director stands when it is open (one at a time).
         <aside
@@ -12145,30 +12138,8 @@ function Lab() {
         </aside>
       )}
 
-      {/* A phone's top row: the masthead, and its one way out, the gallery,
-          where scenes play. */}
-      {phone && (
-        <div
-          data-keep
-          data-ink-zone
-          data-edge="top"
-          // The editor's top row, to the pixel: 20px down, 28px in.
-          className="cover-type pointer-events-none absolute top-5 right-6 left-7 z-10 flex h-8 items-center justify-between"
-        >
-          {/* The wordmark with the source beside it; the ways on at the end. */}
-          <span className="pointer-events-auto flex items-center gap-2.5">
-            <span className={WORDMARK}>Reze Design</span>
-            <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub" className="flex size-6 items-center justify-center text-foreground">
-              <GithubMark className="size-4" />
-            </a>
-          </span>
-          <span className="pointer-events-auto flex items-center gap-4">
-            <Link href="/gallery" className="text-xs text-foreground">
-              {t.lab.gallery}
-            </Link>
-          </span>
-        </div>
-      )}
+      {/* A phone held upright: turn it sideways (the editor is the computer's). */}
+      <TurnSideways />
 
       {/* ── Transport ──
           The real AnimPlayer, not a mock of one. It already plays, scrubs, loops
@@ -12314,7 +12285,7 @@ function Lab() {
                 speed={settings.playback.speed}
                 onSpeed={setPlaybackSpeed}
                 fold={
-                  TIMELINE_EDITOR && timelineRoom && !phone ? (
+                  TIMELINE_EDITOR && timelineRoom ? (
                     <Button
                       variant="ghost"
                       size="icon"
