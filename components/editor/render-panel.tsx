@@ -337,6 +337,21 @@ function PercentSlider({
             el.select()
           })
         }}
+        // A finger's double tap: two taps never make a press with detail 2, but
+        // they make a dblclick (the browser's, or components/touch-gestures').
+        // A mouse's dblclick arrives with the edit already begun, and stops here.
+        // The field is made writable and focused inside the event, so a tablet
+        // raises its keyboard for it.
+        onDoubleClick={(e) => {
+          const el = e.currentTarget
+          if (editing || !el.readOnly) return
+          e.preventDefault()
+          el.readOnly = false
+          el.focus()
+          setDraft(String(Math.round(value * 100)))
+          setEditing(true)
+          requestAnimationFrame(() => el.select())
+        }}
         onChange={(e) => editing && setDraft(e.target.value)}
         onBlur={() => editing && commit(draft)}
         onKeyDown={(e) => {

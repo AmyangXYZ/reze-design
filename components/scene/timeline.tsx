@@ -809,7 +809,15 @@ function TimelineCanvas({
     cameraKfRef?: CameraKeyframe
     dopeCameraRefs?: CameraKeyframe[]
     dopeFrame?: number
+    /** A single key's frame and value at the press, so a drag taken over by
+     *  a second finger can put it back. */
+    origFrame?: number
+    origValue?: number
   } | null>(null)
+  /** The selection, the playhead and the box as a finger found them: a second
+   *  finger turns its press into a pan or a pinch, which leaves all three as
+   *  they were. Mouse presses never set it. */
+  const touchSnapRef = useRef<{ sel: SelectedKeyframe[]; frame: number; sticky: StickyBox | null } | null>(null)
 
   /** Live marquee while a box-select drag runs: a full-height frame band over
    *  the dope strip, or a free rectangle (canvas px) over the curve area. */
@@ -2087,6 +2095,7 @@ function TimelineCanvas({
             dopeMorphRefs: refs.morphRefs,
             dopeCameraRefs: refs.cameraRefs,
             dopeFrame: hit.frame,
+            origFrame: hit.frame,
           }
         }
       } else if (hit.zone === "dope-empty") {
@@ -2122,6 +2131,8 @@ function TimelineCanvas({
           cameraKfRef: kfRef,
           startX: e.clientX,
           startY: e.clientY,
+          origFrame: kfRef.frame,
+          origValue: CAMERA_CHANNELS.find((c) => c.key === hit.channel)?.get(kfRef),
         }
       } else if (hit.zone === "morph-curve") {
         const track = clip.morphTracks.get(hit.morph)
@@ -2137,6 +2148,8 @@ function TimelineCanvas({
           morphKfRef: kfRef,
           startX: e.clientX,
           startY: e.clientY,
+          origFrame: kfRef.frame,
+          origValue: kfRef.weight,
         }
       } else if (hit.zone === "curve") {
         const track = clip.boneTracks.get(hit.bone)
@@ -2153,6 +2166,8 @@ function TimelineCanvas({
           channel: hit.channel,
           startX: e.clientX,
           startY: e.clientY,
+          origFrame: kfRef.frame,
+          origValue: ALL_CHANNELS.find((c) => c.key === hit.channel)?.get(kfRef),
         }
       }
     },
@@ -2538,6 +2553,82 @@ function TimelineCanvas({
     }
   }, [onEndKeyframeDrag, onSelectKeyframe, onClearSelection, onSetCurrentFrame, tab, getDopeFrames])
 
+  /** A key drag's keys back where the press found them, through the same
+   *  moves that carried them (so the tracks re-sort and the selection follows).
+   *  Nothing is committed: the clip reads as it did before the press. */
+  const revertDrag = useCallback(
+    (d: NonNullable<typeof drag.current>) => {
+      const { origFrame: f0, origValue: v0 } = d
+      if (d.type === "dope") {
+        if (f0 !== undefined && d.dopeFrame !== f0) onMoveDopeKeyframe(d.dopeBoneRefs ?? [], d.dopeMorphRefs ?? [], d.dopeCameraRefs ?? [], f0)
+      } else if (d.type === "dope-multi") {
+        if (d.lastDf) onMoveDopeColumns(d.columns ?? [], 0, d.grabFrame ?? 0)
+      } else if (d.type === "curve-multi") {
+        if (d.lastDf !== undefined || d.lastDv !== undefined) onMoveCurveSelection(d.curveItems ?? [], 0, 0, d.grabFrame ?? 0)
+      } else if (d.type === "curve") {
+        const ch = ALL_CHANNELS.find((c) => c.key === d.channel)
+        const kf = d.boneKfRef
+        if (ch && kf && d.bone && d.channel && f0 !== undefined && v0 !== undefined && (kf.frame !== f0 || ch.get(kf) !== v0))
+          onMoveCurveKeyframe(d.bone, kf, d.channel, f0, v0 - ch.get(kf))
+      } else if (d.type === "morph-curve") {
+        const kf = d.morphKfRef
+        if (kf && d.bone && f0 !== undefined && v0 !== undefined && (kf.frame !== f0 || kf.weight !== v0))
+          onMoveMorphKeyframe(d.bone, kf, f0, v0 - kf.weight)
+      } else if (d.type === "camera-curve") {
+        const ch = CAMERA_CHANNELS.find((c) => c.key === d.channel)
+        const kf = d.cameraKfRef
+        if (ch && kf && d.channel && f0 !== undefined && v0 !== undefined && (kf.frame !== f0 || ch.get(kf) !== v0))
+          onMoveCameraKeyframe(kf, d.channel, f0, v0 - ch.get(kf))
+      }
+    },
+    [onMoveDopeKeyframe, onMoveDopeColumns, onMoveCurveSelection, onMoveCurveKeyframe, onMoveMorphKeyframe, onMoveCameraKeyframe],
+  )
+
+  /**
+   * A finger's press undone: the second finger of a pan or a pinch takes over
+   * (the band sends this one a `pointercancel`), or the browser calls the
+   * touch off. Keys go back, the box goes, and the selection and playhead are
+   * what they were before the press, as though it never landed.
+   */
+  const cancelDrag = useCallback(() => {
+    const d = drag.current
+    const snap = touchSnapRef.current
+    drag.current = null
+    touchSnapRef.current = null
+    if (!d) return
+    revertDrag(d)
+    marqueeRef.current = null
+    // A press still waiting to become a box has changed nothing but the box.
+    const pending = d.type === "marquee-pending" || d.type === "marquee-pending-curve"
+    if (snap) {
+      if (!pending) {
+        onSelectCurveKeys([...snap.sel])
+        if (frameRef.current !== snap.frame) onSetCurrentFrame(snap.frame)
+      }
+      stickyBoxRef.current = snap.sticky
+    }
+    dragVersionRef.current++
+    drawRef2.current?.()
+  }, [revertDrag, onSelectCurveKeys, onSetCurrentFrame])
+
+  /**
+   * A finger held still is the context menu (components/touch-gestures): the
+   * hold was the act, so its press does nothing more on lift: no seek, no
+   * box. A key it picked stays picked; a key it nudged within the hold's slop
+   * goes back. The mouse's right button never starts a drag, so this is a
+   * finger's only.
+   */
+  const onHeld = useCallback(() => {
+    const d = drag.current
+    if (!d || !touchSnapRef.current) return
+    drag.current = null
+    touchSnapRef.current = null
+    revertDrag(d)
+    marqueeRef.current = null
+    dragVersionRef.current++
+    drawRef2.current?.()
+  }, [revertDrag])
+
   /** Every key on the curves showing: the picked bone's channels on this tab,
    *  the picked morph, or the camera's channels on this tab. */
   const allCurveEntries = useCallback((): SelectedKeyframe[] => {
@@ -2661,8 +2752,12 @@ function TimelineCanvas({
       // A surface that takes keys, not a control: focus shows as nothing,
       // where paper would otherwise wash the whole chart (globals.css).
       data-focus-quiet=""
-      style={{ width: "100%", height: "100%", display: "block", outline: "none" }}
-      onMouseDown={(e) => {
+      // Pointer events, so a finger drags here as the mouse does (an iPad is
+      // a computer: lib/device); touch-action none keeps the drag from
+      // scrolling or zooming the page instead. Leaving still ends a drag, as
+      // it did with the mouse.
+      style={{ width: "100%", height: "100%", display: "block", outline: "none", touchAction: "none" }}
+      onPointerDown={(e) => {
         e.currentTarget.focus()
         // A marker's flag or line: pick it rather than scrub or box.
         const picked = e.button === 0 ? markerAtPoint(e) : null
@@ -2671,11 +2766,19 @@ function TimelineCanvas({
           onPickMarker(picked.frame)
           return
         }
+        touchSnapRef.current =
+          e.pointerType === "touch" ? { sel: selectedKeyframes, frame: frameRef.current, sticky: stickyBoxRef.current } : null
         onMouseDown(e)
       }}
-      onMouseMove={onMouseMove}
-      onMouseUp={endDrag}
-      onMouseLeave={endDrag}
+      onPointerMove={onMouseMove}
+      onPointerUp={() => {
+        touchSnapRef.current = null
+        endDrag()
+      }}
+      onPointerLeave={endDrag}
+      // Undone, not finished: see cancelDrag. A mouse never sends one.
+      onPointerCancel={cancelDrag}
+      onContextMenu={onHeld}
       onKeyDown={onKeyDown}
     />
   )
@@ -3316,6 +3419,112 @@ export function Timeline({
     el.addEventListener("wheel", onWheel, { passive: false })
     return () => el.removeEventListener("wheel", onWheel)
   }, [zoomTo])
+
+  // Two fingers on the band, as an iPad's own apps have them: drag pans
+  // (across is time, up and down scrolls the lanes, the wheel's two
+  // directions) and a pinch zooms time about the point between the fingers.
+  // One finger keeps every gesture of the mouse's left button.
+  //
+  // Fingers only: a trackpad's pinch already arrives as ⌘/ctrl + wheel above,
+  // and a mouse never gets here. Listened for in the capture phase on the
+  // band's parent, ahead of everything inside it: the second finger's press
+  // and every move until the last finger lifts belong to the gesture, so the
+  // canvas, the lanes and the curves never see them. The first finger's own
+  // press is told it was cancelled (a `pointercancel` at what it pressed), and
+  // each of those surfaces undoes a cancelled press rather than finishing it:
+  // no key moved, no box drawn, no block shifted.
+  useEffect(() => {
+    const area = timelineAreaRef.current
+    const host = area?.parentElement
+    if (!area || !host) return
+    const fingers = new Map<number, { x: number; y: number }>()
+    let first: { id: number; target: EventTarget | null } | null = null
+    let gesturing = false
+    let last: { x: number; y: number; dist: number } | null = null
+    let view = { px: 0, scroll: 0 }
+    const between = () => {
+      const [a, b] = [...fingers.values()]
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, dist: Math.hypot(a.x - b.x, a.y - b.y) }
+    }
+    const ours = (e: PointerEvent) => e.pointerType === "touch" && e.isTrusted
+    const onDown = (e: PointerEvent) => {
+      if (!ours(e) || !area.contains(e.target as Node)) return
+      // The first finger of a fresh touch: nothing else is down, whatever
+      // was missed before.
+      if (e.isPrimary) {
+        fingers.clear()
+        gesturing = false
+        last = null
+      }
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (fingers.size === 1) {
+        first = { id: e.pointerId, target: e.target }
+        return
+      }
+      e.stopPropagation()
+      e.preventDefault()
+      if (!gesturing) {
+        gesturing = true
+        first?.target?.dispatchEvent(
+          new PointerEvent("pointercancel", { bubbles: true, pointerId: first.id, pointerType: "touch", isPrimary: true }),
+        )
+      }
+      if (fingers.size === 2) {
+        last = between()
+        view = { px: pxRef.current, scroll: scrollXRef.current }
+      }
+    }
+    const onMove = (e: PointerEvent) => {
+      if (!ours(e) || !fingers.has(e.pointerId)) return
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (!gesturing) return
+      e.stopPropagation()
+      // A third finger, or the one left after a lift, moves nothing.
+      if (fingers.size !== 2 || !last) return
+      const now = between()
+      const left = area.getBoundingClientRect().left + LABEL_W
+      // The frame that was under the fingers stays under them: the pinch
+      // scales about it and the drag carries it along.
+      const at = (last.x - left + view.scroll) / view.px
+      const px = Math.max(minPxRef.current, Math.min(MAX_PX, view.px * (last.dist > 0 ? now.dist / last.dist : 1)))
+      const maxScroll = Math.max(0, LABEL_W + fcRef.current * px - area.clientWidth)
+      const scroll = Math.max(0, Math.min(maxScroll, at * px - (now.x - left)))
+      if (px !== view.px) {
+        fitted.current = px <= minPxRef.current
+        setPxPerFrame(px)
+      }
+      if (scroll !== view.scroll) setScrollX(scroll)
+      view = { px, scroll }
+      const max = laneScrollRef.current.max
+      const dy = now.y - last.y
+      if (max > 0 && dy !== 0) setLaneScroll((p) => Math.max(0, Math.min(max, Math.min(p, max) - dy)))
+      last = now
+    }
+    const onEnd = (e: PointerEvent) => {
+      if (!ours(e) || !fingers.has(e.pointerId)) return
+      fingers.delete(e.pointerId)
+      if (gesturing) {
+        e.stopPropagation()
+        // Back to two from three: carry on from where they are now.
+        if (fingers.size === 2) last = between()
+      }
+      if (fingers.size === 0) {
+        gesturing = false
+        last = null
+        first = null
+      }
+    }
+    host.addEventListener("pointerdown", onDown, true)
+    host.addEventListener("pointermove", onMove, true)
+    host.addEventListener("pointerup", onEnd, true)
+    host.addEventListener("pointercancel", onEnd, true)
+    return () => {
+      host.removeEventListener("pointerdown", onDown, true)
+      host.removeEventListener("pointermove", onMove, true)
+      host.removeEventListener("pointerup", onEnd, true)
+      host.removeEventListener("pointercancel", onEnd, true)
+    }
+  }, [])
 
   const onSelectKeyframe = useCallback(
     (kf: SelectedKeyframe, multi: boolean) => {

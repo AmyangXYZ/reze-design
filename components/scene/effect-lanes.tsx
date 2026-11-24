@@ -318,6 +318,8 @@ export function EffectLanes<T extends LaneRow>({
     started: boolean
     /** The frame under the press, where a click puts the playhead. */
     at: number
+    /** Pressed by a finger, which a hold turns into the menu. */
+    touch: boolean
   } | null>(null)
 
   // ── History ─────────────────────────────────────────────────────────────
@@ -429,6 +431,7 @@ export function EffectLanes<T extends LaneRow>({
       additive,
       at: frameAt(e.clientX),
       started: false,
+      touch: e.pointerType === "touch",
     }
   }
 
@@ -512,6 +515,38 @@ export function EffectLanes<T extends LaneRow>({
     const lane = sortWindows(blocks.map((w, j) => (j === d.index ? moved : w)))
     commit(effectsRef.current.map((x) => (x.uid === d.uid ? { ...x, window: lane } : x)))
     setSelected(new Set([keyOf(d.uid, lane.indexOf(moved))]))
+  }
+
+  /** A press called off: a second finger took it for a pan or a pinch (the
+   *  timeline sends this one a `pointercancel`), or the browser did. The
+   *  block stays where it was; no seek, no commit. A mouse never sends one. */
+  const cancel = (e: ReactPointerEvent<HTMLElement>) => {
+    drag.current = null
+    previewRef.current = null
+    setPreview(null)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+  }
+
+  /**
+   * The menu on a block: a right-click, or a finger held still
+   * (components/touch-gestures), which sends a `contextmenu` and no right
+   * button. Picks the block as the right button's press does, and drops the
+   * finger's press so its lift neither seeks nor moves anything: the hold was
+   * the act. Before the menu reads what it acts on: the menu's trigger is
+   * further out, so this runs first.
+   */
+  const held = (uid: string, index: number) => () => {
+    const key = keyOf(uid, index)
+    if (drag.current?.touch) {
+      drag.current = null
+      previewRef.current = null
+      setPreview(null)
+    }
+    menuOnClip.current = true
+    menuRow.current = uid
+    setSelected((s) => (s.has(key) ? s : new Set([key])))
+    if (uid !== selectedEffect) setPressedRow(uid)
+    onSelectEffect(uid)
   }
 
   // ── Keys ────────────────────────────────────────────────────────────────
@@ -802,7 +837,8 @@ export function EffectLanes<T extends LaneRow>({
                     onPointerDown={down(uid, i, "move")}
                     onPointerMove={move}
                     onPointerUp={up}
-                    onPointerCancel={up}
+                    onPointerCancel={cancel}
+                    onContextMenu={held(uid, i)}
                     className={cn(
                       "group pointer-events-auto absolute inset-y-[3px] flex touch-none cursor-grab items-center overflow-hidden rounded-chip border px-1.5",
                       // Grabbing only once it moves: a click is a click.
@@ -868,7 +904,9 @@ export function EffectLanes<T extends LaneRow>({
                               onPointerDown={down(uid, i, grab)}
                               className={cn(
                                 "absolute top-0 z-20 flex cursor-ew-resize items-start justify-center",
-                                px > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                // No hover on a touch screen: shown, since a hidden knob
+                                // would still take the finger meant for the block.
+                                px > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100 touch:opacity-100",
                               )}
                               style={{ width: KNOB, height: KNOB, [side]: at }}
                             >

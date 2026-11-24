@@ -2,7 +2,7 @@
 
 // Materials panel — a VSCode-explorer-style tree over style groups (materials that share
 
-import { memo, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { StyleGroup } from "reze-engine"
 import { Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,18 @@ import { cn } from "@/lib/utils"
 import { useCover } from "@/components/ui/cover"
 import { softScrollFade, useScrollFade } from "@/components/editor/scroll-fade"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
+/** No mouse or trackpad at all (an iPad held in the hand). There a row is not
+ *  draggable: iPadOS lifts a draggable element under a held finger, which
+ *  would take the hold that opens the row's menu, and that menu's Move to
+ *  does what the drag does. lib/device's isTouchOnly, kept live. */
+const FINE = "(any-pointer: fine)"
+const subscribeFine = (onChange: () => void) => {
+  const mq = window.matchMedia(FINE)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+const useTouchOnly = () => useSyncExternalStore(subscribeFine, () => !window.matchMedia(FINE).matches, () => false)
 
 /** The console's action look: a line of type, muted, ink on hover. */
 const COVER_ACTION = "h-6 w-fit gap-1.5 rounded-none border-0 bg-transparent px-0 has-[>svg]:px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
@@ -226,6 +238,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   })
 
   const cover = useCover()
+  const touchOnly = useTouchOnly()
 
   // A single material row: hover highlights, drag reassigns, right-click moves it to another
   const materialRow = (m: MaterialRow, currentGroupId: string | null, reactKey: string) => {
@@ -234,7 +247,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         key={reactKey}
         data-ctx="row"
         data-material={m.name}
-        draggable
+        draggable={!touchOnly}
         onDragStart={(e) => {
           setDragMat(m.name)
           e.dataTransfer.effectAllowed = "move"
@@ -268,7 +281,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           {m.name}
         </span>
         <Button variant="bare"
-          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
+          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100 touch:opacity-100")}
           onClick={(e) => {
             e.stopPropagation()
             onToggleVisible(m.name)

@@ -5,6 +5,7 @@ import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import { NoStickyFocus } from "@/components/no-sticky-focus";
+import { TouchGestures } from "@/components/touch-gestures";
 import { CrashLogCapture } from "@/components/crash-log-capture";
 import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
@@ -103,6 +104,7 @@ export default function RootLayout({
       >
         <NoNativeContextMenu />
         <NoStickyFocus />
+        <TouchGestures />
         {/* Capture starts here so a crash report carries what led up to it. */}
         <CrashLogCapture />
         {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount. */}

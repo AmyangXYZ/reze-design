@@ -98,6 +98,7 @@ export function FloatingPanel({
   const onUp = () => {
     window.removeEventListener("pointermove", onMove)
     window.removeEventListener("pointerup", onUp)
+    window.removeEventListener("pointercancel", onUp)
     const el = ref.current
     const d = drag.current
     if (el && d) {
@@ -122,6 +123,7 @@ export function FloatingPanel({
     if (ref.current) setPerf(ref.current, true)
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
+    window.addEventListener("pointercancel", onUp)
   }
   const onContainerDown = (e: React.PointerEvent) => {
     if (pinned) return
@@ -142,6 +144,10 @@ export function FloatingPanel({
     : { left: rect.x, top: rect.y, width: rect.w, height: rect.h }
 
   // Edge/corner resize affordances (invisible hit strips). Corners sit above edges.
+  // On a touch-only screen the bottom and side strips and the bottom corners
+  // are wider, for a fingertip; still invisible, so the panel looks the same.
+  // They grow inward (the panels clip their overflow). The top ones stay thin:
+  // the header under them is the move handle and holds the close button.
   const edge = "absolute touch-none"
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(raiseKey, onEscape)
 
@@ -165,13 +171,13 @@ export function FloatingPanel({
       {!pinned && (
         <>
           <div className={cn(edge, "inset-x-0 top-0 h-1.5 cursor-ns-resize")} onPointerDown={(e) => begin("n", e)} />
-          <div className={cn(edge, "inset-x-0 bottom-0 h-1.5 cursor-ns-resize")} onPointerDown={(e) => begin("s", e)} />
-          <div className={cn(edge, "inset-y-0 left-0 w-1.5 cursor-ew-resize")} onPointerDown={(e) => begin("w", e)} />
-          <div className={cn(edge, "inset-y-0 right-0 w-1.5 cursor-ew-resize")} onPointerDown={(e) => begin("e", e)} />
+          <div className={cn(edge, "inset-x-0 bottom-0 h-1.5 cursor-ns-resize touch:h-3")} onPointerDown={(e) => begin("s", e)} />
+          <div className={cn(edge, "inset-y-0 left-0 w-1.5 cursor-ew-resize touch:w-3")} onPointerDown={(e) => begin("w", e)} />
+          <div className={cn(edge, "inset-y-0 right-0 w-1.5 cursor-ew-resize touch:w-3")} onPointerDown={(e) => begin("e", e)} />
           <div className={cn(edge, "top-0 left-0 size-3 cursor-nwse-resize")} onPointerDown={(e) => begin("nw", e)} />
           <div className={cn(edge, "top-0 right-0 size-3 cursor-nesw-resize")} onPointerDown={(e) => begin("ne", e)} />
-          <div className={cn(edge, "bottom-0 left-0 size-3 cursor-nesw-resize")} onPointerDown={(e) => begin("sw", e)} />
-          <div className={cn(edge, "bottom-0 right-0 size-3 cursor-nwse-resize")} onPointerDown={(e) => begin("se", e)} />
+          <div className={cn(edge, "bottom-0 left-0 size-3 cursor-nesw-resize touch:size-5")} onPointerDown={(e) => begin("sw", e)} />
+          <div className={cn(edge, "bottom-0 right-0 size-3 cursor-nwse-resize touch:size-5")} onPointerDown={(e) => begin("se", e)} />
         </>
       )}
     </div>,

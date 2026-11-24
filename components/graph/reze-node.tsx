@@ -29,6 +29,11 @@ const SOCKET_COLORS: Record<string, string> = {
   vec4: "#f472b6",
 }
 
+/** A socket is 8px, under a fingertip. On a touch-only screen an invisible
+ *  ring around it takes the touch, so a link can be pulled by finger; the
+ *  dot drawn is the same. */
+const HANDLE_TOUCH = "touch:after:absolute touch:after:-inset-2 touch:after:content-['']"
+
 // Display precision only — the graph keeps full-precision Blender constants until the user
 const round4 = (v: number) => Math.round(v * 10000) / 10000
 
@@ -209,6 +214,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
               type="source"
               position={Position.Right}
               id={name}
+              className={HANDLE_TOUCH}
               style={{ background: SOCKET_COLORS[type] ?? "#fff", width: 8, height: 8 }}
             />
           </div>
@@ -226,6 +232,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
                   type="target"
                   position={Position.Left}
                   id={name}
+                  className={HANDLE_TOUCH}
                   style={{ background: SOCKET_COLORS[type] ?? "#fff", width: 8, height: 8 }}
                 />
                 <span className="text-muted-foreground">{t.socket[name] ?? name}</span>

@@ -12,7 +12,7 @@
 // lets go. The editor and the scene viewer both set type over a live canvas.
 
 import { useEffect, useRef, type RefObject } from "react"
-import { isPhone } from "@/lib/device"
+import { isTouchOnly } from "@/lib/device"
 
 export function useCoverInk(
   mainRef: RefObject<HTMLElement | null>,
@@ -133,16 +133,16 @@ export function useCoverInk(
       if (!document.hidden) look()
     }
     document.addEventListener("visibilitychange", shown)
-    const phone = isPhone()
-    // A computer keeps the ink with the picture; a phone reads once a gesture
-    // has let go of the camera.
-    const clock = phone ? 0 : window.setInterval(read, 1000)
+    const touch = isTouchOnly()
+    // A computer keeps the ink with the picture; a phone or tablet reads once a
+    // gesture has let go of the camera.
+    const clock = touch ? 0 : window.setInterval(read, 1000)
     let rest = 0
     const letGo = () => {
       clearTimeout(rest)
       rest = window.setTimeout(look, 400)
     }
-    if (phone) canvas.addEventListener("pointerup", letGo)
+    if (touch) canvas.addEventListener("pointerup", letGo)
     // The frame, shrunk on the GPU; the stack composed over it; the pixels
     // from the worker. Nothing here waits for the GPU.
     const sample = async (): Promise<Uint8ClampedArray | null> => {

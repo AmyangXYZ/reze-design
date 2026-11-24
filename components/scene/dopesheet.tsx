@@ -457,7 +457,10 @@ export function Dopesheet({
             onPointerMove={onResizeMove}
             onPointerUp={onResizeUp}
             onPointerCancel={onResizeUp}
-            className="group absolute inset-x-0 -top-[3px] z-10 h-1.5 cursor-ns-resize touch-none"
+            // A 6px strip is a target for a pointer, not a finger: on a touch
+            // screen an unseen margin above and below takes the finger too,
+            // and the line looks the same.
+            className="group absolute inset-x-0 -top-[3px] z-10 h-1.5 cursor-ns-resize touch-none touch:after:absolute touch:after:inset-x-0 touch:after:-top-4 touch:after:-bottom-1 touch:after:content-['']"
           >
             <div className="mt-[2px] h-px w-full bg-transparent transition-colors group-hover:bg-foreground/60 group-active:bg-foreground" />
           </div>

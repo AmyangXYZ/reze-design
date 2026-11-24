@@ -183,9 +183,13 @@ export function GraphEditor({
   const onConnectEnd = useCallback<OnConnectEnd>((e) => {
     const pending = connectingRef.current
     connectingRef.current = null
-    // Only a drop on empty canvas opens the palette
-    if (!pending || !(e.target as HTMLElement)?.classList?.contains("react-flow__pane")) return
+    // Only a drop on empty canvas opens the palette. A touch's events all
+    // target where the finger went DOWN (the socket), so a finger's drop is
+    // asked of what lies under its lift instead.
     const point = "changedTouches" in e ? e.changedTouches[0] : e
+    if (!pending || !point) return
+    const dropped = "changedTouches" in e ? document.elementFromPoint(point.clientX, point.clientY) : e.target
+    if (!(dropped as HTMLElement | null)?.classList?.contains("react-flow__pane")) return
     setNodeMenu(null)
     setAddMenu({ x: point.clientX, y: point.clientY, connect: pending })
   }, [])
@@ -717,7 +721,7 @@ export function GraphEditor({
           // Filling the screen, there is nowhere to drag TO — the same rule the
           // shared EditorHeader follows, so the grab cursor never promises a
           // move the panel will refuse.
-          !fullscreen && "cursor-grab active:cursor-grabbing",
+          !fullscreen && "cursor-grab touch-none active:cursor-grabbing",
         )}
       >
         <Workflow
@@ -831,6 +835,10 @@ export function GraphEditor({
             onNodeContextMenu={openNodeMenu}
             onEdgeContextMenu={openEdgeMenu}
             deleteKeyCode={["Backspace", "Delete"]}
+            // A finger is wider than a pointer: on a touch-only screen a link's
+            // invisible hit stroke (20 by default) is widened so a hold lands
+            // on it and opens its menu. The drawn line is unchanged.
+            className="touch:[&_.react-flow__edge-interaction]:[stroke-width:36px]"
             colorMode="dark"
             defaultViewport={{ x: 24, y: 24, zoom: 0.7 }}
             minZoom={0.2}

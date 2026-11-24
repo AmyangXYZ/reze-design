@@ -5,6 +5,10 @@
 /* A phone-width screen, for the pages that play there (the gallery, the scene
    viewer). */
 @custom-variant compact (@media (width < 40rem));
+/* No mouse or trackpad at all (an iPad held, a phone): what hover would have
+   shown is shown, and what a cursor could hit, a finger can (lib/device,
+   isTouchOnly, on the same query). */
+@custom-variant touch (@media not (any-pointer: fine));
 
 @keyframes panel-in {
   from {
@@ -170,6 +174,28 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* A double tap is a double-click, not a zoom (the page never zooms:
+     app/layout.tsx), and a tap lands at once. */
+  html {
+    touch-action: manipulation;
+  }
+  /* By touch alone, a held finger is a right-click (components/touch-gestures),
+     so the system's own hold (the callout, a word selected) never answers it.
+     Text entry keeps both. */
+  @media not (any-pointer: fine) {
+    body {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input,
+    textarea,
+    [contenteditable="true"] {
+      -webkit-touch-callout: default;
+      -webkit-user-select: text;
+      user-select: text;
+    }
   }
   /* Tailwind v4's preflight leaves buttons at cursor:default — every enabled
      button in this app is clickable and should say so. */

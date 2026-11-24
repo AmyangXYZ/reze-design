@@ -195,7 +195,18 @@ export function DialCurves({
   }, [])
   const undoScope = useUndoScope("dial-curves", { undo, redo }, { claim: true })
   // A press on empty space: a click seeks, a drag draws a selecting box.
-  const [box, setBox] = useState<{ x0: number; y0: number; x: number; y: number; additive: boolean; moved: boolean } | null>(null)
+  // `sel` and `at` are the selection and playhead before the press, for a
+  // press called off.
+  const [box, setBox] = useState<{
+    x0: number
+    y0: number
+    x: number
+    y: number
+    additive: boolean
+    moved: boolean
+    sel: number[]
+    at: number
+  } | null>(null)
 
   const holds = decl ? HOLDING_KINDS.has(decl.kind) : false
   const channels = decl ? channelsOf(decl) : []
@@ -339,6 +350,17 @@ export function DialCurves({
     if (drag?.moved) record(decl.name, drag.stored, dataRef.current.keys[decl.name])
     setDrag(null)
   }
+  /** A drag called off: a second finger took it for a pan or a pinch (the
+   *  timeline sends this one a `pointercancel`), or the browser did. The keys
+   *  go back as the scene stored them, and nothing lands in the history. A
+   *  mouse never sends one. */
+  const cancelDrag = () => {
+    if (drag?.moved) {
+      data.onKeys(decl.name, drag.stored)
+      data.onSelect(drag.sel)
+    }
+    setDrag(null)
+  }
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = boxRef.current?.getBoundingClientRect()
@@ -351,7 +373,7 @@ export function DialCurves({
     e.currentTarget.focus({ preventScroll: true })
     e.currentTarget.setPointerCapture(e.pointerId)
     const p = local(e)
-    setBox({ x0: p.x, y0: p.y, x: p.x, y: p.y, additive: e.shiftKey, moved: false })
+    setBox({ x0: p.x, y0: p.y, x: p.x, y: p.y, additive: e.shiftKey, moved: false, sel: selected, at: playhead })
     // The playhead goes there on the press, as on the time axis.
     if (!e.shiftKey) {
       data.onSelect([])
@@ -478,7 +500,15 @@ export function DialCurves({
       onPointerDown={emptyDown}
       onPointerMove={emptyMove}
       onPointerUp={emptyUp}
-      onPointerCancel={() => setBox(null)}
+      // Called off (see cancelDrag): no box, and the press's seek and
+      // deselect undone.
+      onPointerCancel={() => {
+        if (box && !box.additive) {
+          data.onSelect(box.sel)
+          onSeek(box.at)
+        }
+        setBox(null)
+      }}
       onDoubleClick={(e) => addKey(frameAt(e.clientX), local(e).y)}
     >
       <svg width={w} height={h} className="block overflow-visible">
@@ -529,7 +559,7 @@ export function DialCurves({
                   onPointerDown={dotDown(i, ch)}
                   onPointerMove={dotMove}
                   onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
+                  onPointerCancel={cancelDrag}
                   onDoubleClick={(e) => e.stopPropagation()}
                 >
                   <rect
@@ -570,7 +600,7 @@ export function DialCurves({
                   onPointerDown={dotDown(i, ch)}
                   onPointerMove={dotMove}
                   onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
+                  onPointerCancel={cancelDrag}
                   onDoubleClick={(e) => e.stopPropagation()}
                 />
               ) : (
@@ -596,7 +626,7 @@ export function DialCurves({
                     onPointerDown={dotDown(i, ch)}
                     onPointerMove={dotMove}
                     onPointerUp={endDrag}
-                    onPointerCancel={endDrag}
+                    onPointerCancel={cancelDrag}
                     onDoubleClick={(e) => e.stopPropagation()}
                   />
                 </g>

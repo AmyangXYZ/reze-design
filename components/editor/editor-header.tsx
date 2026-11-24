@@ -67,7 +67,7 @@ export function EditorHeader({
       data-drag-handle
       className={cn(
         "relative flex shrink-0 items-center gap-2 border-b border-line py-1 pr-2 pl-3",
-        !fullscreen && "cursor-grab active:cursor-grabbing",
+        !fullscreen && "cursor-grab touch-none active:cursor-grabbing",
       )}
     >
       <Icon className={cn("size-3.5 shrink-0 text-foreground", iconClassName)} />

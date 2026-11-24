@@ -186,7 +186,7 @@ function MenuBody({ settings, active, text }: { settings: AiSettings; active: Ac
                       size="icon"
                       aria-label={text.removeModel}
                       onClick={() => removeModel(c, m.id)}
-                      className={cn(iconButton, "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+                      className={cn(iconButton, "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch:opacity-100")}
                     >
                       <X className="size-3" />
                     </Button>

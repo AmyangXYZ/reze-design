@@ -2921,7 +2921,7 @@ function Lab() {
   useRefuseStrayDrops()
   const [exportOpen, setExportOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  // A phone (or a tablet) gets the scene and its transport, play only
+  // A phone gets the scene and its transport, play only; a tablet is a computer
   // (globals.css, "Phone"; lib/device.ts).
   const phone = usePhone()
   // The art director: a side panel, canvas live — you watch it work.
