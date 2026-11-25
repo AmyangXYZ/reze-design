@@ -71,12 +71,6 @@ const en = {
     // what you gave theirs. Two different sets, so two different rows.
     handleFixed: "Your name is set and can't be changed.",
   },
-  /** A phone held upright, over the editor (components/editor/turn-sideways). */
-  phone: {
-    turn: "Turn your phone sideways",
-    why: "The editor is laid out for a wide screen.",
-    rotate: "Rotate",
-  },
   gallery: {
     title: "Gallery",
     back: "Back to editor",
@@ -1347,11 +1341,6 @@ const zh: Dictionary = {
     profile: "个人主页",
     likesEarned: "获赞",
     handleFixed: "用户名已设置，无法更改。",
-  },
-  phone: {
-    turn: "请将手机横过来",
-    why: "编辑器为宽屏设计。",
-    rotate: "旋转",
   },
   gallery: {
     title: "画廊",

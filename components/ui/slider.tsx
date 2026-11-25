@@ -18,6 +18,10 @@ function Slider({
   origin,
   track,
   variant: variantProp,
+  onPointerDownCapture,
+  onPointerMoveCapture,
+  onPointerUpCapture,
+  onPointerCancelCapture,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root> & {
   /** `hairline`: a 1px ink rule and a slim ink tick, for rows set straight on
@@ -39,6 +43,15 @@ function Slider({
   track?: string
 }) {
   const cover = useCover()
+  // The touch that pressed the track, passing through to the page. A touch
+  // keeps its target captured on its own, so Radix would read its moves and
+  // its lift as a drag even with the press stopped: all three are held back.
+  const passing = React.useRef<number | null>(null)
+  const pass = (e: React.PointerEvent) => {
+    if (passing.current !== e.pointerId) return false
+    e.stopPropagation()
+    return true
+  }
   const variant = variantProp ?? (cover ? "hairline" : "default")
   const _values = React.useMemo(
     () =>
@@ -57,8 +70,32 @@ function Slider({
       value={value}
       min={min}
       max={max}
+      // By touch, as iOS's own sliders: the finger takes the THUMB, never the
+      // track. A press on the track would jump the value, and a row of
+      // sliders is most of a dock, so a swipe meant to scroll the dock would
+      // set every value it crossed. So a touch on the track passes to the
+      // page (pan-y: it scrolls), and only the thumb, with a fingertip's
+      // reach around it, drags. A mouse keeps the track (click to jump).
+      onPointerDownCapture={(e) => {
+        onPointerDownCapture?.(e)
+        if (e.pointerType !== "touch" || (e.target as Element).closest('[data-slot="slider-thumb"]')) return
+        passing.current = e.pointerId
+        e.stopPropagation()
+      }}
+      onPointerMoveCapture={(e) => {
+        onPointerMoveCapture?.(e)
+        pass(e)
+      }}
+      onPointerUpCapture={(e) => {
+        onPointerUpCapture?.(e)
+        if (pass(e)) passing.current = null
+      }}
+      onPointerCancelCapture={(e) => {
+        onPointerCancelCapture?.(e)
+        if (passing.current === e.pointerId) passing.current = null
+      }}
       className={cn(
-        "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
+        "relative flex w-full touch-none items-center select-none touch:data-[orientation=horizontal]:touch-pan-y data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
         // A 1px rule is no target: the 16px band around it takes the press, so
         // clicking near the line jumps there. As tall as a row's value box, so
         // the band adds no height to the row. The hand says so, as the
@@ -114,13 +151,15 @@ function Slider({
           // has only this.
           aria-label={props["aria-label"]}
           className={cn(
-            "block shrink-0 rounded-full focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
+            "block shrink-0 touch-none rounded-full focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
             variant === "hairline"
               // A 2×12 tick that holds its size and takes no ring while held
               // (rows add one for the default thumb), with a 16px hit area
               // around it so the slim mark is still easy to catch.
               ? "relative h-3! w-0.5! bg-foreground shadow-none! ring-0! hover:ring-0! before:absolute before:-inset-x-[7px] before:-inset-y-[3px] before:content-[''] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-foreground"
-              : "size-4 border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4"
+              : "size-4 border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 touch:relative touch:before:absolute touch:before:-inset-3 touch:before:content-['']",
+            // A fingertip's reach around the tick (44px tall, as iOS asks).
+            variant === "hairline" && "touch:before:-inset-x-[14px] touch:before:-inset-y-4"
           )}
           style={accent ? { backgroundColor: accent, borderColor: accent } : undefined}
         />

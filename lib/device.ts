@@ -5,8 +5,8 @@
 // resizing changes the answer without changing the agent.
 //
 // - phone: a touch screen under 600px on its shorter side. The editor is the
-//   computer's on a phone too, turned sideways (components/editor/
-//   turn-sideways); the gallery and the scene viewer have phone layouts.
+//   computer's on a phone too; the gallery and the scene viewer have phone
+//   layouts.
 // - touch only: no mouse or trackpad at all, a phone or a tablet. Not a layout
 //   question: what a touch-only device's GPU makes slow (hooks/use-cover-ink).
 // - compact: a phone-width screen, for the pages that play there (the gallery,
@@ -35,8 +35,8 @@ export function isTouchOnly(): boolean {
 const PHONE_SIDE = 600
 
 /**
- * A PHONE: the editor asks it to turn sideways, and the gallery and viewer
- * lay out for it and play without Fork.
+ * A PHONE: the gallery and viewer lay out for it and play without Fork. The
+ * editor does not ask.
  *
  * Asked of the HARDWARE. The SCREEN's size, not the window's, so a computer's
  * window drawn small stays a computer, and a phone turned on its side stays a

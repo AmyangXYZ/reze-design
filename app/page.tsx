@@ -155,7 +155,6 @@ import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
-import { TurnSideways } from "@/components/editor/turn-sideways"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useOverlays } from "@/hooks/use-overlays"
@@ -12137,9 +12136,6 @@ function Lab() {
           </div>
         </aside>
       )}
-
-      {/* A phone held upright: turn it sideways (the editor is the computer's). */}
-      <TurnSideways />
 
       {/* ── Transport ──
           The real AnimPlayer, not a mock of one. It already plays, scrubs, loops
