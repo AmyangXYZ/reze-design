@@ -92,6 +92,15 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
     about: "Film grain over the render.",
     fields: { amount: { kind: "number", min: 0, max: 1, about: "Grain amount; 0 is clean." } },
   },
+  rim: {
+    about: "Rim light on the characters: light fading smoothly in from every edge of the silhouette; past the bloom threshold it glows.",
+    fields: {
+      enabled: { kind: "boolean", about: "Rim light on or off." },
+      intensity: { kind: "number", min: 0, max: 5, about: "How bright the rim is; 0 is off." },
+      width: { kind: "number", min: 0, max: 1, about: "How far in from the edge it reaches: 0 a thin line of light, 0.67 the usual rim, 1 a broad sheen." },
+      color: { kind: "color", about: "Rim colour." },
+    },
+  },
   dof: {
     about: "Depth of field. Focus follows the character automatically.",
     fields: {

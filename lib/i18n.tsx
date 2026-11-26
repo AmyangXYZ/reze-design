@@ -748,6 +748,8 @@ const en = {
       tone: "Tone",
       bloom: "Bloom",
       outline: "Outline",
+      /** The cast's rim light. */
+      rim: "Rim",
     },
     // A collapsed row's value when it names a decision rather than an asset.
     summary: { follow: "Follow", orbit: "Orbit" },
@@ -938,6 +940,10 @@ const en = {
       outlineWidth: "Width",
       /** Every outline in one colour, over each model's own edge colour. */
       outlineRecolor: "Override color",
+      /** How far in from the silhouette the rim light reaches. */
+      rimWidth: "Width",
+      /** The rim light's switch. */
+      rim: "Rim light",
       color: "Color",
       /** The plane itself, on or off. Not the same control as Opacity: a
        *  transparent ground still catches shadow and still writes depth. */
@@ -1952,6 +1958,7 @@ const zh: Dictionary = {
       tone: "色调",
       bloom: "泛光",
       outline: "描边",
+      rim: "边缘光",
     },
     summary: { follow: "跟随", orbit: "环绕" },
     facts: { noCast: "无角色" },
@@ -2105,6 +2112,8 @@ const zh: Dictionary = {
       outline: "描边",
       outlineWidth: "粗细",
       outlineRecolor: "统一颜色",
+      rimWidth: "宽度",
+      rim: "边缘光",
       color: "颜色",
       showGround: "显示地面",
       eyesOnCamera: "看镜头",

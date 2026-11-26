@@ -40,6 +40,8 @@ import {
   DEFAULT_BLINK,
   DEFAULT_EYES,
   DEFAULT_JELLY,
+  DEFAULT_RIM,
+  rimPower,
   type CastBlink,
   type CastEyes,
   type CastJelly,
@@ -282,6 +284,15 @@ export function useSceneSync({
     }
     if (modeChanged || p.settings.grain !== grain) {
       engine.setFilmGrain(grain.amount)
+    }
+    if (!p || p.settings.rim !== settings.rim) {
+      const rim = settings.rim ?? DEFAULT_RIM
+      engine.setRimLight({
+        enabled: rim.enabled,
+        intensity: rim.intensity,
+        power: rimPower(rim.width),
+        color: hexToLinearVec3(rim.color),
+      })
     }
     // Before the grade, which is what the engine applies it to.
     if (!p || p.settings.view !== view) {

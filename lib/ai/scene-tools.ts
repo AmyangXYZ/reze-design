@@ -155,7 +155,7 @@ export type SceneToolHandles = {
 
 /** The settings sections that make up the look — what reset_to_default puts
  *  back. Not audio (the user's mix) and not the stage's own claims. */
-const LOOK_SECTIONS = ["world", "sun", "fill", "bloom", "dof", "outline", "background", "view", "grain", "grade", "ground", "eyes", "blink"] as const
+const LOOK_SECTIONS = ["world", "sun", "fill", "bloom", "dof", "outline", "background", "view", "grain", "rim", "grade", "ground", "eyes", "blink"] as const
 const RESET_PARTS = ["look", "camera", "effects", "lamps"] as const
 
 export type ToolImage = { dataUrl: string; label: string; metrics: FrameMetrics }

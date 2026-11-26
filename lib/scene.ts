@@ -9,6 +9,7 @@ import {
   DEFAULT_AUDIO,
   DEFAULT_DOF,
   DEFAULT_GRAIN,
+  DEFAULT_RIM,
   DEFAULT_OUTLINE,
   DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_BLINK, DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, playbackSpeedFrom, markersFrom, DEFAULT_PHYSICS,
   castSectionDoc,
@@ -1190,6 +1191,7 @@ export function parseSceneDoc(
         dof: { ...DEFAULT_DOF, ...settings.dof },
         outline: { ...DEFAULT_OUTLINE, ...settings.outline },
         grain: { ...DEFAULT_GRAIN, ...settings.grain },
+        rim: { ...DEFAULT_RIM, ...settings.rim },
         // Likewise for the view transform: absent means the scene was authored
         // under the engine's old Filmic default, which is ACES today
         // (LEGACY_VIEW). Old transform names read as today's.
@@ -1971,6 +1973,7 @@ function restored(base: Scene): Scene {
         view: viewFrom({ ...base.state.settings.view, ...settingsBase.view }, base.state.settings.view),
         audio: { ...base.state.settings.audio, ...audioFrom(settingsBase.audio) },
         grain: { ...base.state.settings.grain, ...settingsBase.grain },
+        rim: { ...DEFAULT_RIM, ...base.state.settings.rim, ...settingsBase.rim },
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },

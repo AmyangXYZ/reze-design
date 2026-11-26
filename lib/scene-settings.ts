@@ -133,6 +133,15 @@ export type SceneSettings = {
    * Sensor grain over the rendered scene, 0–1.
    */
   grain: { amount: number }
+  /**
+   * The cast's rim light, the textbook term: color × intensity × (1 − N·V)^power
+   * on the characters' own normals, brightest at the silhouette and fading
+   * smoothly inward on every edge. Past the bloom threshold it glows. A
+   * switch, its strength, how far in it reaches, its colour — the set a toon
+   * shader's rim offers (MToon, UTS). `width` 0–1 is the exponent turned
+   * around so more is wider: rimPower(width).
+   */
+  rim: { enabled: boolean; intensity: number; width: number; color: string }
   /** Post-tonemap color grade. */
   grade: GradeSettings
   /**
@@ -347,6 +356,17 @@ export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
  *  dial existed was authored looking at a clean render, and that is the only
  *  value that brings one back as it was. */
 export const DEFAULT_GRAIN: SceneSettings["grain"] = { amount: 0 }
+/** Off: a scene written before the switch existed comes back as it was, and a
+ *  new one starts without it. The rest is what switching it on gives: the
+ *  usual rim, white all round, bright enough to bloom into a halo. */
+export const DEFAULT_RIM: SceneSettings["rim"] = { enabled: false, intensity: 2, width: 2 / 3, color: "#ffffff" }
+
+/** The rim's falloff exponent from its width: 0 is 16 (a thin line of light),
+ *  2/3 is 4 (the usual rim), 1 is 2 (a broad sheen). Exponential, so equal
+ *  steps of the slider are equal steps to the eye. */
+export function rimPower(width: number): number {
+  return 2 ** (4 - 3 * Math.min(Math.max(width, 0), 1))
+}
 /** Outlines are on: since they follow the game's (closed hull from smoothed
  *  normals, thinning with distance, antialiased) they are part of the house look. */
 export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: true, width: 1, recolor: false, color: "#000000" }

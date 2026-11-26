@@ -8,6 +8,7 @@ import {
   DEFAULT_AUDIO,
   DEFAULT_DOF,
   DEFAULT_GRAIN,
+  DEFAULT_RIM,
   DEFAULT_OUTLINE,
   DEFAULT_EYES, DEFAULT_HEAD, DEFAULT_MOTION_BLUR, DEFAULT_PLAYBACK, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
@@ -153,6 +154,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     grain: DEFAULT_GRAIN,
+    rim: DEFAULT_RIM,
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
     // All three are ADDITIVE — Floating Stars around the cast, Hand Sparks off
@@ -227,6 +229,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     grain: DEFAULT_GRAIN,
+    rim: DEFAULT_RIM,
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
     background: { color: "#1c1c1e", effects: [] },

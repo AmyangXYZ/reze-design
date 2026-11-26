@@ -700,7 +700,7 @@ const DOCK_CONTROLS: {
   row: string
   stageTab?: "stage" | "ground"
   lightTab?: "world" | "sun"
-  postTab?: "grade" | "tone" | "bloom" | "outline"
+  postTab?: "grade" | "tone" | "bloom" | "outline" | "rim"
   objectTab?: "plane" | "prop" | "overlay"
   keywords?: string[]
   /** What this control is set to, for the right end of its palette row. Omitted
@@ -748,6 +748,10 @@ const DOCK_CONTROLS: {
   { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"], value: (v) => v.settings.bloom.intensity.toFixed(3) },
   { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
   { id: "bloom-spread", en: "Bloom spread", zh: "泛光扩散", row: "post", postTab: "bloom", keywords: ["scatter", "radius", "半径"], value: (v) => dec2(v.settings.bloom.scatter) },
+  { id: "rim-toggle", en: "Rim light", zh: "边缘光", row: "post", postTab: "rim", keywords: ["rim", "edge light", "back light", "glow", "silhouette", "轮廓光", "逆光"], value: (v) => sw(v.settings.rim.enabled, v.t) },
+  { id: "rim-intensity", en: "Rim intensity", zh: "边缘光强度", row: "post", postTab: "rim", keywords: ["rim", "strength", "brightness", "强度"], value: (v) => dec2(v.settings.rim.intensity) },
+  { id: "rim-width", en: "Rim width", zh: "边缘光宽度", row: "post", postTab: "rim", keywords: ["rim", "falloff", "power", "thickness", "fresnel", "宽度"], value: (v) => dec2(v.settings.rim.width) },
+  { id: "rim-color", en: "Rim color", zh: "边缘光颜色", row: "post", postTab: "rim", keywords: ["rim", "tint", "颜色"], value: (v) => v.settings.rim.color },
   { id: "outline-toggle", en: "Outline", zh: "描边", row: "post", postTab: "outline", keywords: ["edge", "rim", "线稿", "轮廓"], value: (v) => sw(v.settings.outline.enabled, v.t) },
   { id: "outline-width", en: "Outline width", zh: "描边粗细", row: "post", postTab: "outline", keywords: ["edge", "thickness", "size", "line", "线宽", "宽度"], value: (v) => `${dec2(v.settings.outline.width)}×` },
   { id: "outline-color", en: "Outline color", zh: "描边颜色", row: "post", postTab: "outline", keywords: ["edge", "line", "ink", "override", "线稿", "颜色"], value: (v) => (v.settings.outline.recolor ? v.settings.outline.color : sw(false, v.t)) },
@@ -3494,7 +3498,7 @@ function Lab() {
   // "Ground" opens this row on its ground tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
   const [stageTab, setStageTab] = useState<"stage" | "ground">("ground")
-  const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
+  const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline" | "rim">("grade")
   const [cameraTab, setCameraTab] = useState<"orbit" | "body" | "focus">("orbit")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
   const [objectTab, setObjectTab] = useState<"plane" | "prop" | "overlay">("overlay")
@@ -6724,7 +6728,7 @@ function Lab() {
       tabs?: {
         stage?: "stage" | "ground"
         light?: "world" | "sun"
-        post?: "grade" | "tone" | "bloom" | "outline"
+        post?: "grade" | "tone" | "bloom" | "outline" | "rim"
         object?: "plane" | "prop" | "overlay"
       },
     ) => {
@@ -11217,6 +11221,9 @@ function Lab() {
                         <TabsTrigger value="outline" className="flex-1">
                           {t.lab.tabs.outline}
                         </TabsTrigger>
+                        <TabsTrigger value="rim" className="flex-1">
+                          {t.lab.tabs.rim}
+                        </TabsTrigger>
                       </TabsList>
                       <TabsContent value="grade">
                         {/* Quick-switch on the value text; the full library is
@@ -11348,6 +11355,47 @@ function Lab() {
                           label={t.lab.ctl.color}
                           value={bloom.color}
                           onChange={(hex) => patch("bloom", { color: hex })}
+                        />
+                      </TabsContent>
+                      {/* The cast's rim light, the textbook term (1 - N·V)^power:
+                          its switch, then how bright (past the bloom threshold
+                          it glows), how far in it reaches, and its colour —
+                          the set a toon shader's rim offers. Always there,
+                          inert while off. */}
+                      <TabsContent value="rim">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.rim}</span>
+                          <Switch
+                            size="sm"
+                            checked={settings.rim.enabled}
+                            onCheckedChange={(v) => patch("rim", { enabled: v })}
+                          />
+                        </div>
+                        <SliderRow
+                          label={t.lab.ctl.intensity}
+                          value={settings.rim.intensity}
+                          min={0}
+                          max={5}
+                          step={0.01}
+                          disabled={!settings.rim.enabled}
+                          onChange={(v) => patch("rim", { intensity: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                        <SliderRow
+                          label={t.lab.ctl.rimWidth}
+                          value={settings.rim.width}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          disabled={!settings.rim.enabled}
+                          onChange={(v) => patch("rim", { width: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                        <ColorRow
+                          label={t.lab.ctl.color}
+                          value={settings.rim.color}
+                          disabled={!settings.rim.enabled}
+                          onChange={(hex) => patch("rim", { color: hex })}
                         />
                       </TabsContent>
                       {/* One switch, and a pane of its own — outline is a third
