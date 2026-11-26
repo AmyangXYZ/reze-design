@@ -4,15 +4,18 @@
 // to stay a twin: a bundle this writes is opened by the browser's reader, and a
 // bundle the browser wrote is opened by this one.
 //
-// STORE-ONLY on the way out, matching buildZip. A bundle is already-compressed
-// pictures and deflating them again buys single-digit percents for real CPU
-// time. The browser's reader accepts method 8 as well, so this could deflate —
-// it does not, because parity with the publish path is worth more than those
-// percents, and a format that exists twice must not exist two ways.
+// DEFLATED WHERE IT PAYS on the way out, matching buildZip: pictures, audio
+// and video stored as they are, everything else deflated when that saves at
+// least 5% (motions shrink by 85%). The same list and the same threshold as
+// lib/bundle.ts, because a format that exists twice must not exist two ways.
 //
 // Names are UTF-8 with the language flag set, which is what the reader expects.
 
-import { inflateRawSync } from "node:zlib"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
+
+/** lib/bundle.ts STORED_AS_IS, by hand — one list. */
+const STORED_AS_IS = /\.(png|jpe?g|webp|gif|avif|mp3|m4a|aac|ogg|opus|flac|mp4|m4v|webm|mov|zip|7z|gz|br)$/i
+const MIN_SAVING = 0.05
 
 const LOCAL_SIG = 0x04034b50
 const CDIR_SIG = 0x02014b50
@@ -87,7 +90,7 @@ export function readZip(buf) {
   return out
 }
 
-/** A store-only zip, byte-for-byte the shape lib/bundle.ts writes. */
+/** A zip, byte-for-byte the shape lib/bundle.ts writes. */
 export function writeZip(entries) {
   const parts = []
   const central = []
@@ -97,32 +100,41 @@ export function writeZip(entries) {
     const name = Buffer.from(e.path, "utf8")
     const data = e.bytes
     const crc = crc32(data)
+    let body = data
+    let method = 0
+    if (!STORED_AS_IS.test(e.path) && data.length >= 256) {
+      const z = deflateRawSync(data)
+      if (z.length <= data.length * (1 - MIN_SAVING)) {
+        body = z
+        method = 8
+      }
+    }
 
     const local = Buffer.alloc(30)
     local.writeUInt32LE(LOCAL_SIG, 0)
     local.writeUInt16LE(20, 4) // version needed
     local.writeUInt16LE(0x0800, 6) // UTF-8 names
-    local.writeUInt16LE(0, 8) // method: store
+    local.writeUInt16LE(method, 8) // 0 store, 8 deflate
     local.writeUInt32LE(crc, 14)
-    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(body.length, 18)
     local.writeUInt32LE(data.length, 22)
     local.writeUInt16LE(name.length, 26)
-    parts.push(local, name, data)
+    parts.push(local, name, body)
 
     const dir = Buffer.alloc(46)
     dir.writeUInt32LE(CDIR_SIG, 0)
     dir.writeUInt16LE(20, 4)
     dir.writeUInt16LE(20, 6)
     dir.writeUInt16LE(0x0800, 8)
-    dir.writeUInt16LE(0, 10)
+    dir.writeUInt16LE(method, 10)
     dir.writeUInt32LE(crc, 16)
-    dir.writeUInt32LE(data.length, 20)
+    dir.writeUInt32LE(body.length, 20)
     dir.writeUInt32LE(data.length, 24)
     dir.writeUInt16LE(name.length, 28)
     dir.writeUInt32LE(offset, 42)
     central.push(dir, name)
 
-    offset += 30 + name.length + data.length
+    offset += 30 + name.length + body.length
   }
 
   const centralBuf = Buffer.concat(central)

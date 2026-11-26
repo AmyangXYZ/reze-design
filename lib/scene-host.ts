@@ -246,12 +246,16 @@ export type LoadProgress = {
   onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null, prop: PropInfo | null) => void
   /** Bundle download, while it is downloading. Null once the bytes are in. */
   onBytes?: (p: BundleProgress | null) => void
+  /** The model being loaded now — its files read and its mesh built — in
+   *  document order, one at a time. Null once the last one is in. */
+  onLoading?: (p: { index: number; total: number; file: string } | null) => void
   /** This model's mesh is in and its LOOKS are compiling. Its own phase because
    *  it is its own wait: a WGSL module and a pipeline per group, which on a
    *  character is eight and on a stage can be ten, and a browser with a cold
    *  shader cache pays for every one. Named, the pill stops calling the longer
-   *  half of an open by the shorter half's name. */
-  onStyling?: (file: string) => void
+   *  half of an open by the shorter half's name. Several style at once now;
+   *  it names one still going, and null when none is. */
+  onStyling?: (file: string | null) => void
   /** The game stage, as its package loads: done of total by the engine's
    *  weights (a picture weighs its megapixels). Null once it is in. */
   onNativeStage?: (p: NativeStageProgress | null) => void
@@ -399,7 +403,7 @@ export async function downloadBundle(
 }
 
 export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
-  const { onStage, onBundle, onModel, onBytes, onStyling, onNativeStage } = progress
+  const { onStage, onBundle, onModel, onBytes, onLoading, onStyling, onNativeStage } = progress
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
@@ -499,9 +503,26 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (stale()) return null
   }
 
-  for (const entry of scene.assets.models) {
+  // ── Load serially, style concurrently ──
+  // Loading a model (its files out of the zip, its PMX, its maps) is cheap and
+  // stays in document order. STYLING is where a load waits: each look is a set
+  // of pipelines, and a pipeline the prewarm above did not build — a
+  // single-sided twin, an eye's over-eyes pass, a stage's particles — takes
+  // seconds to compile. Awaited model by model, those waits added up (three of
+  // them were 11.5 of a 20-second open); started as each model is placed and
+  // awaited together, they overlap, and the scene costs the longest of them.
+  // Each model is still revealed the moment its own look is ready.
+  //
+  // Everything a task needs from the loop is pinned before it starts: its slot
+  // in `infos` (the order the UI lists them), and its own stage or prop row.
+  const slots: (EngineModelInfo | undefined)[] = []
+  const styling: Promise<void>[] = []
+  const inFlight = new Set<string>()
+  let castCount = 0
+  for (const [index, entry] of scene.assets.models.entries()) {
     const src = entry.model.source
     let model
+    onLoading?.({ index, total: scene.assets.models.length, file: entry.model.file })
     if (src.kind === "bundle") {
       const packed = bundle?.find((f) => f.name === src.path)
       if (!packed) {
@@ -619,7 +640,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       // written before the field existed still opens the way it always did.
       castPlacement = entry.transform
         ? { at: entry.transform.position, scale: entry.transform.scale, rot: entry.transform.rotation }
-        : { at: [spawnOffsetX(infos.length - stageList.length - propList.length), 0, 0], guess: true }
+        : { at: [spawnOffsetX(castCount), 0, 0], guess: true }
       const at = castPlacement.at
       const rot = castPlacement.rot
       engine.setModelTransform(entry.model.id, {
@@ -628,121 +649,134 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         ...(castPlacement.scale !== undefined ? { scale: castPlacement.scale } : {}),
         ...(rot ? { rotation: castRotationToEngine(rot) } : {}),
       })
+      castCount++
+      // Framing travels with the document, and it is bound to the first CAST
+      // member — `follow` rides that one's bone, and scenery has no bone worth
+      // riding. Applied as soon as it is placed: its bones exist now, and
+      // waiting for its look would leave the shot unframed for nothing.
+      if (castCount === 1) applyCamera(engine, scene.state.camera, model)
     }
+    const slot = slots.length
+    slots.push(undefined)
+    const stageRow = entry.stage ? stageList[stageList.length - 1]! : null
+    const propRow = entry.prop ? propList[propList.length - 1]! : null
+    inFlight.add(entry.model.file)
     onStyling?.(entry.model.file)
-    // Styling: a document carrying groups for this model (a restored or imported scene)
-    const docGroups = scene.state.groups?.[entry.model.id]?.map((g) => ({ ...g, graph: withoutUnknownNodes(g.graph, entry.model.file) }))
-    if (docGroups) {
-      // A GROUP'S GRAPH IS A SNAPSHOT, and a snapshot goes stale silently.
-      //
-      // The document stores the whole graph inline, so a scene keeps the look
-      // it was styled with and a later retune of that built-in never reaches
-      // it. That is deliberate — nobody wants yesterday's scene repainted by
-      // today's edit — and it is invisible, which is the part that costs: a
-      // stage came up one way on upload (today's graph, straight from the
-      // library) and another after a reload (the snapshot), with every count,
-      // group and light identical, and the only way to tell was to notice the
-      // pixels. Said here, the drift is a line instead of a day.
-      for (const g of docGroups) {
-        const live = libraryGraph(g.graph.name)
-        if (live && JSON.stringify(live) !== JSON.stringify(g.graph))
-          console.info(
-            `[style] ${entry.model.file}: "${g.graph.name}" is the copy this scene was styled with, ` +
-              `and the built-in has changed since. Re-pick the look to take the new one.`,
-          )
-      }
-      // Empty groups are UI-only drop targets — withheld from the engine.
-      reportGroups(
-        `load ${entry.model.file}`,
-        await engine.applyStyleGroups(
-          entry.model.id,
-          engineGroups(
+    const style = async () => {
+      // Styling: a document carrying groups for this model (a restored or imported scene)
+      const docGroups = scene.state.groups?.[entry.model.id]?.map((g) => ({ ...g, graph: withoutUnknownNodes(g.graph, entry.model.file) }))
+      if (docGroups) {
+        // A GROUP'S GRAPH IS A SNAPSHOT, and a snapshot goes stale silently.
+        //
+        // The document stores the whole graph inline, so a scene keeps the look
+        // it was styled with and a later retune of that built-in never reaches
+        // it. That is deliberate — nobody wants yesterday's scene repainted by
+        // today's edit — and it is invisible, which is the part that costs: a
+        // stage came up one way on upload (today's graph, straight from the
+        // library) and another after a reload (the snapshot), with every count,
+        // group and light identical, and the only way to tell was to notice the
+        // pixels. Said here, the drift is a line instead of a day.
+        for (const g of docGroups) {
+          const live = libraryGraph(g.graph.name)
+          if (live && JSON.stringify(live) !== JSON.stringify(g.graph))
+            console.info(
+              `[style] ${entry.model.file}: "${g.graph.name}" is the copy this scene was styled with, ` +
+                `and the built-in has changed since. Re-pick the look to take the new one.`,
+            )
+        }
+        // Empty groups are UI-only drop targets — withheld from the engine.
+        reportGroups(
+          `load ${entry.model.file}`,
+          await engine.applyStyleGroups(
             entry.model.id,
-            docGroups.filter((g) => g.materials.length > 0),
+            engineGroups(
+              entry.model.id,
+              docGroups.filter((g) => g.materials.length > 0),
+            ),
           ),
-        ),
-      )
-    }
-    // Anything the document did not group is auto-styled — every model by the
-    // same rule (lib/auto-style): a figure's parts only where there is a head,
-    // so a wall can never land in the hair pass, and a material's look wherever
-    // its name or its shader says what it is made of.
-    const autoGroups = docGroups ? null : await autoStyleOnEngine(engine, entry.model.id, engine.getStyleGroups(entry.model.id))
-    if (stale()) return null
-    // The game's own materials, over the groups: the ones a look names are
-    // drawn by the game's shaders from here on, the rest keep their graphs.
-    // A look that fails costs that model its game shading, never the scene.
-    if (entry.look && bundle) {
-      try {
-        const look = await loadNativeLook(entry.look, read)
-        if (stale()) return null
-        // Revealed with its look drawable: the pipelines compile async, and
-        // a dressed material sits out until they have.
-        if (dress(engine, entry.model.id, look)) await engine.nativeLookReady(entry.model.id)
-        if (stale()) return null
-      } catch (e) {
-        console.warn(`[look] ${entry.model.file}: ${entry.look} did not load:`, e)
+        )
       }
+      // Anything the document did not group is auto-styled — every model by the
+      // same rule (lib/auto-style): a figure's parts only where there is a head,
+      // so a wall can never land in the hair pass, and a material's look wherever
+      // its name or its shader says what it is made of.
+      const autoGroups = docGroups ? null : await autoStyleOnEngine(engine, entry.model.id, engine.getStyleGroups(entry.model.id))
+      if (stale()) return
+      // The game's own materials, over the groups: the ones a look names are
+      // drawn by the game's shaders from here on, the rest keep their graphs.
+      // A look that fails costs that model its game shading, never the scene.
+      if (entry.look && bundle) {
+        try {
+          const look = await loadNativeLook(entry.look, read)
+          if (stale()) return
+          // Revealed with its look drawable: the pipelines compile async, and
+          // a dressed material sits out until they have.
+          if (dress(engine, entry.model.id, look)) await engine.nativeLookReady(entry.model.id)
+          if (stale()) return
+        } catch (e) {
+          console.warn(`[look] ${entry.model.file}: ${entry.look} did not load:`, e)
+        }
+      }
+      const hidden = scene.state.hidden?.[entry.model.id] ?? []
+      for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
+      const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility, entry.materialVisibility)
+      if (entry.castShadow === false) {
+        engine.setModelCastShadow(entry.model.id, false)
+        info.castShadow = false
+      }
+      if (entry.layers) {
+        // every material on the layers the entry names (0 in the table = the model's own)
+        const all = new Set(model.getMaterials().map((x) => x.name))
+        engine.setMaterialLayers(entry.model.id, Object.fromEntries([...all].map((n) => [n, entry.layers!])))
+        info.layers = entry.layers
+      }
+      if (entry.fill === false) info.fill = false
+      if (entry.eyes) info.eyes = entry.eyes
+      if (entry.blink) info.blink = entry.blink
+      if (entry.jelly) info.jelly = entry.jelly
+      if (entry.bloom === false) info.bloom = false
+      const modelGroups = withSpecialGroups(
+        docGroups ?? autoGroups ?? [],
+        // The character seeds go to whatever has a head — a prop that is a second
+        // figure included, a stage never — the same test that gates the roles.
+        { character: isFigureModel(engine, entry.model.id) },
+      )
+      slots[slot] = info
+      groups[entry.model.id] = modelGroups
+      // A scheduled model's lane is armed before the reveal — cloth that keeps
+      // simulating off stage, and the dissolve at frame 0 (see seedLane). It lives
+      // here because every reveal path — with a motion, without one, and the one
+      // taken when a motion fails to load — comes through this block first.
+      seedLane(engine, entry.model.id, entry.visibility)
+      seedMaterialLanes(engine, entry.model.id, entry.materialVisibility)
+      // Reveal this one NOW. Models with an animation stay hidden a moment longer:
+      // their clip loader reveals them after show(), so the first visible frame
+      // wears the motion's first pose instead of flashing bind pose. (If the clip
+      // fails, the loader still reveals.)
+      //
+      // What the track says at frame 0, which for an unscheduled model is shown.
+      // Asked here rather than left to the playback tick to correct: a costume
+      // that opens the scene off stage would otherwise be on screen for the frame
+      // between the reveal and the first tick, which is a flash of two characters
+      // standing in each other.
+      if (!entry.animation)
+        engine.setModelTransform(entry.model.id, { visible: visibleAt(entry.visibility, 0) })
+      onModel?.(info, modelGroups, stageRow, propRow)
     }
-    const hidden = scene.state.hidden?.[entry.model.id] ?? []
-    for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility, entry.materialVisibility)
-    if (entry.castShadow === false) {
-      engine.setModelCastShadow(entry.model.id, false)
-      info.castShadow = false
-    }
-    if (entry.layers) {
-      // every material on the layers the entry names (0 in the table = the model's own)
-      const all = new Set(model.getMaterials().map((x) => x.name))
-      engine.setMaterialLayers(entry.model.id, Object.fromEntries([...all].map((n) => [n, entry.layers!])))
-      info.layers = entry.layers
-    }
-    if (entry.fill === false) info.fill = false
-    if (entry.eyes) info.eyes = entry.eyes
-    if (entry.blink) info.blink = entry.blink
-    if (entry.jelly) info.jelly = entry.jelly
-    if (entry.bloom === false) info.bloom = false
-    const modelGroups = withSpecialGroups(
-      docGroups ?? autoGroups ?? [],
-      // The character seeds go to whatever has a head — a prop that is a second
-      // figure included, a stage never — the same test that gates the roles.
-      { character: isFigureModel(engine, entry.model.id) },
-    )
-    infos.push(info)
-    groups[entry.model.id] = modelGroups
-    // Framing travels with the document, and it is bound to the first CAST
-    // member — `follow` rides that one's bone, and scenery has no bone worth
-    // riding. Applied as soon as it exists rather than
-    // after the last: with three characters, waiting meant two of them stood in
-    // an unframed shot until the third finished, and the camera then jumped.
-    if (!entry.stage && !entry.prop && infos.length - stageList.length - propList.length === 1) {
-      applyCamera(engine, scene.state.camera, model)
-    }
-    // A scheduled model's lane is armed before the reveal — cloth that keeps
-    // simulating off stage, and the dissolve at frame 0 (see seedLane). It lives
-    // here because every reveal path — with a motion, without one, and the one
-    // taken when a motion fails to load — comes through this block first.
-    seedLane(engine, entry.model.id, entry.visibility)
-    seedMaterialLanes(engine, entry.model.id, entry.materialVisibility)
-    // Reveal this one NOW. Models with an animation stay hidden a moment longer:
-    // their clip loader reveals them after show(), so the first visible frame
-    // wears the motion's first pose instead of flashing bind pose. (If the clip
-    // fails, the loader still reveals.)
-    //
-    // What the track says at frame 0, which for an unscheduled model is shown.
-    // Asked here rather than left to the playback tick to correct: a costume
-    // that opens the scene off stage would otherwise be on screen for the frame
-    // between the reveal and the first tick, which is a flash of two characters
-    // standing in each other.
-    if (!entry.animation)
-      engine.setModelTransform(entry.model.id, { visible: visibleAt(entry.visibility, 0) })
-    onModel?.(
-      info,
-      modelGroups,
-      entry.stage ? stageList[stageList.length - 1]! : null,
-      entry.prop ? propList[propList.length - 1]! : null,
-    )
+    const task = style().finally(() => {
+      // The pill names a model still being styled, or none.
+      inFlight.delete(entry.model.file)
+      if (!stale()) onStyling?.(inFlight.values().next().value ?? null)
+    })
+    // Handled here so a failure is not reported unhandled before the
+    // Promise.all below reaches it; that await still throws it.
+    task.catch(() => {})
+    styling.push(task)
   }
+  onLoading?.(null)
+  await Promise.all(styling)
+  if (stale()) return null
+  for (const info of slots) if (info) infos.push(info)
 
   // Every model is in, so every parent a prop's track names exists.
   for (const p of propList) placeProp(engine, p)

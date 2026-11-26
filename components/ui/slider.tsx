@@ -128,12 +128,15 @@ function Slider({
           // Radix's own Range always spans from the track's start, so an
           // origin-anchored fill has to be drawn rather than styled. Plain
           // percentages of the track: the thumb is still Radix's, so the two
-          // cannot disagree about where the value is.
+          // cannot disagree about where the value is. Its colour is the same
+          // class as the Range's: an inline `var(--color-foreground)` resolves
+          // at :root (`@theme inline`), so it ignored a paper's or the cover's
+          // own ink and drew the dark theme's white on the light sheet.
           <div
             data-slot="slider-range"
-            className="absolute h-full"
+            className={cn("absolute h-full", variant === "hairline" ? "bg-foreground" : "bg-primary")}
             style={{
-              backgroundColor: accent ?? (variant === "hairline" ? "var(--color-foreground)" : "var(--color-primary)"),
+              ...(accent ? { backgroundColor: accent } : null),
               left: `${((Math.min(_values[0] ?? origin, origin) - min) / (max - min)) * 100}%`,
               width: `${(Math.abs((_values[0] ?? origin) - origin) / (max - min)) * 100}%`,
             }}

@@ -229,7 +229,10 @@ const body = (s: string) => utf8(s.repeat(200))
   const zip = await buildZip(entries)
   const back = await openZip(zip)
   assert.deepEqual(back.map((f) => f.name), ["stage/a.json", "stage/t/b.webp", "テ.vmd", "scene.json", "models/m/m.pmx"])
-  assert.ok(back.every((f) => f.method === 0), "export writes store-only, as before")
+  // Deflated where it pays: the picture stays stored, and so does a file too
+  // small to bother with; the rest (JSON, a motion, a model) is deflated.
+  assert.deepEqual(back.map((f) => f.method), [8, 0, 8, 0, 8], "deflated where it pays")
+  assert.ok(back[0].compSize < back[0].size / 4, "a repetitive JSON did not shrink")
   assert.deepEqual(
     await Promise.all(back.map(text)),
     ["a ".repeat(200), "b ".repeat(200), "c ".repeat(200), '{"version":1}', "m ".repeat(200)],

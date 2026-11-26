@@ -11,7 +11,6 @@ import type { BundleProgress, DownloadFailure } from "@/hooks/use-engine"
 import { Button } from "@/components/ui/button"
 import { Notice } from "@/components/ui/notice"
 import { useT } from "@/lib/i18n"
-import type { Scene } from "@/lib/scene"
 
 export function LoadingPill({ label }: { label?: string }) {
   const t = useT()
@@ -89,31 +88,32 @@ const mbNum = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
 const pad = (text: string, width: number) => text.padStart(width, "\u2007")
 
 /**
- * The wait, named — one line, in phase order.
+ * The wait, named — one line, in the order the load actually runs.
  *
  * Lives here rather than in either host because both show the same pill for the
  * same load: the editor boots a scene exactly the way the viewer does, and two
  * copies of this would drift the moment one of them gained a phase.
  *
- * Only the phases with real numbers behind them quote any: the download is
- * measured, and the model count comes off the document, which knew it before a
- * byte arrived. Everything else says what it is doing and nothing more.
+ * The order: the engine; the bundle's bytes, then its unpacking; each model in
+ * document order; the game stage; then the shaders still compiling once nothing
+ * is left to load. Models load one at a time but style several at once, so the
+ * model in flight is the loader's own report (onLoading), never a count of who
+ * has finished — finishing order is not document order any more.
  */
 export function useLoadingLabel(args: {
-  scene: Scene
   bundleProgress: BundleProgress | null
   bundleReady: boolean
   /** The GPU device and its pipelines are up — everything below waits on this. */
   engineReady: boolean
-  /** The model whose looks are compiling, while they compile. */
+  /** A model whose looks are compiling, while any are. */
   styling: string | null
-  /** Models that have reported in so far. */
-  loaded: number
+  /** The model being loaded now, in document order. */
+  loadingModel: { index: number; total: number; file: string } | null
   /** The game stage, while its package loads. */
   nativeStage?: { name: string; percent: number } | null
 }): string {
   const t = useT()
-  const { scene, bundleProgress, bundleReady, engineReady, styling, loaded, nativeStage } = args
+  const { bundleProgress, bundleReady, engineReady, styling, loadingModel, nativeStage } = args
   return useMemo(() => {
     // FIRST, because nothing else has started yet. This wait used to wear the
     // generic name and is the whole open on a cold shader cache.
@@ -133,21 +133,17 @@ export function useLoadingLabel(args: {
     // The bytes are in and the zip is being walked — its own visible pause on a
     // bundle this size, and not the same wait as the download.
     if (bundleProgress?.done && !bundleReady) return t.editor.unpackingAssets
-    // The mesh is in and the pipelines are compiling — on a character the longer
-    // half of the wait, and indistinguishable from the download without this.
-    if (styling) return t.editor.compilingShaders(styling)
+    // A model in flight: what the load is doing now, while earlier ones may
+    // still be compiling behind it.
+    if (loadingModel) return t.editor.loadingModels(loadingModel.index + 1, loadingModel.total, loadingModel.file)
     // After the cast, and the most bytes in the scene: measured by the engine,
     // so it quotes a share.
     if (nativeStage) return t.editor.loadingStage(nativeStage.name, pad(String(nativeStage.percent), 3))
-    const total = scene.assets.models.length
-    // Nothing specific to say yet: a local bundle is coming out of IndexedDB,
-    // which reports no bytes because it never crossed a network, or the scene
-    // is empty and there is nothing to report on at all.
-    if (!bundleReady || total === 0) return t.editor.loadingScene
-    // Models resolve in document order, so the one in flight is the next that
-    // has not reported in. Clamped: the last one is still "of total" while it
-    // finishes.
-    const index = Math.min(loaded, total - 1)
-    return t.editor.loadingModels(index + 1, total, scene.assets.models[index]?.model.file ?? "")
-  }, [scene, bundleProgress, bundleReady, engineReady, styling, loaded, nativeStage, t])
+    // Every model is in and the last looks are compiling — on a character the
+    // longer half of the wait, and indistinguishable from loading without this.
+    if (styling) return t.editor.compilingShaders(styling)
+    // A local bundle coming out of IndexedDB reports no bytes, and an empty
+    // scene has nothing to report on.
+    return t.editor.loadingScene
+  }, [bundleProgress, bundleReady, engineReady, styling, loadingModel, nativeStage, t])
 }

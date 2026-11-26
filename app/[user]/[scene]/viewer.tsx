@@ -514,6 +514,7 @@ function SceneStage({
     stageReady,
     engineReady,
     styling,
+    loadingModel,
     nativeStageLoad,
     bundleReady,
     bundleProgress,
@@ -546,12 +547,11 @@ function SceneStage({
   useCoverInk(mainRef, canvasRef, true, [ready, stageReady, bundleReady, stages.length, models.length, overlays.length].join("|"))
 
   const loadingLabel = useLoadingLabel({
-    scene,
     bundleProgress,
     bundleReady,
     engineReady,
     styling,
-    loaded: models.length,
+    loadingModel,
     nativeStage: nativeStageLoad,
   })
 

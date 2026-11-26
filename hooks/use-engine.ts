@@ -155,7 +155,8 @@ export function useEngine(
   /** Models the load in flight has reported in. Not `models.length`: a swap
    *  keeps the outgoing scene's rows until it is done, so that count named the
    *  wrong model, or none, for the whole of an import. */
-  const [loaded, setLoaded] = useState(0)
+  /** The model being loaded now, in document order (lib/scene-host onLoading). */
+  const [loadingModel, setLoadingModel] = useState<{ index: number; total: number; file: string } | null>(null)
   /** The game stage, while its package loads, as a whole percent. */
   const [nativeStageLoad, setNativeStageLoad] = useState<NativeStageLoad | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -240,6 +241,7 @@ export function useEngine(
       setStageReady(false)
       setEngineReady(false)
       setStyling(null)
+      setLoadingModel(null)
     }
     const teardownLater = () => {
       if (process.env.NODE_ENV === "development") pendingTeardown.current = setTimeout(teardown, 0)
@@ -345,6 +347,9 @@ export function useEngine(
             setStageReady(true)
           },
           onBytes: setBundleProgress,
+          onLoading: (p) => {
+            if (!stale()) setLoadingModel(p)
+          },
           onStyling: setStyling,
           onNativeStage: (p) => setNativeStageLoad(nativeStageStep(p)),
           onBundle: (files) => {
@@ -359,8 +364,6 @@ export function useEngine(
             // superseded it is about to clear.
             if (stale()) return
             // This one's looks are done; the next one's bytes are not its shaders.
-            setStyling(null)
-            setLoaded((n) => n + 1)
             setModels((prev) => withId(prev, info))
             setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
             if (stage) setStages((prev) => withId(prev, stage))
@@ -385,6 +388,7 @@ export function useEngine(
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         setStyling(null)
+        setLoadingModel(null)
         setReady(true)
         setError(null)
         setDownloadFailure(null)
@@ -1595,7 +1599,7 @@ export function useEngine(
     // The outgoing scene's last report was `done` — left standing, the incoming
     // scene opens on "unpacking" before it has fetched anything.
     setBundleProgress(null)
-    setLoaded(0)
+    setLoadingModel(null)
     setStyling(null)
     setNativeStageLoad(null)
     // AND ITS BUNDLE IS NOT THIS ONE. Left true from the outgoing scene, the
@@ -1639,6 +1643,9 @@ export function useEngine(
       // land together at the end: they are the outgoing scene's until then.
       const loaded = await loadSceneInto(engine, scene, stale, {
         onBytes: setBundleProgress,
+        onLoading: (p) => {
+          if (!stale()) setLoadingModel(p)
+        },
         onStyling: (file) => {
           if (!stale()) setStyling(file)
         },
@@ -1647,11 +1654,6 @@ export function useEngine(
           if (stale()) return
           bundleRef.current = files
           setBundleReady(true)
-        },
-        onModel: () => {
-          if (stale()) return
-          setStyling(null)
-          setLoaded((n) => n + 1)
         },
       })
       if (!loaded) return null
@@ -1684,6 +1686,7 @@ export function useEngine(
       settle()
       if (!stale()) {
         setStyling(null)
+        setLoadingModel(null)
         setReady(true)
       }
     }
@@ -1751,7 +1754,7 @@ export function useEngine(
     stageReady,
     engineReady,
     styling,
-    loaded,
+    loadingModel,
     nativeStageLoad,
     bundleProgress,
     bundleReady,

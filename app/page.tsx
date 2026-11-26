@@ -2475,7 +2475,7 @@ function Lab() {
     stageReady,
     engineReady,
     styling,
-    loaded,
+    loadingModel,
     nativeStageLoad,
     bundleReady,
     bundleProgress,
@@ -2546,7 +2546,6 @@ function Lab() {
   // immutably, even opening someone else's scene reads it back from disk rather
   // than the network. `null` collapses the pill to the general wait.
   const loadingLabel = useLoadingLabel({
-    scene,
     // The editor opens published scenes too — a fork, and an author correcting
     // their own — and those come down the same zip the viewer waits on. Passing
     // null here is what left the megabytes unreported on this side.
@@ -2554,7 +2553,7 @@ function Lab() {
     bundleReady,
     engineReady,
     styling,
-    loaded,
+    loadingModel,
     nativeStage: nativeStageLoad,
   })
 
