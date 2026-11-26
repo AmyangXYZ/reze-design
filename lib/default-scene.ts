@@ -59,13 +59,12 @@ const DEMO = "https://assets.reze.one/demo/demo-cat"
 // application/octet-stream, which Cloudflare never compresses.
 // The cast, shared by every site rather than copied into each one's folder.
 //
-// `reze-webp` because her textures are now WebP and the path is the version. She
-// shipped as 16.3MB of PNG, which is most of what a first-time visitor
-// downloads before anything appears, and a private window — having no cache to
-// spare it — paid that on every open. The same 13 maps are 1.9MB re-encoded
-// (scripts/model-textures-to-webp.mjs), with every pixel anything can sample
-// bit-identical on the two that carry real transparency.
-const MODEL = "https://assets.reze.one/demo/reze-webp"
+// The path is the version and the model is always `reze.pmx`: `reze-v4` is the
+// reworked model. Her 13 maps are WebP (scripts/model-textures-to-webp.mjs):
+// 14.2MB of PNG became 2.2MB, lossless on the ones that carry real
+// transparency. The PMX is stored gzipped (r2-upload-demo.mjs --gzip), 2.0MB on
+// disk and 1.0MB on the wire.
+const MODEL = "https://assets.reze.one/demo/reze-v4"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 2,
@@ -89,11 +88,11 @@ const DEMO_SCENE_DOC: SceneDoc = {
         eyes: { ...DEFAULT_EYES, enabled: true },
         materials: {
           groups: [
-            { id: "body", label: "Body", materials: ["skin"], graph: "AG Body" },
+            { id: "body", label: "Body", materials: ["skin", "skin_torso"], graph: "AG Body" },
             {
               id: "cloth_smooth",
               label: "Smooth Cloth",
-              materials: ["shirt", "shorts", "ribbon", "bozi", "cloth01", "cloth01.001"],
+              materials: ["shirt", "shorts", "ribbon", "bozi", "cloth01.001"],
               graph: "AG Smooth Cloth",
             },
             { id: "cloth_rough", label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },
