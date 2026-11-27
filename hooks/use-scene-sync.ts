@@ -187,7 +187,7 @@ export function useSceneSync({
   hdri?: File | null
   exportBackground?: ExportBackground
   castIds?: string[]
-  castEyes?: { id: string; eyes?: CastEyes; blink?: CastBlink; jelly?: CastJelly }[]
+  castEyes?: { id: string; instance: number; eyes?: CastEyes; blink?: CastBlink; jelly?: CastJelly }[]
   unfilledIds?: string[]
   unbloomedIds?: string[]
   stageSuns?: { id: string; sun: { color: string; strength: number } | null }[]
@@ -626,15 +626,18 @@ export function useSceneSync({
   //
   // Each section is keyed on its own: a cast member's jelly changing must not
   // restart everyone's blink timers. The key carries the values, so the effect
-  // reads them back from it rather than from a closure.
+  // reads them back from it rather than from a closure, and each row's
+  // `instance`: a model reloaded under the same id (a replace by a file of the
+  // same name, a second boot of the same scene) is a new engine Model holding
+  // none of what was pushed to the old one, with the same id and settings.
   const own = new Map(castEyes.map((c) => [c.id, c]))
-  const eyesKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_EYES, ...own.get(id)?.eyes }]))
-  const blinkKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_BLINK, ...own.get(id)?.blink }]))
-  const jellyKey = JSON.stringify(castIds.map((id) => [id, { ...DEFAULT_JELLY, ...own.get(id)?.jelly }]))
+  const eyesKey = JSON.stringify(castIds.map((id) => [id, own.get(id)?.instance, { ...DEFAULT_EYES, ...own.get(id)?.eyes }]))
+  const blinkKey = JSON.stringify(castIds.map((id) => [id, own.get(id)?.instance, { ...DEFAULT_BLINK, ...own.get(id)?.blink }]))
+  const jellyKey = JSON.stringify(castIds.map((id) => [id, own.get(id)?.instance, { ...DEFAULT_JELLY, ...own.get(id)?.jelly }]))
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const [id, eyes] of JSON.parse(eyesKey) as [string, CastEyes][]) {
+    for (const [id, , eyes] of JSON.parse(eyesKey) as [string, number, CastEyes][]) {
       engine.setEyeTracking(id, eyes.enabled ? {} : null)
       engine.setModelSeeThroughHair(id, eyes.throughHair)
       engine.setModelHairOverEyes(id, eyes.hairOverEyes)
@@ -655,7 +658,7 @@ export function useSceneSync({
     const engine = engineRef.current
     if (!engine || !ready) return
     // Now and then a blink comes doubled, a quick flutter: always, as people do.
-    for (const [id, { enabled, interval, speed }] of JSON.parse(blinkKey) as [string, CastBlink][]) {
+    for (const [id, , { enabled, interval, speed }] of JSON.parse(blinkKey) as [string, number, CastBlink][]) {
       engine.setAutoBlink(id, enabled ? { interval, speed } : null)
     }
   }, [engineRef, ready, blinkKey])
@@ -686,7 +689,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const [id, { enabled, strength, motion, idle }] of JSON.parse(jellyKey) as [string, CastJelly][]) {
+    for (const [id, , { enabled, strength, motion, idle }] of JSON.parse(jellyKey) as [string, number, CastJelly][]) {
       engine.setModelJellyEyes(id, enabled ? { strength, motion, idle } : null)
     }
   }, [engineRef, ready, jellyKey])
@@ -1066,6 +1069,6 @@ export function useSceneCast<
     return first ? [{ id: first.id, sun: first.sun ?? null }] : []
   }, [stages])
   // Each cast member's own eyes, blink and jelly, for useSceneSync.
-  const castEyes = useMemo(() => cast.map((m) => ({ id: m.id, eyes: m.eyes, blink: m.blink, jelly: m.jelly })), [cast])
+  const castEyes = useMemo(() => cast.map((m) => ({ id: m.id, instance: m.instance, eyes: m.eyes, blink: m.blink, jelly: m.jelly })), [cast])
   return { stageIds, cast, castIds, castEyes, unfilledIds, unbloomedIds, stageSuns }
 }
