@@ -60,12 +60,12 @@ const DEMO = "https://assets.reze.one/demo/demo-cat"
 // application/octet-stream, which Cloudflare never compresses.
 // The cast, shared by every site rather than copied into each one's folder.
 //
-// The path is the version and the model is always `reze.pmx`: `reze-v6` is the
-// reworked model. Her 13 maps are WebP (scripts/model-textures-to-webp.mjs):
-// 14.0MB of PNG became 2.2MB, lossless on the ones that carry real
-// transparency. The PMX is stored gzipped (r2-upload-demo.mjs --gzip), 2.7MB on
-// disk and 1.4MB on the wire.
-const MODEL = "https://assets.reze.one/demo/reze-v6"
+// The path is the version and the model is always `reze.pmx`: `reze-v7` is the
+// reworked model. 13 of her 14 maps are WebP (scripts/model-textures-to-webp.mjs),
+// lossless on the ones that carry real transparency; the small thigh_socks map
+// stays PNG, which is smaller. The PMX is stored gzipped (r2-upload-demo.mjs
+// --gzip), 2.9MB on disk and 1.5MB on the wire.
+const MODEL = "https://assets.reze.one/demo/reze-v7"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 2,
@@ -97,7 +97,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
               graph: "AG Smooth Cloth",
             },
             { id: "cloth_rough", label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },
-            { id: "stockings", label: "Stockings", materials: ["socks"], graph: "AG Stockings", alphaMode: "hashed" },
+            { id: "stockings", label: "Stockings", materials: ["thighhigh_cloth"], graph: "AG Stockings", alphaMode: "hashed" },
             { id: "hair", label: "Hair", materials: ["头发"], graph: "AG Hair", renderClass: "hair" },
             { id: "face", label: "Face", materials: ["face01", "唇", "齿", "口腔", "舌"], graph: "AG Face" },
             {
