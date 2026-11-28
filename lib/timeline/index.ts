@@ -37,7 +37,7 @@ import type { DialKey } from "@/lib/effects"
 import type { SceneParentKey } from "@/lib/scene"
 import type { EffectParamKey, ModelParentKey, EffectWindow as EngineWindow } from "reze-engine"
 import { parentKeysToEngine, parentTrackOf, type PropTrackSource } from "./parents"
-import { visibilityAt, type VisibilityWindow } from "./visibility"
+import { visibilityAt, type VisibilityState, type VisibilityWindow } from "./visibility"
 import { applyLampFrame } from "./lights"
 import { applyStageTintFrame } from "./stage-tint"
 import { applyUniformFrame } from "./uniforms"
@@ -242,10 +242,21 @@ export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline,
   // The keyed cards, where their keys put them at this frame.
   applyPlaneFrame(engine, timeline.planes, frame)
   const lanes = timeline.visibility
+  const shown = (id: string) => onStageAt(timeline, id, frame)
   for (const id in lanes) {
+    if (id in timeline.parents) continue
     const model = engine.getModel(id)
     if (!model) continue
-    const state = visibilityAt(lanes[id], frame)
+    const state = shown(id)
+    if (model.visible !== state.visible) model.setVisible(state.visible)
+    engine.setModelDissolve(id, state.dissolve)
+  }
+  // The props, each by its own lane AND its holder's: a prop in a hand leaves
+  // the stage with the hand.
+  for (const id in timeline.parents) {
+    const model = engine.getModel(id)
+    if (!model) continue
+    const state = shown(id)
     if (model.visible !== state.visible) model.setVisible(state.visible)
     engine.setModelDissolve(id, state.dissolve)
   }
@@ -261,6 +272,33 @@ export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline,
     }
     engine.setMaterialDissolve(id, values)
   }
+}
+
+/**
+ * A model's state at this frame: its own lane, and for a prop held at this
+ * frame, its holder's too: on stage while both are, as much of it as the less
+ * of the two. A free prop answers to its own lane alone. `seen` stops a prop
+ * keyed into a hand that is, through some chain, its own.
+ */
+export function onStageAt(
+  timeline: Pick<SceneTimeline, "visibility" | "parents">,
+  id: string,
+  frame: number,
+  seen: ReadonlySet<string> = new Set(),
+): VisibilityState {
+  const own = visibilityAt(timeline.visibility[id], frame)
+  const track = timeline.parents[id]
+  if (!track || !own.visible) return own
+  let at = -1
+  let holder: string | null = null
+  for (const k of track)
+    if (k.frame <= frame && k.frame >= at) {
+      at = k.frame
+      holder = k.model
+    }
+  if (!holder || seen.has(holder)) return own
+  const held = onStageAt(timeline, holder, frame, new Set([...seen, id]))
+  return held.visible ? { visible: true, dissolve: Math.min(own.dissolve, held.dissolve) } : held
 }
 
 /**

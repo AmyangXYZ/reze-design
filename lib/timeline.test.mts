@@ -11,7 +11,7 @@
 // install. Each of those is a scene that plays differently from how it was
 // composed, with nothing on screen to say why.
 
-import { applyTimelineFrame, laneChanged, pushTimeline, timelineOf, type SceneTimeline } from "@/lib/timeline"
+import { applyTimelineFrame, laneChanged, onStageAt, pushTimeline, timelineOf, type SceneTimeline } from "@/lib/timeline"
 
 let failures = 0
 const eq = (got: unknown, want: unknown, what: string) => {
@@ -134,6 +134,22 @@ eq([partDissolve.miku?.stockings, partDissolve.miku?.garter], [0.5, 0], "mid-ram
 applyTimelineFrame(frameEngine, parted, 120)
 eq(partDissolve.miku?.stockings, 0, "past the stretch: gone")
 eq("dress" in (partDissolve.miku ?? {}), false, "a material with an empty lane is never named")
+
+// A held prop leaves the stage with its holder; a free one keeps its own lane.
+{
+  const hold = (frame: number, model: string | null) => ({ frame, model, position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] })
+  const t = {
+    visibility: { girl: [{ start: 0, end: 100 }], sword: [{ start: 50 }] },
+    parents: { sword: [hold(0, "girl"), hold(150, null)], cup: [hold(0, "girl")] },
+  }
+  eq(onStageAt(t, "cup", 10).visible, true, "held while the holder is on")
+  eq(onStageAt(t, "cup", 120).visible, false, "gone when the holder is")
+  eq(onStageAt(t, "sword", 20).visible, false, "its own lane still rules")
+  eq(onStageAt(t, "sword", 120).visible, false, "held by someone off stage")
+  eq(onStageAt(t, "sword", 160).visible, true, "dropped, it answers to itself")
+  const loop = { visibility: {}, parents: { a: [hold(0, "b")], b: [hold(0, "a")] } }
+  eq(onStageAt(loop, "a", 0).visible, true, "a cycle ends")
+}
 
 if (failures) {
   console.error(`${failures} failure(s)`)
