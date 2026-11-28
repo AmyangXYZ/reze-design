@@ -23,7 +23,7 @@ const src: RowSource = {
     { id: "b", name: "Reze", bones: [], morphs: [], materials: [] },
   ],
   stages: [{ id: "s", name: "Church", part: false, materials: ["床"] }],
-  props: [{ id: "p", name: "Sword" }],
+  props: [{ id: "p", name: "Sword", materials: [] }],
   effects: [
     { uid: "e1", name: "Aurora", cast: false },
     { uid: "e2", name: "Sparks", models: ["a"], cast: true },
@@ -38,7 +38,8 @@ const ids = (section: string | null, open: string[] = []) => buildRows(src, sect
 eq(ids(charRow("a")), ["scene", "char/a", "char/a/motion", "char/a/morphs", "char/a/fx", "char/a/vis", "char/b", "stage", "prop/p"], "Makima's section, closed inside: effects before visibility")
 eq(ids(SCENE_ROW), ["scene", "scene/camera", "scene/fx", "char/a", "char/b", "stage", "prop/p"], "the scene's section")
 eq(ids(STAGE_ROW, ["stage/s"]), ["scene", "char/a", "char/b", "stage", "stage/s", "stage/s/床", "prop/p"], "the stage, a model opened to its materials")
-eq(ids("prop/p"), ["scene", "char/a", "char/b", "stage", "prop/p", "prop/p/parent"], "a prop opens to its holds")
+eq(ids("prop/p"), ["scene", "char/a", "char/b", "stage", "prop/p", "prop/p/parent", "prop/p/vis"], "a prop opens to its holds and its visibility")
+eq(ids("prop/p", ["prop/p/vis"]).filter((i) => i.startsWith("prop/p/vis")), ["prop/p/vis", "prop/p/vis/model"], "a prop's visibility is its model")
 
 // Visibility opens to the whole model, then a Materials row opening to each.
 eq(ids(charRow("a"), ["char/a/vis", "char/a/vis/mats"]).filter((i) => i.startsWith("char/a/vis")), ["char/a/vis", "char/a/vis/model", "char/a/vis/mats", "char/a/vis/mats/髪", "char/a/vis/mats/服"], "model, then materials")

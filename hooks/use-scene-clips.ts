@@ -92,8 +92,15 @@ export function useSceneClips({
       for (const entry of fresh) {
         const clip = entry.animation
         if (!clip) continue
-        const packed = await bundleFile(clip.url)
-        const name = await (packed ? loadVmdFile(entry.model.id, packed) : loadVmdUrl(entry.model.id, clip.name, clip.url))
+        let packed: File | null = null
+        let name: string | null = null
+        try {
+          packed = await bundleFile(clip.url)
+          name = await (packed ? loadVmdFile(entry.model.id, packed) : loadVmdUrl(entry.model.id, clip.name, clip.url))
+        } catch (e) {
+          // One clip that throws costs that clip, never the ones behind it.
+          console.error(`[scene] motion read failed for ${entry.model.id}:`, e)
+        }
         if (stale()) return
         if (name) {
           callbacks.current.onMotion?.(entry.model.id, clip, packed ?? clip.url)
@@ -118,10 +125,14 @@ export function useSceneClips({
       for (const entry of fresh) {
         const expr = entry.morph
         if (!expr) continue
-        const packed = await bundleFile(expr.url)
-        const name = await (packed
-          ? loadMorphFile(entry.model.id, packed)
-          : loadMorphUrl(entry.model.id, expr.name, expr.url))
+        let packed: File | null = null
+        let name: string | null = null
+        try {
+          packed = await bundleFile(expr.url)
+          name = await (packed ? loadMorphFile(entry.model.id, packed) : loadMorphUrl(entry.model.id, expr.name, expr.url))
+        } catch (e) {
+          console.error(`[scene] morph read failed for ${entry.model.id}:`, e)
+        }
         if (stale()) return
         if (name) {
           callbacks.current.onMorph?.(entry.model.id, expr, packed ?? expr.url)

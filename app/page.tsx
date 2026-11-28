@@ -6404,7 +6404,7 @@ function Lab() {
   const outlineSource: RowSource = {
       cast: cast.map((m) => ({ id: m.id, name: displayName(m.file), bones: [], morphs: [], materials: [...new Set(m.materials.map((x) => x.name))] })),
       stages: stageModels.map((m) => ({ id: m.id, name: displayName(m.file), part: false, materials: [...new Set(m.materials.map((x) => x.name))] })),
-      props: props.map((p) => ({ id: p.id, name: displayName(p.file) })),
+      props: props.map((p) => ({ id: p.id, name: displayName(p.file), materials: [...new Set((models.find((m) => m.id === p.id)?.materials ?? []).map((x) => x.name))] })),
       // A character's when it follows one (her bones, where she stands); else the scene's.
       effects: bgEffects.map((e) => ({ uid: e.uid ?? e.id, name: e.name, models: e.models, cast: followsCharacter(e.wgsl), keyCount: Object.values(e.keys ?? {}).reduce((n, ks) => n + ks.length, 0) })),
       // Always: a camera with no clip yet is still one you can key.
@@ -6544,7 +6544,8 @@ function Lab() {
                   : null
   // A model's visibility row opens to its materials in the outliner and in its
   // lanes alike: one open set for both, the lanes'.
-  const visRowId = (id: string) => (castIdList.includes(id) ? `${charRow(id)}/vis/mats` : `stage/${id}`)
+  const visRowId = (id: string) =>
+    castIdList.includes(id) ? `${charRow(id)}/vis/mats` : props.some((p) => p.id === id) ? `${propRow(id)}/vis/mats` : `stage/${id}`
   const outlineOpenShown = new Set([...outlineOpen, ...[...openLanes].map(visRowId)])
   const onOutlineToggle = (row: TimelineRow) => {
     if ((row.kind === "materials" || row.kind === "stageModel") && row.owner) toggleLane(row.owner)
@@ -6552,7 +6553,11 @@ function Lab() {
   }
   /** Which models the open section's lanes are about. */
   const sectionModels = new Set(
-    section === STAGE_ROW ? stageModels.map((m) => m.id) : section.startsWith("char/") ? [section.slice(5)] : [],
+    section === STAGE_ROW
+      ? stageModels.map((m) => m.id)
+      : section.startsWith("char/") || section.startsWith("prop/")
+        ? [section.slice(5)]
+        : [],
   )
   const sectionOwner = section.startsWith("char/") ? section.slice(5) : null
   /** The open section's effects: the scene's shared ones, or hers. */

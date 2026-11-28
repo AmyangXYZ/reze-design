@@ -60,7 +60,7 @@ export type RowSource = {
   /** Stage models and the parts they shipped with, in scene order. They have
    *  no motion of their own: visibility, by model and by material. */
   stages: { id: string; name: string; part: boolean; materials: readonly string[] }[]
-  props: { id: string; name: string }[]
+  props: { id: string; name: string; materials: readonly string[] }[]
   /** `cast`: whether its code reads the characters — their bones, their
    *  silhouettes. Such an effect is on someone and belongs to them; one that
    *  does not (rain, fog, the lens) is the scene's. */
@@ -146,21 +146,7 @@ export function buildRows(src: RowSource, section: string | null, open: Readonly
 
     pushEffects(rows, `${id}/fx`, c.id, src.effects.filter((e) => effectOn(e, c.id)), isOpen, labels)
 
-    // Visibility: the whole model first, then her materials under a row of
-    // their own — when she is on stage, and what she is wearing.
-    const vis = `${id}/vis`
-    const vOpen = isOpen(vis)
-    rows.push({ id: vis, kind: "visibility", depth: 1, label: labels.visibility, owner: c.id, open: vOpen })
-    if (vOpen) {
-      rows.push({ id: `${vis}/model`, kind: "model", depth: 2, label: c.name, owner: c.id })
-      if (c.materials.length) {
-        const mats = `${vis}/mats`
-        const mOpen = isOpen(mats)
-        rows.push({ id: mats, kind: "materials", depth: 2, label: labels.materials, owner: c.id, open: mOpen })
-        if (mOpen) for (const m of c.materials) rows.push({ id: `${mats}/${m}`, kind: "material", depth: 3, label: m, owner: c.id, ref: m })
-      }
-    }
-
+    pushVisibility(rows, id, c, isOpen, labels)
   }
 
   // The stage: one section for every stage model, each its visibility, opening
@@ -190,9 +176,33 @@ export function buildRows(src: RowSource, section: string | null, open: Readonly
     const id = propRow(p.id)
     const pOpen = section === id
     rows.push({ id, kind: "prop", depth: 0, label: p.name, owner: p.id, open: pOpen })
-    if (pOpen) rows.push({ id: `${id}/parent`, kind: "parent", depth: 1, label: labels.parent, owner: p.id })
+    if (!pOpen) continue
+    rows.push({ id: `${id}/parent`, kind: "parent", depth: 1, label: labels.parent, owner: p.id })
+    pushVisibility(rows, id, p, isOpen, labels)
   }
   return rows
+}
+
+/** A character's or prop's visibility: the whole model first, then its
+ *  materials under a row of their own — when it is on stage, and what it is
+ *  wearing. */
+function pushVisibility(
+  rows: TimelineRow[],
+  section: string,
+  m: { id: string; name: string; materials: readonly string[] },
+  isOpen: (id: string) => boolean,
+  labels: RowLabels,
+) {
+  const vis = `${section}/vis`
+  const vOpen = isOpen(vis)
+  rows.push({ id: vis, kind: "visibility", depth: 1, label: labels.visibility, owner: m.id, open: vOpen })
+  if (!vOpen) return
+  rows.push({ id: `${vis}/model`, kind: "model", depth: 2, label: m.name, owner: m.id })
+  if (!m.materials.length) return
+  const mats = `${vis}/mats`
+  const mOpen = isOpen(mats)
+  rows.push({ id: mats, kind: "materials", depth: 2, label: labels.materials, owner: m.id, open: mOpen })
+  if (mOpen) for (const x of m.materials) rows.push({ id: `${mats}/${x}`, kind: "material", depth: 3, label: x, owner: m.id, ref: x })
 }
 
 /** A section's effects, under one row of their own that opens to list them —
